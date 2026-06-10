@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Testing / tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local model / runtime artifacts
+*.log
+.DS_Store
+
+# Memory store: keep structure, ignore local run data (revisit when memory format settles)
+# (nothing ignored yet — institutional memory is versioned until we decide otherwise)
+
+# Secrets / config
+.env
+.env.*
+!.env.example
