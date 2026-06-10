@@ -61,6 +61,7 @@ class Provenance:
     rationale: str
     gate_results: list[GateResult] = field(default_factory=list)
     accepted_because: str | None = None
+    informed_by: list[str] = field(default_factory=list)  # memory ids that shaped this
     created_at: str = field(default_factory=_now)
 
 

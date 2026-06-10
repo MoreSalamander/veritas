@@ -11,6 +11,7 @@ past failure when a similar task starts) is Phase 3 — for now we persist hones
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,32 @@ from typing import Any
 import yaml
 
 from engine.artifact import Artifact, _new_id, _now
+
+# Deterministic retrieval: overlap of meaningful tokens. Explainable and testable.
+# An embedding-backed recall can slot in behind the same interface later.
+_STOPWORDS = {
+    "a", "an", "the", "of", "to", "and", "or", "that", "this", "returns", "return",
+    "function", "func", "def", "is", "are", "for", "with", "in", "on", "be", "given",
+    "value", "values", "number", "numbers", "integer", "string",
+}
+
+
+def _stem(word: str) -> str:
+    # Just enough to make "reverses"/"strings" match "reverse"/"string". Not linguistics.
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
+def _tokens(text: str) -> set[str]:
+    out: set[str] = set()
+    for word in re.findall(r"[a-z0-9_]+", text.lower()):
+        if len(word) <= 2:
+            continue
+        stem = _stem(word)
+        if len(stem) > 2 and stem not in _STOPWORDS:
+            out.add(stem)
+    return out
 
 
 @dataclass
@@ -62,6 +89,7 @@ def _provenance_dict(artifact: Artifact) -> dict[str, Any]:
         "created_by": p.created_by,
         "rationale": p.rationale,
         "accepted_because": p.accepted_because,
+        "informed_by": list(p.informed_by),
         "validated_by": [gr.gate_name for gr in p.gate_results],
         "gate_results": [
             {
@@ -118,3 +146,61 @@ class MemoryStore:
         line = f"- `[{record.category}]` {record.title} → [{rel}]({rel}) ({record.created_at})\n"
         with self.index_path.open("a", encoding="utf-8") as f:
             f.write(line)
+
+    # --- retrieval: the org reading its own memory before it acts ---------------
+
+    def load_all(self) -> list[MemoryRecord]:
+        records: list[MemoryRecord] = []
+        for directory in (self.institutional, self.failures):
+            for path in sorted(directory.glob("*.md")):
+                records.append(self._parse(path))
+        return records
+
+    def _parse(self, path: Path) -> MemoryRecord:
+        text = path.read_text(encoding="utf-8")
+        frontmatter: dict[str, Any] = {}
+        body = text
+        if text.startswith("---"):
+            parts = text.split("---", 2)  # maxsplit=2 keeps any '---' inside the body
+            if len(parts) == 3:
+                frontmatter = yaml.safe_load(parts[1]) or {}
+                body = parts[2].strip()
+        return MemoryRecord(
+            category=frontmatter.get("category", ""),
+            title=frontmatter.get("title", ""),
+            body=body,
+            source_artifact_id=frontmatter.get("source_artifact_id"),
+            tags=frontmatter.get("tags") or [],
+            provenance=frontmatter.get("provenance") or {},
+            id=frontmatter.get("id", path.stem),
+            created_at=frontmatter.get("created_at", ""),
+        )
+
+    def recall(
+        self, query: str, categories: list[str] | None = None, limit: int = 5
+    ) -> list[MemoryRecord]:
+        """Return past records relevant to `query`, ranked by token overlap. This is
+        how the organization stops repeating itself: it reads its own failures and
+        lessons before it proposes anything new."""
+        wanted = _tokens(query)
+        if not wanted:
+            return []
+        scored: list[tuple[int, MemoryRecord]] = []
+        for record in self.load_all():
+            if categories and record.category not in categories:
+                continue
+            prov = record.provenance
+            searchable = " ".join(
+                [
+                    record.title,
+                    " ".join(record.tags),
+                    record.body,
+                    str(prov.get("rationale", "")),
+                    str(prov.get("rejected_because", "")),
+                ]
+            )
+            overlap = wanted & _tokens(searchable)
+            if overlap:
+                scored.append((len(overlap), record))
+        scored.sort(key=lambda pair: (-pair[0], pair[1].created_at))
+        return [record for _, record in scored[:limit]]

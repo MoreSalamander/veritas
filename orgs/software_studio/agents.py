@@ -84,12 +84,11 @@ class SpecAgent:
     def __init__(self, provider: ModelProvider) -> None:
         self.provider = provider
 
-    def propose(self, goal: str) -> Artifact:
-        raw = self.provider.propose(
-            role=self.role,
-            prompt=f"Goal: {goal}",
-            system=SPEC_SYSTEM,
-        )
+    def propose(self, goal: str, lessons: str | None = None) -> Artifact:
+        prompt = f"Goal: {goal}"
+        if lessons:
+            prompt = f"{lessons}\n\n{prompt}"
+        raw = self.provider.propose(role=self.role, prompt=prompt, system=SPEC_SYSTEM)
         return Artifact.propose(
             type="spec",
             owner="spec-agent",
@@ -104,12 +103,11 @@ class DeveloperAgent:
     def __init__(self, provider: ModelProvider) -> None:
         self.provider = provider
 
-    def propose(self, spec: SpecData, parent_id: str) -> Artifact:
-        raw = self.provider.propose(
-            role=self.role,
-            prompt=f"Spec:\n{_spec_to_json(spec)}",
-            system=DEV_SYSTEM,
-        )
+    def propose(self, spec: SpecData, parent_id: str, lessons: str | None = None) -> Artifact:
+        prompt = f"Spec:\n{_spec_to_json(spec)}"
+        if lessons:
+            prompt = f"{lessons}\n\n{prompt}"
+        raw = self.provider.propose(role=self.role, prompt=prompt, system=DEV_SYSTEM)
         return Artifact.propose(
             type="code",
             owner="developer-agent",
