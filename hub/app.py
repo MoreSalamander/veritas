@@ -19,9 +19,27 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from engine.memory import MemoryStore
-from engine.model import ModelProvider, OllamaProvider
+from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
 from hub.store import RunStore, summarize
 from orgs.registry import REGISTRY, get_org
+
+# The model toggle: local (free) plus the three Claude tiers. Reliability comes from the
+# gates regardless of which proposes — this just lets you discover which model a build needs.
+MODELS: dict[str, dict[str, str]] = {
+    "local": {"label": "Local · llama3.1:8b", "cost": "free", "claude_id": ""},
+    "haiku": {"label": "Claude Haiku", "cost": "~1–3¢/build", "claude_id": "claude-haiku-4-5"},
+    "sonnet": {"label": "Claude Sonnet", "cost": "~4–8¢/build", "claude_id": "claude-sonnet-4-6"},
+    "opus": {"label": "Claude Opus", "cost": "~6–13¢/build", "claude_id": "claude-opus-4-8"},
+}
+
+
+def _provider_for(model: str) -> ModelProvider:
+    if model == "local":
+        return OllamaProvider(model=os.environ.get("VERITAS_MODEL", "llama3.1:8b"))
+    spec = MODELS.get(model)
+    if not spec or not spec["claude_id"]:
+        raise ValueError(f"unknown model {model!r}")
+    return ClaudeProvider(spec["claude_id"])
 
 # Anchor the data dir to the repo root, NOT the launch directory, so the hub finds the
 # same runs no matter where it's started from. (Relative "./hub_data" silently moved the
@@ -34,6 +52,7 @@ _STATIC = Path(__file__).parent / "static"
 class RunRequest(BaseModel):
     goal: str
     org: str = "software"
+    model: str = "local"
 
 
 def create_app(
@@ -41,9 +60,7 @@ def create_app(
 ) -> FastAPI:
     base = Path(data_dir) if data_dir else _DATA
     runs = RunStore(base / "runs")
-    model: ModelProvider = provider or OllamaProvider(
-        model=os.environ.get("VERITAS_MODEL", "llama3.1:8b")
-    )
+    injected_provider = provider  # set in tests; when None, pick per-request by model
 
     # Each org keeps its own institutional memory: recall stays relevant to the
     # domain, and it mirrors how a hosted deployment would isolate tenants.
@@ -99,11 +116,19 @@ def create_app(
         found = runs.get(run_id)
         return found or {"error": "not found"}
 
+    @app.get("/api/models")
+    def list_models() -> list[dict[str, str]]:
+        return [{"name": k, "label": v["label"], "cost": v["cost"]} for k, v in MODELS.items()]
+
     @app.post("/api/runs")
     def create_run(req: RunRequest) -> dict[str, Any]:
         org = get_org(req.org)  # KeyError -> 500 is acceptable locally; UI only offers known orgs
-        result = org.build(req.goal, model, org_memory(org.name))
-        summary = summarize(result, datetime.now(timezone.utc).isoformat())
+        try:
+            prov = injected_provider or _provider_for(req.model)
+            result = org.build(req.goal, prov, org_memory(org.name))
+        except Exception as exc:  # missing API key, unknown model, model API error
+            return {"error": f"{type(exc).__name__}: {exc}"}
+        summary = summarize(result, datetime.now(timezone.utc).isoformat(), model=req.model)
         runs.save(summary)
         return runs.get(summary.id) or {}
 

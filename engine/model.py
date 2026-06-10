@@ -62,6 +62,29 @@ class OllamaProvider(ModelProvider):
         return str(text)
 
 
+class ClaudeProvider(ModelProvider):
+    """Cloud backend — the Anthropic API. The product-grade proposer. Reliability still
+    comes from the gates; a stronger model just proposes better than a local 8b, which is
+    what clears app-scale builds. Model id is one of claude-haiku-4-5 / claude-sonnet-4-6 /
+    claude-opus-4-8. Reads ANTHROPIC_API_KEY from the environment."""
+
+    def __init__(self, model: str = "claude-sonnet-4-6", max_tokens: int = 4096) -> None:
+        import anthropic  # lazy: only needed when the cloud is actually used
+
+        self._client = anthropic.Anthropic()
+        self.model = model
+        self.max_tokens = max_tokens
+
+    def propose(self, *, role: str, prompt: str, system: str | None = None) -> str:
+        message = self._client.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            system=system or "",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return "".join(getattr(block, "text", "") for block in message.content)
+
+
 class ScriptedProvider(ModelProvider):
     """Deterministic fake for tests: canned responses keyed by role. Lets the whole
     pipeline be exercised offline, with no model running — reliability of the org's

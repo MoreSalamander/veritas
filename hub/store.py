@@ -48,6 +48,7 @@ class ActivityView:
 class RunSummary:
     id: str
     org: str
+    model: str
     goal: str
     accepted: bool
     created_at: str
@@ -57,7 +58,7 @@ class RunSummary:
     activity: list[ActivityView]
 
 
-def summarize(result: OrgRun, created_at: str) -> RunSummary:
+def summarize(result: OrgRun, created_at: str, model: str = "local") -> RunSummary:
     artifacts: list[ArtifactView] = []
     gates: list[GateView] = []
     for outcome in result.outcomes:
@@ -93,6 +94,7 @@ def summarize(result: OrgRun, created_at: str) -> RunSummary:
     return RunSummary(
         id=result.run_id,
         org=result.org,
+        model=model,
         goal=result.goal,
         accepted=result.accepted,
         created_at=created_at,
