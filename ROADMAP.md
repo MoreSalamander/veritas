@@ -138,3 +138,29 @@ The meta-thesis validated.
 
 First brick: **Phase 0 — the spine**, and inside it, the first honest thing to exist is
 the gate that is capable of rejecting.
+
+---
+
+## The 10-month arc (Jun 2026 → Apr 2027)
+
+P0–P5 + hub + registry are done. North star: **an autonomous org that reliably builds a
+small-but-real multi-file app — the full cast earning their seats — and takes its first
+proven step toward building its own parts.** The cast grows as the deliverable grows;
+nothing earns a seat before there is something for it to verify.
+
+- **P6 · Module** (Jun–Jul) — grow the unit from one function to a few-file module +
+  integration test, all building green together. **Architect** (module boundaries /
+  contract — validates against schema, types check) and **PM** (acceptance criteria as
+  executable tests) earn real, gated seats.
+- **P7 · App skeleton** (Aug–Oct) — modules compose into a runnable app (small API/CLI).
+  New verifiable artifacts: API contract validates, end-to-end test runs. **CEO/PM**
+  decompose a goal into modules/tickets; the **Memory** role earns its seat (decision
+  records across the app).
+- **P8 · Autonomy** (Oct–Dec) — the retry loop (rejection → re-propose with gate feedback)
+  + scoring, so the org drives multi-step builds to a passing bar on its own; failure
+  retrieval across the larger surface.
+- **P9 · Hosting prep** (Dec–Feb) — sandboxed Executor (real isolation for bigger/untrusted
+  builds), cloud model provider, DB-backed memory + run history. The deferred deployment work.
+- **P10 · Bootstrap** (Feb–Apr) — point the proven org at building one real Veritas
+  component (a new gate or role) under its own gates. The strange loop, earned — and only
+  after it reliably builds ordinary apps.
