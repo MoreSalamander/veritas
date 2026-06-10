@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from engine.memory import MemoryStore
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome
-from orgs.software_studio.pipeline import build_software
+from orgs.software_studio.builder import build
 
 
 @dataclass
@@ -49,17 +49,12 @@ class OrgType:
 
 
 def _run_software(goal: str, provider: ModelProvider, memory: MemoryStore) -> OrgRun:
-    result = build_software(goal, provider, memory, document=True)
-    outcomes = [result.spec_outcome]
-    if result.code_outcome is not None:
-        outcomes.append(result.code_outcome)
-    if result.doc_outcome is not None:
-        outcomes.append(result.doc_outcome)
+    result = build(goal, provider, memory)  # routes to a function or a module build
     return OrgRun(
         org="software",
         goal=goal,
         accepted=result.accepted,
-        outcomes=outcomes,
+        outcomes=result.outcomes,
         informed_by=result.informed_by,
         run_id=result.run_id,
         activity=result.activity,

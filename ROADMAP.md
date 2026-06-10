@@ -164,3 +164,24 @@ nothing earns a seat before there is something for it to verify.
 - **P10 · Bootstrap** (Feb–Apr) — point the proven org at building one real Veritas
   component (a new gate or role) under its own gates. The strange loop, earned — and only
   after it reliably builds ordinary apps.
+
+### The fine rungs (single-job; phase numbers climb monotonically)
+
+The milestones above are coarse targets; the actual work is finer rungs, each adding one
+verifiable thing behind one gate. The next chunk, toward "a small running app":
+
+- **P6 · Module** ✅ — function → module; Architect + PM gated; integration gate guards composition.
+- **P7 · Unify + wire** ✅ — one `build(goal)` routes function vs module; hub rides on it.
+- **P8 · Planner** — a goal too big for one module → a *plan* (list of module contracts).
+  CEO/Planner earns a seat. Gate: `PlanGate`. Done: validated multi-module plan, no code.
+- **P9 · Assembly** — build each planned module; prove they coexist (importable together,
+  no name clashes). Gate: `AssemblyGate`. Done: plan → assembled package.
+- **P10rung · Entrypoint + E2E** — app = modules + entrypoint (CLI) + end-to-end test.
+  Integrator earns a seat. Gate: `E2EGate`. Done: goal → runnable small app, e2e green.
+- **P11 · Memory seat** — decision records persisted and surfaced on related builds.
+  Done: a build's decisions inform a later related build.
+- **P12 · Retry loop** — on rejection, re-propose with gate feedback within the run
+  (`run.attempt` + scoring). Done: fail → feedback → succeed, in one run. Autonomy begins.
+
+Hosting (sandboxed Executor, cloud model, DB-backed memory) and the bootstrap stay past
+this chunk.
