@@ -74,3 +74,18 @@ class ScriptedProvider(ModelProvider):
         if role not in self._by_role:
             raise KeyError(f"ScriptedProvider has no response for role {role!r}")
         return self._by_role[role]
+
+
+class SequencedProvider(ModelProvider):
+    """Like ScriptedProvider, but returns a *queue* of responses per role, popped in
+    order. Lets a multi-module build give different answers to the same role across
+    successive calls (module 1's contract, then module 2's, ...)."""
+
+    def __init__(self, by_role: dict[str, list[str]]) -> None:
+        self._queues = {role: list(responses) for role, responses in by_role.items()}
+
+    def propose(self, *, role: str, prompt: str, system: str | None = None) -> str:
+        queue = self._queues.get(role)
+        if not queue:
+            raise KeyError(f"SequencedProvider exhausted or missing for role {role!r}")
+        return queue.pop(0)

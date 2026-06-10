@@ -4,6 +4,7 @@ Phase 1 capability: a natural-language goal becomes a single Python function who
 behavior is pinned by an executable spec and verified by deterministic gates.
 """
 
+from orgs.software_studio.app import AppResult, build_app
 from orgs.software_studio.builder import BuildResult, build
 from orgs.software_studio.module import ModuleResult, build_module
 from orgs.software_studio.pipeline import StudioResult, build_function, build_software
@@ -16,4 +17,6 @@ __all__ = [
     "build_software",
     "ModuleResult",
     "build_module",
+    "AppResult",
+    "build_app",
 ]
