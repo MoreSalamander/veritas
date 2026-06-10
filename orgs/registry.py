@@ -1,9 +1,12 @@
 """The org registry — the catalog of organizations the Hub can host.
 
-P5 proved an organization is `substrate + a cast`. The registry makes that literal:
-each entry is a name, a description, and a build function. The Hub picks an org
-type per run and never hardcodes a pipeline again. Adding a third org type means
-adding one entry here — the engine does not change.
+An organization is `substrate + a cast`, and what makes one a SEPARATE org (rather
+than a role inside an existing one) is its VERIFICATION MODEL — its way of knowing an
+artifact is trustworthy. Same verification model → same org, different role. Different
+verification model → different org. (Documenting code is verified by executing code,
+so it's a role in the software org, not a peer — see DocAgent.) A genuinely separate
+org belongs here only when "done" means something different: e.g. a research org
+verified by source-grounding, a production org verified by format/integrity.
 """
 
 from __future__ import annotations
@@ -14,7 +17,6 @@ from dataclasses import dataclass
 from engine.memory import MemoryStore
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome
-from orgs.docs_studio.pipeline import build_doc
 from orgs.software_studio.pipeline import build_software
 
 
@@ -47,28 +49,14 @@ class OrgType:
 
 
 def _run_software(goal: str, provider: ModelProvider, memory: MemoryStore) -> OrgRun:
-    result = build_software(goal, provider, memory)
+    result = build_software(goal, provider, memory, document=True)
     outcomes = [result.spec_outcome]
     if result.code_outcome is not None:
         outcomes.append(result.code_outcome)
-    return OrgRun(
-        org="software",
-        goal=goal,
-        accepted=result.accepted,
-        outcomes=outcomes,
-        informed_by=result.informed_by,
-        run_id=result.run_id,
-        activity=result.activity,
-    )
-
-
-def _run_docs(goal: str, provider: ModelProvider, memory: MemoryStore) -> OrgRun:
-    result = build_doc(goal, provider, memory)
-    outcomes = [result.outline_outcome]
     if result.doc_outcome is not None:
         outcomes.append(result.doc_outcome)
     return OrgRun(
-        org="docs",
+        org="software",
         goal=goal,
         accepted=result.accepted,
         outcomes=outcomes,
@@ -82,26 +70,15 @@ REGISTRY: dict[str, OrgType] = {
     "software": OrgType(
         name="software",
         title="Software Studio",
-        description="Turns a plain-language goal into a working Python function.",
+        description="Turns a plain-language goal into a working Python function, then "
+        "documents it. (Documentation is a role here, not a separate org — docs are "
+        "verified the same way code is: by executing them.)",
         input_noun="a plain-language goal",
-        produces="a verified Python function",
+        produces="a verified Python function plus documentation whose examples run",
         verified_by="executable spec → syntax → acceptance tests → security scan "
-        "→ QA (advisory) → Validation",
+        "→ QA (advisory) → Validation → documentation (examples run against the function)",
         goal_hint="a function that returns the nth Fibonacci number",
         build=_run_software,
-    ),
-    "docs": OrgType(
-        name="docs",
-        title="Code Docs Studio",
-        description="Turns a programming topic into a technical explainer whose code "
-        "examples are verified to actually run. (Code topics only — its gate is "
-        "executing the examples, so there must be code to execute.)",
-        input_noun="a programming topic",
-        produces="a Markdown explainer with runnable code examples",
-        verified_by="usable outline → required sections → every code example executed "
-        "→ readability (advisory) → Validation",
-        goal_hint="python list comprehensions",
-        build=_run_docs,
     ),
 }
 

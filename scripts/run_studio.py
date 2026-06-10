@@ -27,6 +27,8 @@ def main() -> None:
         default="a function that returns the nth Fibonacci number (0-indexed)",
     )
     parser.add_argument("--model", default=os.environ.get("VERITAS_MODEL", "llama3.1:8b"))
+    parser.add_argument("--document", action="store_true",
+                        help="also run the doc role: document the function, examples verified against it")
     args = parser.parse_args()
 
     provider = OllamaProvider(model=args.model)
@@ -34,7 +36,7 @@ def main() -> None:
 
     print(f"goal : {args.goal}")
     print(f"model: {args.model}\n")
-    result = build_software(args.goal, provider, memory)
+    result = build_software(args.goal, provider, memory, document=args.document)
 
     spec = result.spec_outcome
     print(f"SPEC  -> {'ACCEPTED' if spec.accepted else 'REJECTED'}  "
@@ -52,6 +54,15 @@ def main() -> None:
             print(f"        [{gr.gate_name}] {'pass' if gr.passed else 'FAIL'}: {gr.evidence}")
         print("\n--- proposed code ---")
         print(code.artifact.payload)
+
+    if result.doc_outcome is not None:
+        doc = result.doc_outcome
+        print(f"\nDOC   -> {'ACCEPTED' if doc.accepted else 'REJECTED'}  "
+              f"({doc.memory_path.parent.name}/{doc.memory_path.name})")
+        for gr in doc.artifact.provenance.gate_results:
+            print(f"        [{gr.gate_name}] {'pass' if gr.passed else 'FAIL'}: {gr.evidence}")
+        print("\n--- documentation ---")
+        print(doc.artifact.payload)
 
     print(f"\nRESULT: {'shipped to memory' if result.accepted else 'not accepted'}")
 

@@ -23,7 +23,12 @@ from typing import Any
 from engine.artifact import Artifact, Determinism, GateResult
 from engine.executor import Executor, LocalSubprocessExecutor
 from engine.gate import Gate
-from orgs.software_studio.spec import SpecData, SpecParseError, parse_spec
+from orgs.software_studio.spec import (
+    SpecData,
+    SpecParseError,
+    extract_python_blocks,
+    parse_spec,
+)
 
 # Data is never interpolated into source — cases ride as JSON through the
 # environment and are looped over. Immune to quoting/injection from spec values
@@ -188,6 +193,44 @@ class QAGate(Gate):
         return self._result(
             False, f"QA flagged a discrepancy (advisory, oracle unverified): {evidence}"
         )
+
+
+class ExamplesRunGate(Gate):
+    """Every fenced python example in a doc must execute cleanly. When a `preamble`
+    is given (the documented function's source), each example runs WITH the function
+    in scope — so the documentation's examples are verified against the real code,
+    not a redefinition. This is what lets docs live in the software org: they're
+    checked by executing code, the same verification model as the code itself."""
+
+    name = "examples-run"
+    determinism = Determinism.HARD
+
+    def __init__(
+        self,
+        executor: Executor | None = None,
+        timeout: float = 10.0,
+        preamble: str = "",
+        must_reference: str | None = None,
+    ) -> None:
+        self.executor = executor or _DEFAULT_EXECUTOR
+        self.timeout = timeout
+        self.preamble = preamble
+        self.must_reference = must_reference
+
+    def check(self, artifact: Artifact) -> GateResult:
+        blocks = extract_python_blocks(artifact.payload)
+        if not blocks:
+            return self._result(False, "no python examples to verify")
+        if self.must_reference and not any(self.must_reference in b for b in blocks):
+            return self._result(False, f"no example demonstrates {self.must_reference}()")
+        for index, block in enumerate(blocks):
+            script = f"{self.preamble}\n{block}" if self.preamble else block
+            result = self.executor.run(script, {**os.environ}, self.timeout)
+            if not result.ok:
+                last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "non-zero exit"
+                return self._result(False, f"example {index} failed: {last}")
+        scope = " against the function" if self.preamble else ""
+        return self._result(True, f"{len(blocks)}/{len(blocks)} examples ran{scope}")
 
 
 # ValidationGate is org-agnostic and now lives in engine.validation (shared substrate).

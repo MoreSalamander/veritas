@@ -228,6 +228,29 @@ build governance for an organization that hasn't shipped one artifact.
 
 ---
 
+## 6.5 What counts as an organization (the org-vs-role test)
+
+A new *artifact* earns a new **role**. A new *way of knowing something is right* earns a
+new **organization**.
+
+An organization is defined by its **verification model** — how it decides an artifact is
+trustworthy. Two kinds of work verified the *same* way are roles in one organization;
+verified *differently*, they are separate organizations.
+
+- Software is verified by **executing code** against a spec.
+- Documenting code is verified by **executing the examples** — the same model. So the
+  documentation writer is a *role in the software org*, not a peer (`DocAgent`): a doc
+  whose example doesn't run is rejected exactly like a function that fails its tests, and
+  its examples run against the real implementation so the docs can't drift from the code.
+
+A genuinely separate org is one where "done" means something different: a **research
+org** verified by source-grounding (every claim traces to a resolvable source), a
+**production org** verified by format/duration/integrity. Those earn their own registry
+entry. "It produces a different artifact" is never enough on its own — ask what
+*verifies* it. This test governs every future org-vs-role decision.
+
+---
+
 ## 7. Roadmap
 
 - **M0 — The spine.** Artifact + Gate + provenance schema. Reuse the file-per-fact +

@@ -1,8 +1,9 @@
-"""The org registry — both orgs behind one interface, picked by name.
+"""The org registry — orgs behind one interface, picked by name.
 
 Proves the Hub-facing claim: an org is an entry in a catalog, and running one is
-`get_org(name).build(goal, provider, memory)` regardless of domain. The normalized
-OrgRun is what makes the Hub org-agnostic.
+`get_org(name).build(goal, provider, memory)`. The normalized OrgRun is what makes
+the Hub org-agnostic. (Only the software org is registered: documenting code is a
+role in it, not a peer org, because docs are verified the same way code is.)
 """
 
 from __future__ import annotations
@@ -23,49 +24,36 @@ SOFTWARE_SPEC = json.dumps(
         "cases": [{"args": [1, 2], "expected": 3}],
     }
 )
-DOCS_OUTLINE = json.dumps(
-    {"title": "List comprehensions", "sections": ["What they are", "Example"], "min_examples": 1}
-)
-DOC = (
-    "# List comprehensions\n\n## What they are\nA compact way to build lists from "
-    "iterables in one readable expression instead of an explicit loop.\n\n## Example\n"
-    "```python\nassert [x * x for x in range(3)] == [0, 1, 4]\n```\n"
-)
+DOC = "# add\n\nAdds two numbers.\n\n```python\nassert add(2, 3) == 5\nprint(add(10, 20))\n```\n"
 
 PROVIDER = ScriptedProvider(
     {
         "spec": SOFTWARE_SPEC,
         "developer": "def add(a, b):\n    return a + b\n",
         "qa": "[]",
-        "outline": DOCS_OUTLINE,
-        "writer": DOC,
+        "doc": DOC,
     }
 )
 
 
-def test_registry_lists_both_orgs():
-    assert set(REGISTRY) == {"software", "docs"}
+def test_registry_lists_orgs():
+    assert set(REGISTRY) == {"software"}
     for org in REGISTRY.values():
         assert org.title and org.description and org.goal_hint
         assert org.input_noun and org.produces and org.verified_by
 
 
 def test_unknown_org_raises_with_known_names():
-    with pytest.raises(KeyError, match="docs"):
+    with pytest.raises(KeyError, match="software"):
         get_org("research")
 
 
-def test_software_runs_through_registry(tmp_path):
+def test_software_runs_through_registry_and_documents(tmp_path):
+    # The registry runs software with document=True, so the doc role is part of the run.
     run = get_org("software").build("add two numbers", PROVIDER, MemoryStore(tmp_path))
     assert run.org == "software" and run.accepted
-    assert [o.artifact.type for o in run.outcomes] == ["spec", "code"]
+    assert [o.artifact.type for o in run.outcomes] == ["spec", "code", "documentation"]
     assert run.run_id and run.activity
-
-
-def test_docs_runs_through_registry(tmp_path):
-    run = get_org("docs").build("list comprehensions", PROVIDER, MemoryStore(tmp_path))
-    assert run.org == "docs" and run.accepted
-    assert [o.artifact.type for o in run.outcomes] == ["docs-outline", "document"]
 
 
 def test_rejected_early_run_has_single_outcome(tmp_path):

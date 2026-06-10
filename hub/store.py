@@ -115,7 +115,8 @@ class RunStore:
         path = self.base / f"{run_id}.json"
         if not path.exists():
             return None
-        return json.loads(path.read_text(encoding="utf-8"))
+        data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        return data
 
     def list(self) -> list[dict[str, Any]]:
         runs = [json.loads(p.read_text(encoding="utf-8")) for p in self.base.glob("*.json")]

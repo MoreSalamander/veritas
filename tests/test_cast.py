@@ -87,3 +87,42 @@ def test_unparseable_qa_yields_no_findings(tmp_path):
         g for g in result.code_outcome.artifact.provenance.gate_results if g.gate_name == "qa-review"
     )
     assert qa.passed and "no usable" in qa.evidence
+
+
+# --- the doc role: documentation is a software-org role, not a separate org ---
+
+GOOD_DOC = "# add\n\nAdds two numbers.\n\n```python\nassert add(2, 3) == 5\nprint(add(4, 4))\n```\n"
+BROKEN_DOC = "# add\n\n```python\nassert add(2, 3) == 999\n```\n"
+NO_EXAMPLE_DOC = "# add\n\nAdds two numbers. (No example.)\n"
+
+
+def _doc_provider(doc: str) -> ScriptedProvider:
+    return ScriptedProvider({"spec": GOOD_SPEC, "developer": GOOD_CODE, "qa": "[]", "doc": doc})
+
+
+def test_doc_role_verifies_examples_against_the_function(tmp_path):
+    result = build_software("add two numbers", _doc_provider(GOOD_DOC),
+                            MemoryStore(tmp_path), document=True)
+    assert result.accepted
+    assert result.doc_outcome is not None and result.doc_outcome.accepted
+    assert result.doc_outcome.artifact.type == "documentation"
+    gate_names = [g.gate_name for g in result.doc_outcome.artifact.provenance.gate_results]
+    assert gate_names == ["examples-run", "validation"]
+
+
+def test_doc_with_broken_example_rejected_but_function_still_ships(tmp_path):
+    result = build_software("add", _doc_provider(BROKEN_DOC), MemoryStore(tmp_path), document=True)
+    assert result.accepted  # the FUNCTION passed its gates; a bad doc does not un-ship it
+    assert result.doc_outcome is not None and not result.doc_outcome.accepted
+    assert result.doc_outcome.memory_path.parent.name == "failures"
+
+
+def test_doc_must_actually_demonstrate_the_function(tmp_path):
+    result = build_software("add", _doc_provider(NO_EXAMPLE_DOC), MemoryStore(tmp_path), document=True)
+    assert result.doc_outcome is not None and not result.doc_outcome.accepted
+
+
+def test_no_doc_when_not_requested(tmp_path):
+    result = build_software("add", _doc_provider(GOOD_DOC), MemoryStore(tmp_path))
+    assert result.accepted
+    assert result.doc_outcome is None

@@ -132,3 +132,38 @@ class QAAgent:
             system=QA_SYSTEM,
         )
         return _parse_cases(raw)
+
+
+DOC_SYSTEM = (
+    "You are a technical writer documenting a single Python function that already "
+    "exists and is correct. Write a short Markdown doc: one or two sentences on what "
+    "it does, then at least one fenced ```python example that CALLS the function and "
+    "asserts or prints a result. The function is ALREADY DEFINED in the environment — "
+    "do NOT redefine it, just call it by name. Output ONLY the Markdown."
+)
+
+
+class DocAgent:
+    """The Documentation role — a software-org agent, not a separate org. It
+    documents the accepted function; its examples are verified to run against the
+    real implementation (same verification model as the code: execute it)."""
+
+    role = "doc"
+
+    def __init__(self, provider: ModelProvider) -> None:
+        self.provider = provider
+
+    def propose(
+        self, spec: SpecData, code: str, parent_id: str, lessons: str | None = None
+    ) -> Artifact:
+        prompt = f"Function name: {spec.function_name}\nImplementation:\n{code}"
+        if lessons:
+            prompt = f"{lessons}\n\n{prompt}"
+        raw = self.provider.propose(role=self.role, prompt=prompt, system=DOC_SYSTEM)
+        return Artifact.propose(
+            type="documentation",
+            owner="doc-agent",
+            payload=raw,
+            rationale=f"documentation for {spec.function_name}()",
+            parent_id=parent_id,
+        )

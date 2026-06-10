@@ -8,8 +8,17 @@ line of code is written. This is the myAIscript "pass-a-score" move, generalized
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
+
+_PY_BLOCK = re.compile(r"```(?:python|py)\s*\n(.*?)```", re.DOTALL)
+
+
+def extract_python_blocks(markdown: str) -> list[str]:
+    """Pull the fenced ```python blocks out of a markdown document — used by the
+    doc agent's examples-run gate to verify documentation examples actually run."""
+    return [m.group(1) for m in _PY_BLOCK.finditer(markdown)]
 
 
 class SpecParseError(ValueError):

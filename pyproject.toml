@@ -23,7 +23,7 @@ addopts = "-ra"
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["engine", "orgs"]
+files = ["engine", "orgs", "hub"]
 
 [[tool.mypy.overrides]]
 module = "yaml"

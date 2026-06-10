@@ -14,9 +14,10 @@ from engine.memory import MemoryStore, format_lessons
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome, Run
 from engine.validation import ValidationGate
-from orgs.software_studio.agents import DeveloperAgent, QAAgent, SpecAgent
+from orgs.software_studio.agents import DeveloperAgent, DocAgent, QAAgent, SpecAgent
 from orgs.software_studio.gates import (
     AcceptanceGate,
+    ExamplesRunGate,
     QAGate,
     SecurityScanGate,
     SpecScorerGate,
@@ -33,6 +34,7 @@ class StudioResult:
     informed_by: list[str] = field(default_factory=list)  # memory ids recalled for this build
     run_id: str = ""
     activity: list[ActivityEntry] = field(default_factory=list)
+    doc_outcome: Outcome | None = None  # set only when document=True and code shipped
 
 
 def build_function(goal: str, provider: ModelProvider, memory: MemoryStore) -> StudioResult:
@@ -55,11 +57,15 @@ def build_function(goal: str, provider: ModelProvider, memory: MemoryStore) -> S
     )
 
 
-def build_software(goal: str, provider: ModelProvider, memory: MemoryStore) -> StudioResult:
-    """Phase 2 pipeline: the full cast reviews the code. The code artifact carries
-    every reviewer's verdict in one provenance trail (the README's Validation
-    Doctrine example): syntax + acceptance + security (hard), QA (soft, advisory),
-    and Validation as the final authority before anything persists.
+def build_software(
+    goal: str, provider: ModelProvider, memory: MemoryStore, *, document: bool = False
+) -> StudioResult:
+    """The full cast reviews the code; Validation is the final authority. With
+    document=True, the Doc agent (a role in THIS org, not a separate org) then
+    documents the accepted function — and its examples are verified to run against
+    the real implementation by the same examples-run gate. Docs are checked by
+    executing code, the same verification model as the code, which is exactly why
+    they belong here and not in an org of their own.
 
     Before proposing anything, the org recalls its own relevant failures and lessons
     and feeds them to the proposers — so it stops repeating its own mistakes. What
@@ -97,6 +103,25 @@ def build_software(goal: str, provider: ModelProvider, memory: MemoryStore) -> S
             ValidationGate(),  # final authority — must run last
         ],
     )
+
+    # DOCUMENT — an optional role: document the accepted function, examples verified
+    # against the real code. A failed doc does NOT un-ship a verified function.
+    doc_outcome: Outcome | None = None
+    if document and code_outcome.accepted:
+        code_src = code_artifact.payload
+        doc_artifact = DocAgent(provider).propose(
+            spec, code_src, parent_id=code_artifact.id, lessons=lessons
+        )
+        doc_artifact.provenance.informed_by.extend(informed_by)
+        doc_outcome = run.submit(
+            doc_artifact,
+            [
+                ExamplesRunGate(preamble=code_src, must_reference=spec.function_name),
+                ValidationGate(),
+            ],
+        )
+
     return StudioResult(
-        spec_outcome, code_outcome, code_outcome.accepted, informed_by, run.id, list(run.log)
+        spec_outcome, code_outcome, code_outcome.accepted, informed_by, run.id, list(run.log),
+        doc_outcome=doc_outcome,
     )
