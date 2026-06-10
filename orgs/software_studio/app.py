@@ -124,7 +124,7 @@ class E2EGate(Gate):
         except Exception as exc:
             return self._result(False, f"e2e spec not usable: {exc}")
         for index, test in enumerate(tests):
-            result = self.executor.run(f"{self.app_code}\n{test}\n", {**os.environ}, self.timeout)
+            result = self.executor.run(f"import math\n{self.app_code}\n{test}\n", {**os.environ}, self.timeout)
             if not result.ok:
                 last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "non-zero exit"
                 return self._result(False, f"e2e test {index} failed: {last}")
@@ -142,7 +142,9 @@ INTEGRATOR_SYSTEM = (
 E2E_SYSTEM = (
     "You are a PM defining end-to-end acceptance for an app that exposes a `main(...)` "
     "entrypoint. Respond with ONLY a JSON array of Python assertion strings that CALL "
-    "main(...) and check end-to-end behavior. No prose, no fences."
+    "main(...). PREFER checks that DO NOT require computing exact numbers — round-trips that "
+    "return the input, invariants, fixed points. For float comparisons use math.isclose(...), "
+    "never ==. `math` is available. No prose, no fences."
 )
 
 

@@ -132,8 +132,11 @@ ARCHITECT_SYSTEM = (
 PM_SYSTEM = (
     "You are a product manager defining acceptance for a module. Given its functions, "
     "respond with ONLY a JSON array of Python assertion strings — no prose, no fences. Each "
-    "test must CALL AT LEAST TWO of the functions to check they work together (e.g. a "
-    "round-trip). The functions are already defined; just call them by name."
+    "test must CALL AT LEAST TWO of the functions together. PREFER checks that DO NOT require "
+    "you to compute exact numbers — round-trips that should return the input "
+    "(e.g. assert math.isclose(f(g(x)), x)), invariants, and known fixed points. For any float "
+    "comparison use math.isclose(...), never ==. `math` is available. The functions are "
+    "already defined; just call them by name."
 )
 MODULE_DEV_SYSTEM = (
     "You are a developer. Given a module contract (JSON), respond with ONLY Python source "
@@ -213,17 +216,24 @@ class ModuleDeveloperAgent:
 
 # --- the gates -------------------------------------------------------------------
 
-_CASES_HARNESS = (
-    "\nimport json as _j, os as _o\n"
-    "_t = _j.loads(_o.environ['VERITAS_TRIPLES'])\n"
-    "for _c in _t:\n"
-    "    _fn = globals().get(_c['fn'])\n"
-    "    if _fn is None: raise AssertionError(_c['fn'] + '() not defined')\n"
-    "    _g = _fn(*_c['args'])\n"
-    "    if _g != _c['expected']:\n"
-    "        raise AssertionError('%s(*%r) -> %r, expected %r' % (_c['fn'], _c['args'], _g, _c['expected']))\n"
-    "print('OK')\n"
-)
+_CASES_HARNESS = """
+import json as _j, os as _o, math as _m
+def _eq(a, b):
+    if isinstance(a, bool) or isinstance(b, bool):
+        return a == b
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return _m.isclose(a, b, rel_tol=1e-9, abs_tol=1e-9)
+    return a == b
+_t = _j.loads(_o.environ['VERITAS_TRIPLES'])
+for _c in _t:
+    _fn = globals().get(_c['fn'])
+    if _fn is None:
+        raise AssertionError(_c['fn'] + '() not defined')
+    _g = _fn(*_c['args'])
+    if not _eq(_g, _c['expected']):
+        raise AssertionError('%s(*%r) -> %r, expected %r' % (_c['fn'], _c['args'], _g, _c['expected']))
+print('OK')
+"""
 
 
 def _run_module_cases(
@@ -244,7 +254,7 @@ def _run_snippets(
     executor: Executor, code: str, snippets: list[str], timeout: float
 ) -> tuple[bool, str]:
     for index, snippet in enumerate(snippets):
-        result = executor.run(f"{code}\n{snippet}\n", {**os.environ}, timeout)
+        result = executor.run(f"import math\n{code}\n{snippet}\n", {**os.environ}, timeout)
         if not result.ok:
             last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "non-zero exit"
             return False, f"integration test {index} failed: {last}"

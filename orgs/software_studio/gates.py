@@ -33,19 +33,25 @@ from orgs.software_studio.spec import (
 # Data is never interpolated into source — cases ride as JSON through the
 # environment and are looped over. Immune to quoting/injection from spec values
 # (the lesson from the first real run).
-_HARNESS = (
-    "\nimport json as _json, os as _os\n"
-    '_cases = _json.loads(_os.environ["VERITAS_CASES"])\n'
-    '_fn = globals().get(_os.environ["VERITAS_FN"])\n'
-    "if _fn is None:\n"
-    '    raise AssertionError(_os.environ["VERITAS_FN"] + "() not found at module scope")\n'
-    "for _i, _c in enumerate(_cases):\n"
-    '    _got = _fn(*_c["args"])\n'
-    '    if _got != _c["expected"]:\n'
-    '        raise AssertionError("case %d: %s(*%r) -> %r, expected %r" % (\n'
-    '            _i, _os.environ["VERITAS_FN"], _c["args"], _got, _c["expected"]))\n'
-    'print("OK", len(_cases), "cases")\n'
-)
+_HARNESS = """
+import json as _json, os as _os, math as _math
+def _eq(a, b):
+    if isinstance(a, bool) or isinstance(b, bool):
+        return a == b
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return _math.isclose(a, b, rel_tol=1e-9, abs_tol=1e-9)
+    return a == b
+_cases = _json.loads(_os.environ["VERITAS_CASES"])
+_fn = globals().get(_os.environ["VERITAS_FN"])
+if _fn is None:
+    raise AssertionError(_os.environ["VERITAS_FN"] + "() not found at module scope")
+for _i, _c in enumerate(_cases):
+    _got = _fn(*_c["args"])
+    if not _eq(_got, _c["expected"]):
+        raise AssertionError("case %d: %s(*%r) -> %r, expected %r" % (
+            _i, _os.environ["VERITAS_FN"], _c["args"], _got, _c["expected"]))
+print("OK", len(_cases), "cases")
+"""
 
 
 _DEFAULT_EXECUTOR = LocalSubprocessExecutor()

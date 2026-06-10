@@ -75,6 +75,25 @@ def test_integration_gate_catches_composition_failure(tmp_path):
     assert result.code_outcome.memory_path.parent.name == "failures"
 
 
+def test_float_module_passes_with_metamorphic_tests(tmp_path):
+    # Regression: an F<->C app failed because the PM asserted wrong COMPUTED numbers on
+    # correct code. Metamorphic tests (round-trip returns the input) + math.isclose + float-
+    # tolerant cases make the gate legitimately hard without an LLM-computed oracle.
+    contract = json.dumps({"module_name": "temp", "functions": [
+        {"function_name": "f2c", "signature": "def f2c(f)",
+         "cases": [{"args": [32], "expected": 0}, {"args": [212], "expected": 100}]},
+        {"function_name": "c2f", "signature": "def c2f(c)",
+         "cases": [{"args": [0], "expected": 32}, {"args": [100], "expected": 212}]},
+    ]})
+    pm = json.dumps([
+        "assert math.isclose(f2c(c2f(100)), 100)",   # round-trip returns the input
+        "assert math.isclose(c2f(f2c(-40)), -40)",
+    ])
+    code = "def f2c(f):\n    return (f - 32) * 5 / 9\n\ndef c2f(c):\n    return c * 9 / 5 + 32\n"
+    result = build_module("temperature converter", _provider(contract, pm, code), MemoryStore(tmp_path))
+    assert result.accepted
+
+
 def test_contract_needs_at_least_two_functions(tmp_path):
     one_fn = json.dumps(
         {"module_name": "x", "functions": [
