@@ -23,7 +23,11 @@ from engine.model import ModelProvider, OllamaProvider
 from hub.store import RunStore, summarize
 from orgs.registry import REGISTRY, get_org
 
-_DATA = Path(os.environ.get("VERITAS_DATA", "./hub_data"))
+# Anchor the data dir to the repo root, NOT the launch directory, so the hub finds the
+# same runs no matter where it's started from. (Relative "./hub_data" silently moved the
+# data when the server was launched from a different cwd.) VERITAS_DATA overrides it.
+_ROOT = Path(__file__).resolve().parent.parent
+_DATA = Path(os.environ.get("VERITAS_DATA", str(_ROOT / "hub_data")))
 _STATIC = Path(__file__).parent / "static"
 
 
