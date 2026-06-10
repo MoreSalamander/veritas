@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from engine.artifact import Artifact, GateResult, _new_id, _now
+from engine.artifact import Artifact, Determinism, GateResult, _new_id, _now
 from engine.gate import Gate
 from engine.memory import MemoryRecord, MemoryStore
 
@@ -70,21 +70,30 @@ class Run:
         return results
 
     def persist(self, artifact: Artifact, gate_results: list[GateResult]) -> Outcome:
-        """Accept only if a gate earned it. Otherwise reject into failure memory.
+        """Accept only if the HARD gates earned it. Soft gates are advisory.
 
-        Invariant: zero gates can never accept. Green must be earned by a gate.
+        Invariant: zero HARD gates can never accept — you cannot be accepted on
+        judgment alone. A soft-gate failure is recorded as a finding, not a block.
         """
-        accepted = len(gate_results) > 0 and all(r.passed for r in gate_results)
+        hard = [r for r in gate_results if r.determinism is Determinism.HARD]
+        soft_failures = [
+            r for r in gate_results if r.determinism is Determinism.SOFT and not r.passed
+        ]
+        accepted = len(hard) > 0 and all(r.passed for r in hard)
         if accepted:
-            because = "all gates passed: " + ", ".join(r.gate_name for r in gate_results)
+            because = "all hard gates passed: " + ", ".join(r.gate_name for r in hard)
+            if soft_failures:
+                because += " | soft findings noted: " + ", ".join(
+                    r.gate_name for r in soft_failures
+                )
             artifact.accept(because)
             record = MemoryRecord.from_accepted_artifact(artifact)
         else:
             artifact.reject()
-            if not gate_results:
-                reason = "no verification ran — zero gates; green must be earned by a gate"
+            if not hard:
+                reason = "no hard verification ran — cannot accept on judgment alone"
             else:
-                failed = [r for r in gate_results if not r.passed]
+                failed = [r for r in hard if not r.passed]
                 reason = "; ".join(f"{r.gate_name}: {r.evidence}" for r in failed)
             record = MemoryRecord.from_rejected_artifact(artifact, reason)
 

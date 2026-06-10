@@ -38,6 +38,14 @@ class _SoftGate(Gate):
         return self._result(True, "judgment: reads fine")
 
 
+class _SoftFailGate(Gate):
+    name = "stub-soft-fail"
+    determinism = Determinism.SOFT
+
+    def check(self, artifact: Artifact):
+        return self._result(False, "judgment: I'd push back on this")
+
+
 def _artifact() -> Artifact:
     return Artifact.propose(
         type="code",
@@ -86,6 +94,22 @@ def test_zero_gates_can_never_accept(tmp_path):
     out = run.submit(_artifact(), [])
     assert not out.accepted
     assert out.artifact.status is ArtifactStatus.REJECTED
+
+
+def test_soft_gate_alone_can_never_accept(tmp_path):
+    # You cannot be accepted on judgment alone — a passing SOFT gate is not enough.
+    run = Run(goal="x", memory=MemoryStore(tmp_path))
+    out = run.submit(_artifact(), [_SoftGate()])
+    assert not out.accepted
+    assert out.artifact.status is ArtifactStatus.REJECTED
+
+
+def test_hard_pass_with_soft_failure_still_accepts(tmp_path):
+    # A failed SOFT gate is advisory: it is recorded as a finding, not a block.
+    run = Run(goal="x", memory=MemoryStore(tmp_path))
+    out = run.submit(_artifact(), [_PassGate(), _SoftFailGate()])
+    assert out.accepted
+    assert "soft findings noted" in (out.artifact.provenance.accepted_because or "")
 
 
 def test_gate_determinism_is_recorded_honestly(tmp_path):

@@ -39,7 +39,7 @@ def test_good_run_earns_code_into_memory(tmp_path):
     assert result.spec_outcome.accepted
     assert result.code_outcome is not None and result.code_outcome.accepted
     assert result.code_outcome.memory_path.parent.name == "institutional"
-    assert "all gates passed" in (result.code_outcome.artifact.provenance.accepted_because or "")
+    assert "all hard gates passed" in (result.code_outcome.artifact.provenance.accepted_because or "")
 
 
 def test_prose_spec_rejected_before_any_code(tmp_path):

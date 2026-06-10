@@ -16,7 +16,7 @@ from pathlib import Path
 
 from engine.memory import MemoryStore
 from engine.model import OllamaProvider
-from orgs.software_studio.pipeline import build_function
+from orgs.software_studio.pipeline import build_software
 
 
 def main() -> None:
@@ -34,7 +34,7 @@ def main() -> None:
 
     print(f"goal : {args.goal}")
     print(f"model: {args.model}\n")
-    result = build_function(args.goal, provider, memory)
+    result = build_software(args.goal, provider, memory)
 
     spec = result.spec_outcome
     print(f"SPEC  -> {'ACCEPTED' if spec.accepted else 'REJECTED'}  "
