@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from engine.memory import MemoryStore
 from engine.model import ModelProvider, OllamaProvider
 from hub.store import RunStore, summarize
-from orgs.software_studio.pipeline import build_software
+from orgs.registry import REGISTRY, get_org
 
 _DATA = Path(os.environ.get("VERITAS_DATA", "./hub_data"))
 _STATIC = Path(__file__).parent / "static"
@@ -29,25 +29,46 @@ _STATIC = Path(__file__).parent / "static"
 
 class RunRequest(BaseModel):
     goal: str
+    org: str = "software"
 
 
 def create_app(
     data_dir: Path | None = None, provider: ModelProvider | None = None
 ) -> FastAPI:
     base = Path(data_dir) if data_dir else _DATA
-    memory = MemoryStore(base / "memory")
     runs = RunStore(base / "runs")
     model: ModelProvider = provider or OllamaProvider(
         model=os.environ.get("VERITAS_MODEL", "llama3.1:8b")
     )
 
+    # Each org keeps its own institutional memory: recall stays relevant to the
+    # domain, and it mirrors how a hosted deployment would isolate tenants.
+    memories: dict[str, MemoryStore] = {}
+
+    def org_memory(org_name: str) -> MemoryStore:
+        if org_name not in memories:
+            memories[org_name] = MemoryStore(base / "memory" / org_name)
+        return memories[org_name]
+
     app = FastAPI(title="Veritas Hub")
+
+    @app.get("/api/orgs")
+    def list_orgs() -> list[dict[str, str]]:
+        return [
+            {
+                "name": org.name,
+                "title": org.title,
+                "description": org.description,
+                "goal_hint": org.goal_hint,
+            }
+            for org in REGISTRY.values()
+        ]
 
     @app.get("/api/dashboard")
     def dashboard() -> dict[str, Any]:
         all_runs = runs.list()
         accepted = sum(1 for r in all_runs if r.get("accepted"))
-        mem = memory.load_all()
+        mem = [m for org_name in REGISTRY for m in org_memory(org_name).load_all()]
         rate = (accepted / len(all_runs) * 100.0) if all_runs else 0.0
         return {
             "total_runs": len(all_runs),
@@ -55,6 +76,10 @@ def create_app(
             "success_rate": round(rate, 1),
             "memory_entries": len(mem),
             "failures": sum(1 for m in mem if m.category == "failure"),
+            "by_org": {
+                org_name: sum(1 for r in all_runs if r.get("org") == org_name)
+                for org_name in REGISTRY
+            },
             "recent": all_runs[:8],
         }
 
@@ -69,28 +94,32 @@ def create_app(
 
     @app.post("/api/runs")
     def create_run(req: RunRequest) -> dict[str, Any]:
-        result = build_software(req.goal, model, memory)
-        summary = summarize(req.goal, result, datetime.now(timezone.utc).isoformat())
+        org = get_org(req.org)  # KeyError -> 500 is acceptable locally; UI only offers known orgs
+        result = org.build(req.goal, model, org_memory(org.name))
+        summary = summarize(result, datetime.now(timezone.utc).isoformat())
         runs.save(summary)
         return runs.get(summary.id) or {}
 
     @app.get("/api/memory")
     def list_memory() -> list[dict[str, Any]]:
-        records = memory.load_all()
-        records.sort(key=lambda m: m.created_at, reverse=True)
-        return [
-            {
-                "id": m.id,
-                "category": m.category,
-                "title": m.title,
-                "tags": m.tags,
-                "created_at": m.created_at,
-                "informed_by": m.provenance.get("informed_by", []),
-                "accepted_because": m.provenance.get("accepted_because"),
-                "rejected_because": m.provenance.get("rejected_because"),
-            }
-            for m in records
-        ]
+        out: list[dict[str, Any]] = []
+        for org_name in REGISTRY:
+            for m in org_memory(org_name).load_all():
+                out.append(
+                    {
+                        "id": m.id,
+                        "org": org_name,
+                        "category": m.category,
+                        "title": m.title,
+                        "tags": m.tags,
+                        "created_at": m.created_at,
+                        "informed_by": m.provenance.get("informed_by", []),
+                        "accepted_because": m.provenance.get("accepted_because"),
+                        "rejected_because": m.provenance.get("rejected_because"),
+                    }
+                )
+        out.sort(key=lambda m: str(m["created_at"]), reverse=True)
+        return out
 
     @app.get("/")
     def index() -> FileResponse:

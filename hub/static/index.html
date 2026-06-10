@@ -30,6 +30,9 @@
   .row { display: flex; gap: 10px; align-items: center; }
   input[type=text] { flex: 1; background: #0c1119; border: 1px solid var(--line); color: var(--ink);
          padding: 12px 14px; border-radius: 10px; font-size: 14px; }
+  select { background: #0c1119; border: 1px solid var(--line); color: var(--ink);
+         padding: 12px 10px; border-radius: 10px; font-size: 14px; }
+  .pill.org { border-color: var(--cyan); color: var(--cyan); }
   button { background: var(--cyan); color: #04222a; border: 0; padding: 12px 18px; border-radius: 10px;
            font-weight: 700; cursor: pointer; }
   button:disabled { opacity: .5; cursor: wait; }
@@ -63,7 +66,8 @@
     <h2>New Run</h2>
     <div class="panel">
       <div class="row">
-        <input type="text" id="goal" placeholder="a function that returns the nth Fibonacci number" />
+        <select id="org"></select>
+        <input type="text" id="goal" placeholder="" />
         <button id="go">Run</button>
       </div>
       <div class="muted" id="runhint" style="margin-top:10px">The model proposes; the deterministic gates decide. A real run takes a few seconds.</div>
@@ -96,14 +100,26 @@ function gateLine(g) {
 }
 function runCard(r) {
   const tag = r.accepted ? '<span class="pill tag">SHIPPED</span>' : '<span class="pill tag rej">REJECTED</span>';
+  const org = r.org ? `<span class="pill org">${esc(r.org)}</span> ` : '';
   const arts = r.artifacts.map(a => `<span class="pill">${esc(a.type)} · ${esc(a.store)}</span>`).join(' ');
   const informed = r.informed_by && r.informed_by.length
     ? `<div class="muted" style="margin-top:8px">informed by ${r.informed_by.length} prior memory(ies): ${r.informed_by.map(esc).join(', ')}</div>` : '';
   return `<div class="panel"><div class="row" style="justify-content:space-between">
-      <strong>${esc(r.goal)}</strong>${tag}</div>
+      <span>${org}<strong>${esc(r.goal)}</strong></span>${tag}</div>
       <div style="margin:10px 0">${arts}</div>
       ${r.gates.map(gateLine).join('')}
       ${informed}</div>`;
+}
+
+let ORGS = [];
+async function loadOrgs() {
+  ORGS = await api('/api/orgs');
+  $('#org').innerHTML = ORGS.map(o => `<option value="${esc(o.name)}">${esc(o.title)}</option>`).join('');
+  syncHint();
+}
+function syncHint() {
+  const o = ORGS.find(x => x.name === $('#org').value);
+  if (o) $('#goal').placeholder = o.goal_hint;
 }
 
 async function loadDash() {
@@ -121,18 +137,20 @@ async function loadMemory() {
   const mem = await api('/api/memory');
   $('#memlist').innerHTML = mem.length ? mem.map(m => {
     const reason = m.rejected_because || m.accepted_because || '';
+    const org = m.org ? `<span class="pill org">${esc(m.org)}</span> ` : '';
     return `<div class="panel"><div class="row" style="justify-content:space-between">
-      <strong>${esc(m.title)}</strong><span class="pill">${esc(m.category)}</span></div>
+      <span>${org}<strong>${esc(m.title)}</strong></span><span class="pill">${esc(m.category)}</span></div>
       <div class="muted mono" style="margin-top:8px">${esc(reason)}</div></div>`;
   }).join('') : '<div class="muted">Memory is empty.</div>';
 }
 
+$('#org').onchange = syncHint;
 $('#go').onclick = async () => {
   const goal = $('#goal').value.trim();
   if (!goal) return;
   $('#go').disabled = true; $('#runhint').textContent = 'Running… the cast is reviewing the proposal.';
   try {
-    const r = await api('/api/runs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({goal}) });
+    const r = await api('/api/runs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({goal, org: $('#org').value}) });
     $('#latest').innerHTML = '<h2>Latest Run</h2>' + runCard(r);
     loadDash();
   } finally {
@@ -140,6 +158,7 @@ $('#go').onclick = async () => {
   }
 };
 
+loadOrgs();
 loadDash();
 </script>
 </body>

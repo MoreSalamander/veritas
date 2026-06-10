@@ -22,10 +22,26 @@ GOOD_SPEC = json.dumps(
     }
 )
 GOOD_CODE = "def add(a, b):\n    return a + b\n"
+DOCS_OUTLINE = json.dumps(
+    {"title": "List comprehensions", "sections": ["What they are", "Example"], "min_examples": 1}
+)
+GOOD_DOC = (
+    "# List comprehensions\n\n## What they are\nA compact way to build lists from "
+    "iterables in a single readable expression instead of an explicit loop.\n\n## Example\n"
+    "```python\nassert [x * x for x in range(3)] == [0, 1, 4]\n```\n"
+)
 
 
 def _client(tmp_path):
-    provider = ScriptedProvider({"spec": GOOD_SPEC, "developer": GOOD_CODE, "qa": "[]"})
+    provider = ScriptedProvider(
+        {
+            "spec": GOOD_SPEC,
+            "developer": GOOD_CODE,
+            "qa": "[]",
+            "outline": DOCS_OUTLINE,
+            "writer": GOOD_DOC,
+        }
+    )
     return TestClient(create_app(data_dir=tmp_path, provider=provider))
 
 
@@ -65,3 +81,31 @@ def test_index_is_served(tmp_path):
     resp = client.get("/")
     assert resp.status_code == 200
     assert "VERI" in resp.text
+
+
+def test_orgs_endpoint_lists_registry(tmp_path):
+    client = _client(tmp_path)
+    orgs = client.get("/api/orgs").json()
+    assert {o["name"] for o in orgs} == {"software", "docs"}
+
+
+def test_hub_hosts_both_orgs_with_isolated_memory(tmp_path):
+    client = _client(tmp_path)
+    sw = client.post("/api/runs", json={"goal": "add two numbers", "org": "software"}).json()
+    dx = client.post("/api/runs", json={"goal": "list comprehensions", "org": "docs"}).json()
+
+    assert sw["org"] == "software" and sw["accepted"]
+    assert dx["org"] == "docs" and dx["accepted"]
+    assert any(a["type"] == "document" for a in dx["artifacts"])
+
+    # Per-org memory namespaces on disk.
+    assert (tmp_path / "memory" / "software" / "institutional").exists()
+    assert (tmp_path / "memory" / "docs" / "institutional").exists()
+
+    # Memory endpoint tags records with their org.
+    mem = client.get("/api/memory").json()
+    assert {m["org"] for m in mem} == {"software", "docs"}
+
+    dash = client.get("/api/dashboard").json()
+    assert dash["total_runs"] == 2
+    assert dash["by_org"] == {"software": 1, "docs": 1}

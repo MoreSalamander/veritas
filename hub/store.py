@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from engine.run import Phase
-from orgs.software_studio.pipeline import StudioResult
+from orgs.registry import OrgRun
 
 
 @dataclass
@@ -46,6 +46,7 @@ class ActivityView:
 @dataclass
 class RunSummary:
     id: str
+    org: str
     goal: str
     accepted: bool
     created_at: str
@@ -55,12 +56,10 @@ class RunSummary:
     activity: list[ActivityView]
 
 
-def summarize(goal: str, result: StudioResult, created_at: str) -> RunSummary:
+def summarize(result: OrgRun, created_at: str) -> RunSummary:
     artifacts: list[ArtifactView] = []
     gates: list[GateView] = []
-    for outcome in (result.spec_outcome, result.code_outcome):
-        if outcome is None:
-            continue
+    for outcome in result.outcomes:
         art = outcome.artifact
         artifacts.append(
             ArtifactView(
@@ -91,7 +90,8 @@ def summarize(goal: str, result: StudioResult, created_at: str) -> RunSummary:
     ]
     return RunSummary(
         id=result.run_id,
-        goal=goal,
+        org=result.org,
+        goal=result.goal,
         accepted=result.accepted,
         created_at=created_at,
         informed_by=result.informed_by,
