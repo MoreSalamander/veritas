@@ -18,9 +18,12 @@ from orgs.software_studio.module import build_module
 from orgs.software_studio.pipeline import build_software
 
 ROUTER_SYSTEM = (
-    "Classify a software goal. Reply with EXACTLY one word: 'app' if it needs multiple "
-    "modules composed into a runnable program, 'module' if several functions working "
-    "together, otherwise 'function'. No other text."
+    "Classify a software goal by how much work it is, IGNORING words like 'app', 'program', "
+    "or 'tool'. Reply with EXACTLY one word: 'function' for a single calculation or operation "
+    "(e.g. convert a temperature, reverse a string, check if prime); 'module' for a few "
+    "closely-related functions (e.g. a pair of converters, a small calculator); 'app' ONLY for "
+    "multiple genuinely-independent components working together (e.g. storage + commands + "
+    "display). When unsure, pick the SMALLER shape. No other text."
 )
 
 
