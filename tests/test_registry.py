@@ -47,6 +47,7 @@ def test_registry_lists_both_orgs():
     assert set(REGISTRY) == {"software", "docs"}
     for org in REGISTRY.values():
         assert org.title and org.description and org.goal_hint
+        assert org.input_noun and org.produces and org.verified_by
 
 
 def test_unknown_org_raises_with_known_names():

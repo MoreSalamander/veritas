@@ -87,6 +87,7 @@ def test_orgs_endpoint_lists_registry(tmp_path):
     client = _client(tmp_path)
     orgs = client.get("/api/orgs").json()
     assert {o["name"] for o in orgs} == {"software", "docs"}
+    assert all(o["input_noun"] and o["produces"] and o["verified_by"] for o in orgs)
 
 
 def test_hub_hosts_both_orgs_with_isolated_memory(tmp_path):

@@ -59,6 +59,9 @@ def create_app(
                 "name": org.name,
                 "title": org.title,
                 "description": org.description,
+                "input_noun": org.input_noun,
+                "produces": org.produces,
+                "verified_by": org.verified_by,
                 "goal_hint": org.goal_hint,
             }
             for org in REGISTRY.values()

@@ -38,7 +38,10 @@ BuildFn = Callable[[str, ModelProvider, MemoryStore], OrgRun]
 class OrgType:
     name: str
     title: str
-    description: str
+    description: str  # one plain sentence of purpose
+    input_noun: str  # what you give it
+    produces: str  # the artifact you get
+    verified_by: str  # the gate chain, so the trust story is visible
     goal_hint: str
     build: BuildFn
 
@@ -79,16 +82,22 @@ REGISTRY: dict[str, OrgType] = {
     "software": OrgType(
         name="software",
         title="Software Studio",
-        description="A goal becomes a Python function pinned by an executable spec, "
-        "verified by syntax, acceptance, security, QA, and Validation gates.",
+        description="Turns a plain-language goal into a working Python function.",
+        input_noun="a plain-language goal",
+        produces="a verified Python function",
+        verified_by="executable spec → syntax → acceptance tests → security scan "
+        "→ QA (advisory) → Validation",
         goal_hint="a function that returns the nth Fibonacci number",
         build=_run_software,
     ),
     "docs": OrgType(
         name="docs",
         title="Docs Studio",
-        description="A topic becomes a technical explainer whose code examples are "
-        "executed and must run, verified by structure, examples-run, and Validation gates.",
+        description="Turns a topic into a technical explainer whose code examples actually run.",
+        input_noun="a topic",
+        produces="a Markdown explainer whose examples run",
+        verified_by="usable outline → required sections → every code example executed "
+        "→ readability (advisory) → Validation",
         goal_hint="python list comprehensions",
         build=_run_docs,
     ),

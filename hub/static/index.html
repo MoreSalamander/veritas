@@ -33,6 +33,11 @@
   select { background: #0c1119; border: 1px solid var(--line); color: var(--ink);
          padding: 12px 10px; border-radius: 10px; font-size: 14px; }
   .pill.org { border-color: var(--cyan); color: var(--cyan); }
+  .orginfo { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; color: var(--dim); }
+  .orginfo .what { color: var(--ink); margin-bottom: 6px; font-size: 14px; }
+  .orginfo b { color: var(--ink); font-weight: 600; }
+  .orginfo .flow { margin: 4px 0; }
+  .orginfo .chk { font-family: var(--mono); font-size: 12px; color: var(--cyan); }
   button { background: var(--cyan); color: #04222a; border: 0; padding: 12px 18px; border-radius: 10px;
            font-weight: 700; cursor: pointer; }
   button:disabled { opacity: .5; cursor: wait; }
@@ -71,6 +76,7 @@
         <button id="go">Run</button>
       </div>
       <div class="muted" id="runhint" style="margin-top:10px">The model proposes; the deterministic gates decide. A real run takes a few seconds.</div>
+      <div id="orginfo" class="orginfo"></div>
     </div>
     <div id="latest"></div>
   </section>
@@ -119,7 +125,12 @@ async function loadOrgs() {
 }
 function syncHint() {
   const o = ORGS.find(x => x.name === $('#org').value);
-  if (o) $('#goal').placeholder = o.goal_hint;
+  if (!o) return;
+  $('#goal').placeholder = o.goal_hint;
+  $('#orginfo').innerHTML =
+    `<div class="what">${esc(o.description)}</div>
+     <div class="flow">You give it <b>${esc(o.input_noun)}</b> → you get <b>${esc(o.produces)}</b></div>
+     <div class="flow">Verified by: <span class="chk">${esc(o.verified_by)}</span></div>`;
 }
 
 async function loadDash() {
