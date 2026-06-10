@@ -12,8 +12,8 @@ dependencies = ["pyyaml>=6.0"]
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "mypy>=1.8"]
 
-[tool.setuptools]
-packages = ["engine"]
+[tool.setuptools.packages.find]
+include = ["engine*", "orgs*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -22,7 +22,7 @@ addopts = "-ra"
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["engine"]
+files = ["engine", "orgs"]
 
 [[tool.mypy.overrides]]
 module = "yaml"

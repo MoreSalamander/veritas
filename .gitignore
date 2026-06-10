@@ -19,6 +19,7 @@ htmlcov/
 # Local model / runtime artifacts
 *.log
 .DS_Store
+.demo_memory/
 
 # Memory store: keep structure, ignore local run data (revisit when memory format settles)
 # (nothing ignored yet — institutional memory is versioned until we decide otherwise)
