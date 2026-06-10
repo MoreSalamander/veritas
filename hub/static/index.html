@@ -111,8 +111,7 @@ function gateLine(g) {
 }
 function artifactBlock(org, a) {
   const loc = `hub_data/memory/${esc(org)}/${esc(a.store)}/${esc(a.file)}`;
-  const show = ['code', 'documentation', 'spec'].includes(a.type);
-  const body = show ? `<pre class="code">${esc(a.payload)}</pre>` : '';
+  const body = a.payload ? `<pre class="code">${esc(a.payload)}</pre>` : '';
   return `<div class="artifact"><div class="loc">${esc(a.type)} → ${loc}</div>${body}</div>`;
 }
 function runCard(r) {

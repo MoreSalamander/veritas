@@ -50,3 +50,31 @@ def test_explicit_shape_overrides_router(tmp_path):
     provider = ScriptedProvider({"architect": CONTRACT, "pm": PM, "developer": MODULE})
     result = build("anything", provider, MemoryStore(tmp_path), shape="module")
     assert result.shape == "module" and result.accepted
+
+
+def test_routes_to_app(tmp_path):
+    from engine.model import SequencedProvider
+
+    plan = json.dumps({"app_name": "store", "modules": [
+        {"module_name": "storage", "goal": "save and load"},
+        {"module_name": "ops", "goal": "add and confirm"}]})
+    c1 = json.dumps({"module_name": "storage", "functions": [
+        {"function_name": "save", "signature": "def save(x)", "cases": [{"args": [5], "expected": 5}]},
+        {"function_name": "load", "signature": "def load(x)", "cases": [{"args": [5], "expected": 5}]}]})
+    c2 = json.dumps({"module_name": "ops", "functions": [
+        {"function_name": "add", "signature": "def add(a, b)", "cases": [{"args": [1, 1], "expected": 2}]},
+        {"function_name": "confirm", "signature": "def confirm(x)", "cases": [{"args": [1], "expected": True}]}]})
+    provider = SequencedProvider({
+        "router": ["app"],
+        "planner": [plan],
+        "architect": [c1, c2],
+        "pm": [json.dumps(["assert load(save(7)) == 7"]),
+               json.dumps(["assert confirm(add(1, 1)) == True"]),
+               json.dumps(["assert main(1) == True"])],
+        "developer": ["def save(x):\n    return x\n\ndef load(x):\n    return x\n",
+                      "def add(a, b):\n    return a + b\n\ndef confirm(x):\n    return True\n"],
+        "integrator": ["def main(x):\n    return confirm(add(load(save(x)), 1))\n"],
+    })
+    result = build("a tiny store app", provider, MemoryStore(tmp_path))
+    assert result.shape == "app" and result.accepted
+    assert [o.artifact.type for o in result.outcomes] == ["plan", "package", "entrypoint", "e2e-spec"]

@@ -65,13 +65,12 @@ REGISTRY: dict[str, OrgType] = {
     "software": OrgType(
         name="software",
         title="Software Studio",
-        description="Turns a plain-language goal into a working Python function, then "
-        "documents it. (Documentation is a role here, not a separate org — docs are "
-        "verified the same way code is: by executing them.)",
-        input_noun="a plain-language goal",
-        produces="a verified Python function plus documentation whose examples run",
-        verified_by="executable spec → syntax → acceptance tests → security scan "
-        "→ QA (advisory) → Validation → documentation (examples run against the function)",
+        description="Turns a goal into working Python — picking the shape automatically: a "
+        "single function, a small module, or a runnable multi-module app.",
+        input_noun="a software goal",
+        produces="verified Python (a function, a module, or a runnable app)",
+        verified_by="every artifact gated (spec/contract/code/security/validation); a module "
+        "must pass its integration test, an app must pass an end-to-end test that runs it",
         goal_hint="a function that returns the nth Fibonacci number",
         build=_run_software,
     ),

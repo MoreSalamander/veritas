@@ -13,12 +13,14 @@ from dataclasses import dataclass, field
 from engine.memory import MemoryStore
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome
+from orgs.software_studio.app import build_app
 from orgs.software_studio.module import build_module
 from orgs.software_studio.pipeline import build_software
 
 ROUTER_SYSTEM = (
-    "Classify a software goal. Reply with EXACTLY one word: 'module' if it needs several "
-    "functions working together, otherwise 'function'. No other text."
+    "Classify a software goal. Reply with EXACTLY one word: 'app' if it needs multiple "
+    "modules composed into a runnable program, 'module' if several functions working "
+    "together, otherwise 'function'. No other text."
 )
 
 
@@ -34,7 +36,12 @@ class Router:
             raw = self.provider.propose(role=self.role, prompt=f"Goal: {goal}", system=ROUTER_SYSTEM)
         except Exception:
             return "function"
-        return "module" if "module" in raw.strip().lower() else "function"
+        text = raw.strip().lower()
+        if "app" in text:
+            return "app"
+        if "module" in text:
+            return "module"
+        return "function"
 
 
 @dataclass
@@ -50,7 +57,15 @@ class BuildResult:
 def build(
     goal: str, provider: ModelProvider, memory: MemoryStore, *, shape: str = "auto"
 ) -> BuildResult:
-    chosen = shape if shape in ("function", "module") else Router(provider).classify(goal)
+    chosen = shape if shape in ("function", "module", "app") else Router(provider).classify(goal)
+
+    if chosen == "app":
+        a = build_app(goal, provider, memory)
+        outcomes = [a.plan_outcome]
+        for o in (a.package_outcome, a.entrypoint_outcome, a.e2e_outcome):
+            if o is not None:
+                outcomes.append(o)
+        return BuildResult("app", a.accepted, outcomes, a.informed_by, a.run_id, a.activity)
 
     if chosen == "module":
         m = build_module(goal, provider, memory)
