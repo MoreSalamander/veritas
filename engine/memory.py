@@ -47,6 +47,20 @@ def _tokens(text: str) -> set[str]:
     return out
 
 
+def format_lessons(recalled: list["MemoryRecord"]) -> str | None:
+    """Turn recalled failures/lessons into a prompt preamble. Org-agnostic — any
+    org's proposers can be warned by the org's own past mistakes this way."""
+    if not recalled:
+        return None
+    lines = ["Lessons from past attempts at similar goals (avoid repeating these):"]
+    for record in recalled:
+        reason = record.provenance.get("rejected_because")
+        if not reason:
+            reason = record.body.splitlines()[0] if record.body else record.title
+        lines.append(f"- {record.title}: {reason}")
+    return "\n".join(lines)
+
+
 @dataclass
 class MemoryRecord:
     category: str  # "artifact" | "failure" | (later: decision/lesson/constraint/outcome)

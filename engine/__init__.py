@@ -14,8 +14,9 @@ from engine.artifact import (
 )
 from engine.executor import ExecResult, Executor, LocalSubprocessExecutor
 from engine.gate import Gate
-from engine.memory import MemoryRecord, MemoryStore
+from engine.memory import MemoryRecord, MemoryStore, format_lessons
 from engine.run import ActivityEntry, Outcome, Phase, Run
+from engine.validation import ValidationGate
 
 __all__ = [
     "Artifact",
@@ -24,11 +25,13 @@ __all__ = [
     "GateResult",
     "Provenance",
     "Gate",
+    "ValidationGate",
     "Executor",
     "LocalSubprocessExecutor",
     "ExecResult",
     "MemoryRecord",
     "MemoryStore",
+    "format_lessons",
     "ActivityEntry",
     "Outcome",
     "Phase",

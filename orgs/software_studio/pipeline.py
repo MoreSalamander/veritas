@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from engine.memory import MemoryRecord, MemoryStore
+from engine.memory import MemoryStore, format_lessons
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome, Run
+from engine.validation import ValidationGate
 from orgs.software_studio.agents import DeveloperAgent, QAAgent, SpecAgent
 from orgs.software_studio.gates import (
     AcceptanceGate,
@@ -20,7 +21,6 @@ from orgs.software_studio.gates import (
     SecurityScanGate,
     SpecScorerGate,
     SyntaxGate,
-    ValidationGate,
 )
 from orgs.software_studio.spec import parse_spec
 
@@ -33,18 +33,6 @@ class StudioResult:
     informed_by: list[str] = field(default_factory=list)  # memory ids recalled for this build
     run_id: str = ""
     activity: list[ActivityEntry] = field(default_factory=list)
-
-
-def _format_lessons(recalled: list[MemoryRecord]) -> str | None:
-    if not recalled:
-        return None
-    lines = ["Lessons from past attempts at similar goals (avoid repeating these):"]
-    for record in recalled:
-        reason = record.provenance.get("rejected_because")
-        if not reason:
-            reason = record.body.splitlines()[0] if record.body else record.title
-        lines.append(f"- {record.title}: {reason}")
-    return "\n".join(lines)
 
 
 def build_function(goal: str, provider: ModelProvider, memory: MemoryStore) -> StudioResult:
@@ -80,7 +68,7 @@ def build_software(goal: str, provider: ModelProvider, memory: MemoryStore) -> S
 
     # The org reads its own memory first.
     recalled = memory.recall(goal, categories=["failure", "lesson"], limit=3)
-    lessons = _format_lessons(recalled)
+    lessons = format_lessons(recalled)
     informed_by = [record.id for record in recalled]
 
     # EXPLAIN — the spec must be executable before anyone writes code.
