@@ -92,10 +92,12 @@ REGISTRY: dict[str, OrgType] = {
     ),
     "docs": OrgType(
         name="docs",
-        title="Docs Studio",
-        description="Turns a topic into a technical explainer whose code examples actually run.",
-        input_noun="a topic",
-        produces="a Markdown explainer whose examples run",
+        title="Code Docs Studio",
+        description="Turns a programming topic into a technical explainer whose code "
+        "examples are verified to actually run. (Code topics only — its gate is "
+        "executing the examples, so there must be code to execute.)",
+        input_noun="a programming topic",
+        produces="a Markdown explainer with runnable code examples",
         verified_by="usable outline → required sections → every code example executed "
         "→ readability (advisory) → Validation",
         goal_hint="python list comprehensions",
