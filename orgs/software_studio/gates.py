@@ -18,11 +18,10 @@ from __future__ import annotations
 import ast
 import json
 import os
-import subprocess
-import sys
 from typing import Any
 
 from engine.artifact import Artifact, Determinism, GateResult
+from engine.executor import Executor, LocalSubprocessExecutor
 from engine.gate import Gate
 from orgs.software_studio.spec import SpecData, SpecParseError, parse_spec
 
@@ -44,29 +43,25 @@ _HARNESS = (
 )
 
 
+_DEFAULT_EXECUTOR = LocalSubprocessExecutor()
+
+
 def _run_cases(
-    code: str, function_name: str, cases: list[dict[str, Any]], timeout: float
+    executor: Executor,
+    code: str,
+    function_name: str,
+    cases: list[dict[str, Any]],
+    timeout: float,
 ) -> tuple[bool, str]:
-    """Run `cases` against `code` in an isolated subprocess. Deterministic given the
-    same code+cases. Subprocess isolation is the floor of safety for model code;
-    real sandboxing is a later hardening pass (roadmap)."""
+    """Run `cases` against `code` through the execution boundary. Deterministic given
+    the same code+cases. The executor is what makes this hosting-safe later."""
     if not cases:
         return True, "no cases to run"
     env = {**os.environ, "VERITAS_CASES": json.dumps(cases), "VERITAS_FN": function_name}
-    script = f"{code}\n{_HARNESS}"
-    try:
-        proc = subprocess.run(
-            [sys.executable, "-c", script],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env=env,
-        )
-    except subprocess.TimeoutExpired:
-        return False, f"timed out after {timeout}s"
-    if proc.returncode == 0:
+    result = executor.run(f"{code}\n{_HARNESS}", env, timeout)
+    if result.ok:
         return True, f"{len(cases)}/{len(cases)} cases passed"
-    last = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else "non-zero exit"
+    last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "non-zero exit"
     return False, last
 
 
@@ -110,14 +105,17 @@ class AcceptanceGate(Gate):
     name = "acceptance-tests"
     determinism = Determinism.HARD
 
-    def __init__(self, spec: SpecData, timeout: float = 10.0) -> None:
+    def __init__(
+        self, spec: SpecData, executor: Executor | None = None, timeout: float = 10.0
+    ) -> None:
         self.spec = spec
+        self.executor = executor or _DEFAULT_EXECUTOR
         self.timeout = timeout
 
     def check(self, artifact: Artifact) -> GateResult:
         cases = [{"args": c.args, "expected": c.expected} for c in self.spec.cases]
         passed, evidence = _run_cases(
-            artifact.payload, self.spec.function_name, cases, self.timeout
+            self.executor, artifact.payload, self.spec.function_name, cases, self.timeout
         )
         return self._result(passed, evidence)
 
@@ -168,17 +166,22 @@ class QAGate(Gate):
     determinism = Determinism.SOFT
 
     def __init__(
-        self, function_name: str, cases: list[dict[str, Any]], timeout: float = 10.0
+        self,
+        function_name: str,
+        cases: list[dict[str, Any]],
+        executor: Executor | None = None,
+        timeout: float = 10.0,
     ) -> None:
         self.function_name = function_name
         self.cases = cases
+        self.executor = executor or _DEFAULT_EXECUTOR
         self.timeout = timeout
 
     def check(self, artifact: Artifact) -> GateResult:
         if not self.cases:
             return self._result(True, "QA produced no usable independent cases")
         passed, evidence = _run_cases(
-            artifact.payload, self.function_name, self.cases, self.timeout
+            self.executor, artifact.payload, self.function_name, self.cases, self.timeout
         )
         if passed:
             return self._result(True, f"QA: {len(self.cases)} independent case(s) consistent")

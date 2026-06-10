@@ -12,6 +12,7 @@ PROPOSED and the engine decides its fate honestly.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
@@ -35,6 +36,7 @@ class ActivityEntry:
     phase: Phase
     actor: str
     message: str
+    duration_ms: float = 0.0
     at: str = field(default_factory=_now)
 
 
@@ -54,19 +56,23 @@ class Run:
         self.log: list[ActivityEntry] = []
         self.phase: Phase = Phase.EXPLAIN
 
-    def _activity(self, phase: Phase, actor: str, message: str) -> None:
+    def _activity(self, phase: Phase, actor: str, message: str, duration_ms: float = 0.0) -> None:
         self.phase = phase
-        self.log.append(ActivityEntry(phase=phase, actor=actor, message=message))
+        self.log.append(
+            ActivityEntry(phase=phase, actor=actor, message=message, duration_ms=duration_ms)
+        )
 
     def verify(self, artifact: Artifact, gates: Sequence[Gate]) -> list[GateResult]:
         """Run every gate, recording each verdict onto the artifact's provenance."""
         results: list[GateResult] = []
         for gate in gates:
+            started = time.perf_counter()
             result = gate.check(artifact)
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
             artifact.record_gate(result)
             results.append(result)
             verdict = "PASS" if result.passed else "FAIL"
-            self._activity(Phase.VERIFY, gate.name, f"{verdict}: {result.evidence}")
+            self._activity(Phase.VERIFY, gate.name, f"{verdict}: {result.evidence}", elapsed_ms)
         return results
 
     def persist(self, artifact: Artifact, gate_results: list[GateResult]) -> Outcome:

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 from engine.memory import MemoryRecord, MemoryStore
 from engine.model import ModelProvider
-from engine.run import Outcome, Run
+from engine.run import ActivityEntry, Outcome, Run
 from orgs.software_studio.agents import DeveloperAgent, QAAgent, SpecAgent
 from orgs.software_studio.gates import (
     AcceptanceGate,
@@ -31,6 +31,8 @@ class StudioResult:
     code_outcome: Outcome | None  # None when the spec was rejected first
     accepted: bool
     informed_by: list[str] = field(default_factory=list)  # memory ids recalled for this build
+    run_id: str = ""
+    activity: list[ActivityEntry] = field(default_factory=list)
 
 
 def _format_lessons(recalled: list[MemoryRecord]) -> str | None:
@@ -52,7 +54,7 @@ def build_function(goal: str, provider: ModelProvider, memory: MemoryStore) -> S
     spec_artifact = SpecAgent(provider).propose(goal)
     spec_outcome = run.submit(spec_artifact, [SpecScorerGate()])
     if not spec_outcome.accepted:
-        return StudioResult(spec_outcome=spec_outcome, code_outcome=None, accepted=False)
+        return StudioResult(spec_outcome, None, False, [], run.id, list(run.log))
 
     spec = parse_spec(spec_artifact.payload)
     code_artifact = DeveloperAgent(provider).propose(spec, parent_id=spec_artifact.id)
@@ -61,9 +63,7 @@ def build_function(goal: str, provider: ModelProvider, memory: MemoryStore) -> S
         [SyntaxGate(spec.function_name), AcceptanceGate(spec)],
     )
     return StudioResult(
-        spec_outcome=spec_outcome,
-        code_outcome=code_outcome,
-        accepted=code_outcome.accepted,
+        spec_outcome, code_outcome, code_outcome.accepted, [], run.id, list(run.log)
     )
 
 
@@ -88,7 +88,7 @@ def build_software(goal: str, provider: ModelProvider, memory: MemoryStore) -> S
     spec_artifact.provenance.informed_by.extend(informed_by)
     spec_outcome = run.submit(spec_artifact, [SpecScorerGate()])
     if not spec_outcome.accepted:
-        return StudioResult(spec_outcome, None, False, informed_by)
+        return StudioResult(spec_outcome, None, False, informed_by, run.id, list(run.log))
     spec = parse_spec(spec_artifact.payload)
 
     # QA writes independent tests from the spec — never seeing the implementation.
@@ -109,4 +109,6 @@ def build_software(goal: str, provider: ModelProvider, memory: MemoryStore) -> S
             ValidationGate(),  # final authority — must run last
         ],
     )
-    return StudioResult(spec_outcome, code_outcome, code_outcome.accepted, informed_by)
+    return StudioResult(
+        spec_outcome, code_outcome, code_outcome.accepted, informed_by, run.id, list(run.log)
+    )
