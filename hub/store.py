@@ -33,6 +33,7 @@ class ArtifactView:
     status: str
     store: str  # "institutional" | "failures"
     file: str
+    payload: str  # the actual content (the code, the documentation, the spec)
 
 
 @dataclass
@@ -68,6 +69,7 @@ def summarize(result: OrgRun, created_at: str) -> RunSummary:
                 status=art.status.value,
                 store=outcome.memory_path.parent.name,
                 file=outcome.memory_path.name,
+                payload=art.payload,
             )
         )
         for gr in art.provenance.gate_results:

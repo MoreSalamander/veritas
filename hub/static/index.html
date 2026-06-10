@@ -38,6 +38,11 @@
   .orginfo b { color: var(--ink); font-weight: 600; }
   .orginfo .flow { margin: 4px 0; }
   .orginfo .chk { font-family: var(--mono); font-size: 12px; color: var(--cyan); }
+  .artifact { margin-top: 12px; }
+  .artifact .loc { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+  pre.code { background: #0c1119; border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px;
+             overflow-x: auto; font-family: var(--mono); font-size: 12px; color: var(--ink);
+             white-space: pre; margin: 0; line-height: 1.5; }
   button { background: var(--cyan); color: #04222a; border: 0; padding: 12px 18px; border-radius: 10px;
            font-weight: 700; cursor: pointer; }
   button:disabled { opacity: .5; cursor: wait; }
@@ -104,16 +109,21 @@ function gateLine(g) {
   const mark = g.passed ? 'pass' : 'FAIL';
   return `<div class="gate"><span><span class="${cls}">${mark}</span> &nbsp;${esc(g.gate)} <span class="muted">[${g.determinism}]</span></span><span class="muted">${esc(g.evidence)}</span></div>`;
 }
+function artifactBlock(org, a) {
+  const loc = `hub_data/memory/${esc(org)}/${esc(a.store)}/${esc(a.file)}`;
+  const show = ['code', 'documentation', 'spec'].includes(a.type);
+  const body = show ? `<pre class="code">${esc(a.payload)}</pre>` : '';
+  return `<div class="artifact"><div class="loc">${esc(a.type)} → ${loc}</div>${body}</div>`;
+}
 function runCard(r) {
   const tag = r.accepted ? '<span class="pill tag">SHIPPED</span>' : '<span class="pill tag rej">REJECTED</span>';
   const org = r.org ? `<span class="pill org">${esc(r.org)}</span> ` : '';
-  const arts = r.artifacts.map(a => `<span class="pill">${esc(a.type)} · ${esc(a.store)}</span>`).join(' ');
   const informed = r.informed_by && r.informed_by.length
     ? `<div class="muted" style="margin-top:8px">informed by ${r.informed_by.length} prior memory(ies): ${r.informed_by.map(esc).join(', ')}</div>` : '';
   return `<div class="panel"><div class="row" style="justify-content:space-between">
       <span>${org}<strong>${esc(r.goal)}</strong></span>${tag}</div>
-      <div style="margin:10px 0">${arts}</div>
-      ${r.gates.map(gateLine).join('')}
+      <div style="margin:10px 0">${r.gates.map(gateLine).join('')}</div>
+      ${r.artifacts.map(a => artifactBlock(r.org, a)).join('')}
       ${informed}</div>`;
 }
 
@@ -149,9 +159,12 @@ async function loadMemory() {
   $('#memlist').innerHTML = mem.length ? mem.map(m => {
     const reason = m.rejected_because || m.accepted_because || '';
     const org = m.org ? `<span class="pill org">${esc(m.org)}</span> ` : '';
+    const loc = m.file ? `<div class="loc">${esc(m.file)}</div>` : '';
+    const body = m.body ? `<pre class="code">${esc(m.body)}</pre>` : '';
     return `<div class="panel"><div class="row" style="justify-content:space-between">
       <span>${org}<strong>${esc(m.title)}</strong></span><span class="pill">${esc(m.category)}</span></div>
-      <div class="muted mono" style="margin-top:8px">${esc(reason)}</div></div>`;
+      <div class="muted mono" style="margin:8px 0">${esc(reason)}</div>
+      ${loc}${body}</div>`;
   }).join('') : '<div class="muted">Memory is empty.</div>';
 }
 

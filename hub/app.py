@@ -115,6 +115,8 @@ def create_app(
                         "category": m.category,
                         "title": m.title,
                         "tags": m.tags,
+                        "body": m.body,
+                        "file": f"memory/{org_name}/{'failures' if m.category == 'failure' else 'institutional'}/{m.id}.md",
                         "created_at": m.created_at,
                         "informed_by": m.provenance.get("informed_by", []),
                         "accepted_because": m.provenance.get("accepted_because"),
