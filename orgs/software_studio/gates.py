@@ -23,6 +23,7 @@ from typing import Any
 from engine.artifact import Artifact, Determinism, GateResult
 from engine.executor import Executor, LocalSubprocessExecutor
 from engine.gate import Gate
+from orgs.software_studio.oracle import VotingOracle
 from orgs.software_studio.properties import (
     PROPERTY_HARNESS,
     Property,
@@ -266,6 +267,67 @@ class QAGate(Gate):
             return self._result(True, f"QA: {len(self.cases)} independent case(s) consistent")
         return self._result(
             False, f"QA flagged a discrepancy (advisory, oracle unverified): {evidence}"
+        )
+
+
+class ConsensusGate(Gate):
+    """P13d — SOFT graded-confidence check for the value gap properties can't reach. For each
+    spec input it re-derives the expected output by INDEPENDENT vote (the VotingOracle), then
+    checks the code against that consensus and reports how strongly the draws agreed. Stays
+    soft because agreement is correlated confidence, not certainty: a discrepancy is a
+    strong advisory (likely wrong), never a hard block."""
+
+    name = "consensus"
+    determinism = Determinism.SOFT
+
+    def __init__(
+        self,
+        spec: SpecData,
+        oracle: VotingOracle,
+        executor: Executor | None = None,
+        timeout: float = 10.0,
+    ) -> None:
+        self.spec = spec
+        self.oracle = oracle
+        self.executor = executor or _DEFAULT_EXECUTOR
+        self.timeout = timeout
+
+    def check(self, artifact: Artifact) -> GateResult:
+        inputs = [c.args for c in self.spec.cases]
+        if not inputs:
+            return self._result(True, "no inputs to vote on")
+
+        consensus_cases: list[dict[str, Any]] = []
+        weakest = 1.0
+        label = "high"
+        for args in inputs:
+            vote = self.oracle.vote(
+                function_name=self.spec.function_name,
+                description=self.spec.description,
+                args=args,
+            )
+            if vote.total == 0:
+                continue
+            consensus_cases.append({"args": args, "expected": vote.consensus})
+            if vote.agreement <= weakest:
+                weakest, label = vote.agreement, vote.confidence()
+
+        if not consensus_cases:
+            return self._result(True, "oracles produced no usable votes — no added confidence")
+
+        passed, evidence = _run_cases(
+            self.executor, artifact.payload, self.spec.function_name, consensus_cases, self.timeout
+        )
+        n = len(consensus_cases)
+        if passed:
+            return self._result(
+                True,
+                f"code matches the re-derived consensus on {n} input(s); "
+                f"confidence={label} (min agreement {weakest:.0%})",
+            )
+        return self._result(
+            False,
+            f"code disagrees with the re-derived consensus (advisory, {label} confidence): {evidence}",
         )
 
 

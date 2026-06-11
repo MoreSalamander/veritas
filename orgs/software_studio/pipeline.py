@@ -18,6 +18,7 @@ from engine.validation import ValidationGate
 from orgs.software_studio.agents import DeveloperAgent, DocAgent, QAAgent, SpecAgent
 from orgs.software_studio.gates import (
     AcceptanceGate,
+    ConsensusGate,
     ExamplesRunGate,
     PropertyGate,
     QAGate,
@@ -25,6 +26,7 @@ from orgs.software_studio.gates import (
     SpecScorerGate,
     SyntaxGate,
 )
+from orgs.software_studio.oracle import VotingOracle
 from orgs.software_studio.spec import parse_spec
 
 
@@ -64,7 +66,12 @@ def build_function(goal: str, provider: ModelProvider, memory: MemoryStore) -> S
 
 
 def build_software(
-    goal: str, provider: ModelProvider, memory: MemoryStore, *, document: bool = False
+    goal: str,
+    provider: ModelProvider,
+    memory: MemoryStore,
+    *,
+    document: bool = False,
+    oracle: VotingOracle | None = None,
 ) -> StudioResult:
     """The full cast reviews the code; Validation is the final authority. With
     document=True, the Doc agent (a role in THIS org, not a separate org) then
@@ -103,17 +110,18 @@ def build_software(
         art.provenance.informed_by.extend(informed_by)
         return art
 
-    code_outcome = run.attempt(
-        propose_code,
-        [
-            SyntaxGate(spec.function_name),
-            PropertyGate(spec.function_name, spec.properties),  # HARD behavioral authority
-            AcceptanceGate(spec),  # SOFT — exact cases are a model-authored oracle
-            SecurityScanGate(),
-            QAGate(spec.function_name, qa_cases),
-            ValidationGate(),  # final authority — must run last
-        ],
-    )
+    gates = [
+        SyntaxGate(spec.function_name),
+        PropertyGate(spec.function_name, spec.properties),  # HARD behavioral authority
+        AcceptanceGate(spec),  # SOFT — exact cases are a model-authored oracle
+        SecurityScanGate(),
+        QAGate(spec.function_name, qa_cases),
+    ]
+    if oracle is not None:  # SOFT graded-confidence vote, for the value gap properties can't reach
+        gates.append(ConsensusGate(spec, oracle))
+    gates.append(ValidationGate())  # final authority — must run last
+
+    code_outcome = run.attempt(propose_code, gates)
     code_artifact = code_outcome.artifact
 
     # DOCUMENT — an optional role: document the accepted function, examples verified
