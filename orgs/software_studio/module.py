@@ -265,7 +265,8 @@ def _run_snippets(
         result = executor.run(f"import math\n{code}\n{snippet}\n", {**os.environ}, timeout)
         if not result.ok:
             last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "non-zero exit"
-            return False, f"integration test {index} failed: {last}"
+            # Include the failing assertion so a retry has something actionable to fix.
+            return False, f"integration test {index} failed: `{snippet.strip()}` -> {last}"
     return True, f"{len(snippets)}/{len(snippets)} integration tests pass"
 
 

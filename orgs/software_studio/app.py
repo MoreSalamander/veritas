@@ -127,7 +127,7 @@ class E2EGate(Gate):
             result = self.executor.run(f"import math\n{self.app_code}\n{test}\n", {**os.environ}, self.timeout)
             if not result.ok:
                 last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "non-zero exit"
-                return self._result(False, f"e2e test {index} failed: {last}")
+                return self._result(False, f"e2e test {index} failed: `{test.strip()}` -> {last}")
         return self._result(True, f"{len(tests)}/{len(tests)} e2e tests pass — the app runs end to end")
 
 
