@@ -181,7 +181,21 @@ The build chunk proved the thesis *works*; the next rungs make it **robust** and
   HARD gates entirely. Hard gates verify only against structured/metamorphic specs
   (round-trips, invariants, fixed points, type/contract checks) — never a number the model
   wrote. *Done: no app hard gate trusts a model-written oracle; app builds move from
-  occasionally-lucky to reliably-green.* This is the deepest robustness play.
+  occasionally-lucky to reliably-green.* This is the deepest robustness play. Sub-rungs:
+  - **P13a · Property vocabulary** ✅ — closed oracle-free relation kinds (round_trip,
+    idempotent, monotonic, invariant) + injection-safe harness; 15 tests bite mutants.
+  - **P13b · PropertyGate hard / cases soft** ✅ — oracle-free `PropertyGate` is the HARD
+    behavioral authority; exact `expected` cases demoted to SOFT (model-authored oracle =
+    advisory). The honest limit (no relation pins `a+b` vs `a-b`) is documented as a test.
+  - **P13c · Carry up** — properties become the module + app HARD acceptance; round_trip
+    goes hard (the inverse function is in scope), so `f2c(c2f(x)) ≈ x` is a hard guarantee.
+  - **P13d · Graded-confidence oracle (soft-tier upgrade)** — for the value gap properties
+    can't reach, strengthen the SOFT check: N independent draws / multiple models vote on
+    the oracle and report *agreement level* as graded confidence (drives retry, flags a
+    human, ranks implementations — never silently accepts). Stays SOFT on purpose:
+    cross-model agreement is correlated (shared training bias) so it raises confidence, not
+    certainty. The only path to HARD for a value is an *independent second method*
+    (differential testing), not more votes from the same kind of guesser.
 - **P14 · Second org type** (Sep–Nov) — stand up an org with a **genuinely different
   verification model** on the *unchanged* engine — e.g. a research/docs org gated by
   citation integrity, claim-to-source grounding, and internal consistency (a topic with no
