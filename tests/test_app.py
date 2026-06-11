@@ -88,8 +88,9 @@ def test_e2e_failure_rejects_the_app(tmp_path):
 
 
 def test_build_app_fails_if_a_module_fails(tmp_path):
+    # The first module's developer is wrong on every retry, so the module (and the app) fails.
     bad = "def save(x):\n    return x\n\ndef load(x):\n    return 999\n"
-    result = build_app("x", _seq(developer=[bad, CODE_OPS]), MemoryStore(tmp_path))
+    result = build_app("x", _seq(developer=[bad, bad, bad]), MemoryStore(tmp_path))
     assert not result.accepted
     assert result.package_outcome is None
 

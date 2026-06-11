@@ -203,8 +203,16 @@ class ModuleDeveloperAgent:
     def __init__(self, provider: ModelProvider) -> None:
         self.provider = provider
 
-    def propose(self, contract: ModuleContract, parent_id: str, lessons: str | None = None) -> Artifact:
+    def propose(
+        self, contract: ModuleContract, parent_id: str, lessons: str | None = None,
+        feedback: str | None = None,
+    ) -> Artifact:
         prompt = f"Contract:\n{_contract_to_json(contract)}"
+        if feedback:
+            prompt = (
+                f"Your previous attempt was REJECTED by the checks: {feedback}\n"
+                f"Fix exactly these problems and return corrected code.\n\n{prompt}"
+            )
         if lessons:
             prompt = f"{lessons}\n\n{prompt}"
         raw = self.provider.propose(role=self.role, prompt=prompt, system=MODULE_DEV_SYSTEM)
@@ -387,11 +395,18 @@ def build_module(goal: str, provider: ModelProvider, memory: MemoryStore) -> Mod
         return ModuleResult(contract_outcome, integration_outcome, None, False, informed_by, run.id, list(run.log))
     tests = parse_integration(pm_artifact.payload)
 
-    # DEVELOPER — build the module; the cast (incl. the new integration boundary) reviews it.
-    code_artifact = ModuleDeveloperAgent(provider).propose(contract, parent_id=contract_artifact.id, lessons=lessons)
-    code_artifact.provenance.informed_by.extend(informed_by)
-    code_outcome = run.submit(
-        code_artifact,
+    # DEVELOPER — build the module; the cast reviews it; on rejection the developer
+    # re-writes with the failing gates' evidence (incl. a failed integration test), so a
+    # subtly-wrong implementation gets fixed instead of killing the build.
+    def propose_module(feedback: str | None) -> Artifact:
+        art = ModuleDeveloperAgent(provider).propose(
+            contract, parent_id=contract_artifact.id, lessons=lessons, feedback=feedback
+        )
+        art.provenance.informed_by.extend(informed_by)
+        return art
+
+    code_outcome = run.attempt(
+        propose_module,
         [
             ModuleSyntaxGate(names),
             ModuleAcceptanceGate(contract),

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from engine.artifact import Artifact
 from engine.memory import MemoryStore, format_lessons
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome, Run
@@ -88,13 +89,17 @@ def build_software(
     # QA writes independent tests from the spec — never seeing the implementation.
     qa_cases = QAAgent(provider).propose_cases(spec)
 
-    # SYNTHESIZE + VERIFY — the developer writes code; the whole cast reviews it.
-    code_artifact = DeveloperAgent(provider).propose(
-        spec, parent_id=spec_artifact.id, lessons=lessons
-    )
-    code_artifact.provenance.informed_by.extend(informed_by)
-    code_outcome = run.submit(
-        code_artifact,
+    # SYNTHESIZE + VERIFY — the developer writes code; the cast reviews it; on rejection
+    # the developer re-writes with the failing gates' evidence, up to a few attempts.
+    def propose_code(feedback: str | None) -> Artifact:
+        art = DeveloperAgent(provider).propose(
+            spec, parent_id=spec_artifact.id, lessons=lessons, feedback=feedback
+        )
+        art.provenance.informed_by.extend(informed_by)
+        return art
+
+    code_outcome = run.attempt(
+        propose_code,
         [
             SyntaxGate(spec.function_name),
             AcceptanceGate(spec),
@@ -103,6 +108,7 @@ def build_software(
             ValidationGate(),  # final authority — must run last
         ],
     )
+    code_artifact = code_outcome.artifact
 
     # DOCUMENT — an optional role: document the accepted function, examples verified
     # against the real code. A failed doc does NOT un-ship a verified function.

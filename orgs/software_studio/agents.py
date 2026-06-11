@@ -103,8 +103,15 @@ class DeveloperAgent:
     def __init__(self, provider: ModelProvider) -> None:
         self.provider = provider
 
-    def propose(self, spec: SpecData, parent_id: str, lessons: str | None = None) -> Artifact:
+    def propose(
+        self, spec: SpecData, parent_id: str, lessons: str | None = None, feedback: str | None = None
+    ) -> Artifact:
         prompt = f"Spec:\n{_spec_to_json(spec)}"
+        if feedback:
+            prompt = (
+                f"Your previous attempt was REJECTED by the checks: {feedback}\n"
+                f"Fix exactly these problems and return corrected code.\n\n{prompt}"
+            )
         if lessons:
             prompt = f"{lessons}\n\n{prompt}"
         raw = self.provider.propose(role=self.role, prompt=prompt, system=DEV_SYSTEM)

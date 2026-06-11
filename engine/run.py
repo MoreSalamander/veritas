@@ -13,7 +13,7 @@ PROPOSED and the engine decides its fate honestly.
 from __future__ import annotations
 
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -113,3 +113,41 @@ class Run:
         """Walk a proposed artifact through Verify -> Persist. The whole spine."""
         results = self.verify(artifact, gates)
         return self.persist(artifact, results)
+
+    def _feedback(self, outcome: Outcome) -> str:
+        failed = [r for r in outcome.gate_results if r.determinism is Determinism.HARD and not r.passed]
+        return "; ".join(f"{r.gate_name}: {r.evidence}" for r in failed)
+
+    def attempt(
+        self,
+        propose: Callable[[str | None], Artifact],
+        gates: Sequence[Gate],
+        max_attempts: int = 3,
+    ) -> Outcome:
+        """The retry loop: propose, gate, and on rejection re-propose with the failing
+        gates' evidence as feedback — up to max_attempts. Lets the org fix its own work
+        instead of dying on the first miss. If no attempt fully passes, returns the best
+        one (most hard gates passed). The feedback drives the *implementation* to fix
+        itself; the verification criteria are never weakened to force a pass."""
+        feedback: str | None = None
+        best: Outcome | None = None
+        best_score = -1
+        for n in range(1, max_attempts + 1):
+            outcome = self.submit(propose(feedback), gates)
+            if outcome.accepted:
+                if n > 1:
+                    self._activity(Phase.SYNTHESIZE, "retry", f"accepted on attempt {n}")
+                return outcome
+            score = sum(
+                1 for r in outcome.gate_results if r.determinism is Determinism.HARD and r.passed
+            )
+            if score > best_score:
+                best_score, best = score, outcome
+            feedback = self._feedback(outcome)
+            if n < max_attempts:
+                self._activity(
+                    Phase.SYNTHESIZE, "retry",
+                    f"attempt {n} rejected ({score} hard gates passed) — re-proposing with feedback",
+                )
+        assert best is not None
+        return best
