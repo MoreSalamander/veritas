@@ -191,13 +191,14 @@ The build chunk proved the thesis *works*; the next rungs make it **robust** and
     `ModulePropertyGate`; per-function exact cases demoted to SOFT. round_trip goes hard
     (the inverse sibling is in scope). The app inherits it transitively via `build_module`;
     cross-function behavior stays hard via the IntegrationGate's relational snippets.
-  - **P13d · Graded-confidence oracle (soft-tier upgrade)** — for the value gap properties
-    can't reach, strengthen the SOFT check: N independent draws / multiple models vote on
-    the oracle and report *agreement level* as graded confidence (drives retry, flags a
-    human, ranks implementations — never silently accepts). Stays SOFT on purpose:
-    cross-model agreement is correlated (shared training bias) so it raises confidence, not
-    certainty. The only path to HARD for a value is an *independent second method*
-    (differential testing), not more votes from the same kind of guesser.
+  - **P13d · Graded-confidence oracle (soft-tier upgrade)** ✅ — `oracle.py` VotingOracle +
+    SOFT `ConsensusGate` (opt-in via `build_software(oracle=...)`): re-derives the expected
+    value across N independent draws / models, reports *agreement* as graded confidence, and
+    flags code that disagrees with the consensus as a strong advisory — never a hard block.
+    Stays SOFT on purpose: cross-model agreement is correlated (shared training bias), so it
+    raises confidence not certainty. The only path to HARD for a value is an *independent
+    second method* (differential testing), not more votes from the same kind of guesser.
+    Verified live on Sonnet (unanimous re-derivation, high-confidence confirmation).
 - **P14 · Second org type** (Sep–Nov) — stand up an org with a **genuinely different
   verification model** on the *unchanged* engine — e.g. a research/docs org gated by
   citation integrity, claim-to-source grounding, and internal consistency (a topic with no
