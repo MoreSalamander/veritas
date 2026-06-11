@@ -18,8 +18,21 @@ SPEC_SYSTEM = (
     "You are a precise software specification writer. Given a goal, respond with "
     "ONLY a JSON object — no prose, no markdown, no code fences. Schema: "
     '{"function_name": <valid python identifier>, "description": <string>, '
-    '"signature": <string>, "cases": [{"args": [<positional args>], "expected": <value>}]}. '
-    "Provide at least 3 concrete, correct input/output cases that fully pin the behavior."
+    '"signature": <string>, "cases": [{"args": [<positional args>], "expected": <value>}], '
+    '"properties": [<oracle-free relation>]}. '
+    "Provide at least 3 concrete input/output cases. ALSO provide 'properties': "
+    "relations that must hold REGARDLESS of the exact output — these are how the system "
+    "verifies you WITHOUT trusting your numbers, so provide them whenever they apply. "
+    "Each property is one of: "
+    '{"kind":"monotonic","direction":"increasing"|"decreasing","inputs":[[x1],[x2],...]} '
+    "(inputs listed in that order; outputs must follow it); "
+    '{"kind":"invariant","invariant":<one of '
+    "sorted_ascending|sorted_descending|is_permutation_of_input|length_preserved|"
+    'elements_unique|non_negative>,"inputs":[[<arg>],...]}; '
+    '{"kind":"idempotent","inputs":[[x],...]} (f(f(x))==f(x)); '
+    '{"kind":"round_trip","inverse":<other function name>,"inputs":[[x],...]} '
+    "(only if an inverse function exists in the same build). Omit 'properties' (or use []) "
+    "only when no such relation applies."
 )
 
 DEV_SYSTEM = (
@@ -44,6 +57,7 @@ def _spec_to_json(spec: SpecData) -> str:
             "description": spec.description,
             "signature": spec.signature,
             "cases": [{"args": c.args, "expected": c.expected} for c in spec.cases],
+            "properties": [p.to_payload() for p in spec.properties],
         }
     )
 

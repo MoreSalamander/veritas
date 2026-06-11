@@ -19,6 +19,7 @@ from orgs.software_studio.agents import DeveloperAgent, DocAgent, QAAgent, SpecA
 from orgs.software_studio.gates import (
     AcceptanceGate,
     ExamplesRunGate,
+    PropertyGate,
     QAGate,
     SecurityScanGate,
     SpecScorerGate,
@@ -51,7 +52,11 @@ def build_function(goal: str, provider: ModelProvider, memory: MemoryStore) -> S
     code_artifact = DeveloperAgent(provider).propose(spec, parent_id=spec_artifact.id)
     code_outcome = run.submit(
         code_artifact,
-        [SyntaxGate(spec.function_name), AcceptanceGate(spec)],
+        [
+            SyntaxGate(spec.function_name),
+            PropertyGate(spec.function_name, spec.properties),  # HARD: oracle-free
+            AcceptanceGate(spec),  # SOFT: model-authored cases, advisory
+        ],
     )
     return StudioResult(
         spec_outcome, code_outcome, code_outcome.accepted, [], run.id, list(run.log)
@@ -102,7 +107,8 @@ def build_software(
         propose_code,
         [
             SyntaxGate(spec.function_name),
-            AcceptanceGate(spec),
+            PropertyGate(spec.function_name, spec.properties),  # HARD behavioral authority
+            AcceptanceGate(spec),  # SOFT — exact cases are a model-authored oracle
             SecurityScanGate(),
             QAGate(spec.function_name, qa_cases),
             ValidationGate(),  # final authority — must run last

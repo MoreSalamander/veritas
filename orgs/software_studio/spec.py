@@ -9,8 +9,14 @@ line of code is written. This is the myAIscript "pass-a-score" move, generalized
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
+
+from orgs.software_studio.properties import (
+    Property,
+    PropertyParseError,
+    parse_properties,
+)
 
 _PY_BLOCK = re.compile(r"```(?:python|py)\s*\n(.*?)```", re.DOTALL)
 
@@ -36,7 +42,8 @@ class SpecData:
     function_name: str
     description: str
     signature: str
-    cases: list[Case]
+    cases: list[Case]  # exact-value cases — a model-authored oracle, now verified SOFT
+    properties: list[Property] = field(default_factory=list)  # oracle-free — verified HARD
 
 
 def _extract_json(text: str) -> str:
@@ -66,20 +73,33 @@ def parse_spec(payload: str) -> SpecData:
         raise SpecParseError("function_name missing or not a valid identifier")
 
     raw_cases = obj.get("cases")
-    if not isinstance(raw_cases, list) or not raw_cases:
-        raise SpecParseError("spec has no acceptance cases (nothing to verify against)")
-
     cases: list[Case] = []
-    for index, case in enumerate(raw_cases):
-        if not isinstance(case, dict) or "args" not in case or "expected" not in case:
-            raise SpecParseError(f"case {index} missing 'args' or 'expected'")
-        if not isinstance(case["args"], list):
-            raise SpecParseError(f"case {index} 'args' must be a list")
-        cases.append(Case(args=case["args"], expected=case["expected"]))
+    if raw_cases is not None:
+        if not isinstance(raw_cases, list):
+            raise SpecParseError("'cases' must be a list")
+        for index, case in enumerate(raw_cases):
+            if not isinstance(case, dict) or "args" not in case or "expected" not in case:
+                raise SpecParseError(f"case {index} missing 'args' or 'expected'")
+            if not isinstance(case["args"], list):
+                raise SpecParseError(f"case {index} 'args' must be a list")
+            cases.append(Case(args=case["args"], expected=case["expected"]))
+
+    # Oracle-free properties are the HARD authority; exact cases are SOFT. A spec must
+    # offer at least one of the two — something to verify against.
+    try:
+        properties = parse_properties(obj.get("properties"))
+    except PropertyParseError as exc:
+        raise SpecParseError(f"spec has an unusable property: {exc}") from exc
+
+    if not cases and not properties:
+        raise SpecParseError(
+            "spec has no acceptance cases or properties (nothing to verify against)"
+        )
 
     return SpecData(
         function_name=name,
         description=str(obj.get("description", "")),
         signature=str(obj.get("signature", "")),
         cases=cases,
+        properties=properties,
     )

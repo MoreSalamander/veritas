@@ -17,10 +17,14 @@ from orgs.software_studio.pipeline import build_software
 
 SPEC = json.dumps(
     {"function_name": "add", "description": "add", "signature": "def add(a, b)",
-     "cases": [{"args": [1, 2], "expected": 3}, {"args": [5, 5], "expected": 10}]}
+     "cases": [{"args": [1, 2], "expected": 3}, {"args": [5, 5], "expected": 10}],
+     # Oracle-free: as the second arg climbs, the sum must climb. a-b breaks this — so the
+     # HARD property gate (not a model-authored case) is what triggers the retry.
+     "properties": [{"kind": "monotonic", "direction": "increasing",
+                     "inputs": [[0, 1], [0, 2], [0, 3]]}]}
 )
 GOOD_CODE = "def add(a, b):\n    return a + b\n"
-WRONG_CODE = "def add(a, b):\n    return a - b\n"  # passes syntax, fails acceptance
+WRONG_CODE = "def add(a, b):\n    return a - b\n"  # passes syntax, fails the monotonic property
 
 
 class _SelfCorrectingDev(ModelProvider):

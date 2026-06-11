@@ -30,6 +30,24 @@ GOOD_CODE = "def add(a, b):\n    return a + b\n"
 WRONG_CODE = "def add(a, b):\n    return a - b\n"
 PROSE_SPEC = "Sure! You'll want a function that adds two numbers and returns the sum."
 
+# A spec carrying an ORACLE-FREE property (P13): the output must be a sorted permutation
+# of the input. No `expected` value is trusted — the relation is checked over the
+# function's own output, so the HARD property gate, not a model number, makes the call.
+SORT_SPEC = json.dumps(
+    {
+        "function_name": "mysort",
+        "description": "sort a list ascending",
+        "signature": "def mysort(xs)",
+        "cases": [{"args": [[3, 1, 2]], "expected": [1, 2, 3]}],
+        "properties": [
+            {"kind": "invariant", "invariant": "sorted_ascending", "inputs": [[[3, 1, 2]], [[9, 0, 5, 5]]]},
+            {"kind": "invariant", "invariant": "is_permutation_of_input", "inputs": [[[3, 1, 2]], [[9, 0, 5, 5]]]},
+        ],
+    }
+)
+GOOD_SORT = "def mysort(xs):\n    return sorted(xs)\n"
+WRONG_SORT = "def mysort(xs):\n    return sorted(xs)[1:]\n"  # sorted, but drops an element
+
 
 def test_good_run_earns_code_into_memory(tmp_path):
     provider = ScriptedProvider({"spec": GOOD_SPEC, "developer": GOOD_CODE})
@@ -53,14 +71,45 @@ def test_prose_spec_rejected_before_any_code(tmp_path):
     assert "not executable" in result.spec_outcome.memory_path.read_text()
 
 
-def test_wrong_code_rejected_by_acceptance_gate(tmp_path):
+def test_wrong_code_rejected_by_property_gate(tmp_path):
+    # The HARD authority is the oracle-free property, not a model-authored case. Code that
+    # sorts but drops an element breaks is_permutation_of_input — and is hard-rejected
+    # without trusting any `expected` value.
+    provider = ScriptedProvider({"spec": SORT_SPEC, "developer": WRONG_SORT})
+    result = build_function("sort a list", provider, MemoryStore(tmp_path))
+
+    assert result.spec_outcome.accepted
+    assert not result.accepted
+    assert result.code_outcome is not None
+    assert result.code_outcome.memory_path.parent.name == "failures"
+    prop = next(g for g in result.code_outcome.gate_results if g.gate_name == "properties")
+    assert not prop.passed and "permutation" in prop.evidence
+
+
+def test_good_code_passes_the_property_gate(tmp_path):
+    provider = ScriptedProvider({"spec": SORT_SPEC, "developer": GOOD_SORT})
+    result = build_function("sort a list", provider, MemoryStore(tmp_path))
+    assert result.accepted
+    prop = next(g for g in result.code_outcome.gate_results if g.gate_name == "properties")
+    assert prop.passed and prop.determinism.value == "hard"
+
+
+def test_value_error_with_no_property_is_advisory_not_a_hard_block(tmp_path):
+    # The honest limit of P13: no oracle-free relation distinguishes a+b from a-b, so a
+    # value error here cannot be hard-caught without trusting the model's number. The
+    # scaffold refuses to do that — it ships on the structural hard gates and records the
+    # exact-value discrepancy as an ADVISORY (soft) finding rather than laundering a model
+    # oracle into a hard verdict. This is the architecture being honest about what it can
+    # and cannot guarantee.
     provider = ScriptedProvider({"spec": GOOD_SPEC, "developer": WRONG_CODE})
     result = build_function("add", provider, MemoryStore(tmp_path))
 
-    assert result.spec_outcome.accepted  # the spec was fine
-    assert not result.accepted  # but the code failed the cases
+    assert result.accepted  # passes the structural HARD gates; no property pins the value
     assert result.code_outcome is not None
-    assert result.code_outcome.memory_path.parent.name == "failures"
+    props = next(g for g in result.code_outcome.gate_results if g.gate_name == "properties")
+    assert props.passed and "not hard-verified" in props.evidence
+    acc = next(g for g in result.code_outcome.gate_results if g.gate_name == "acceptance-tests")
+    assert acc.determinism.value == "soft" and not acc.passed  # flagged, advisory
 
 
 def test_code_fences_are_stripped(tmp_path):

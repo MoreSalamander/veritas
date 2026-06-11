@@ -44,7 +44,9 @@ def test_clean_build_collects_full_cast_provenance(tmp_path):
     assert result.accepted
     assert result.code_outcome is not None
     gate_names = [g.gate_name for g in result.code_outcome.artifact.provenance.gate_results]
-    assert gate_names == ["syntax", "acceptance-tests", "security-scan", "qa-review", "validation"]
+    assert gate_names == [
+        "syntax", "properties", "acceptance-tests", "security-scan", "qa-review", "validation",
+    ]
     assert result.code_outcome.memory_path.parent.name == "institutional"
     # Validation is the final authority and it approved.
     validation = result.code_outcome.artifact.provenance.gate_results[-1]

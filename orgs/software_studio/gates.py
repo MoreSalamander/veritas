@@ -23,6 +23,11 @@ from typing import Any
 from engine.artifact import Artifact, Determinism, GateResult
 from engine.executor import Executor, LocalSubprocessExecutor
 from engine.gate import Gate
+from orgs.software_studio.properties import (
+    PROPERTY_HARNESS,
+    Property,
+    serialize,
+)
 from orgs.software_studio.spec import (
     SpecData,
     SpecParseError,
@@ -86,7 +91,9 @@ class SpecScorerGate(Gate):
         except SpecParseError as exc:
             return self._result(False, f"spec not executable: {exc}")
         return self._result(
-            True, f"{len(spec.cases)} executable case(s) pin {spec.function_name}()"
+            True,
+            f"{len(spec.cases)} case(s) + {len(spec.properties)} oracle-free "
+            f"property(ies) pin {spec.function_name}()",
         )
 
 
@@ -113,8 +120,13 @@ class SyntaxGate(Gate):
 
 
 class AcceptanceGate(Gate):
+    """Runs the spec's exact-value cases. SOFT (P13): an `expected` value is a number
+    the *model* wrote — an unverified oracle. A hard gate must never accept (or reject)
+    on the model's arithmetic, so a case discrepancy is an advisory finding, not a
+    block. The oracle-free PropertyGate is the hard behavioral authority."""
+
     name = "acceptance-tests"
-    determinism = Determinism.HARD
+    determinism = Determinism.SOFT
 
     def __init__(
         self, spec: SpecData, executor: Executor | None = None, timeout: float = 10.0
@@ -124,11 +136,55 @@ class AcceptanceGate(Gate):
         self.timeout = timeout
 
     def check(self, artifact: Artifact) -> GateResult:
+        if not self.spec.cases:
+            return self._result(True, "no exact-value cases offered")
         cases = [{"args": c.args, "expected": c.expected} for c in self.spec.cases]
         passed, evidence = _run_cases(
             self.executor, artifact.payload, self.spec.function_name, cases, self.timeout
         )
-        return self._result(passed, evidence)
+        if passed:
+            return self._result(True, evidence)
+        return self._result(
+            False, f"case discrepancy (advisory, model-authored oracle): {evidence}"
+        )
+
+
+class PropertyGate(Gate):
+    """HARD: oracle-free properties (round-trips, idempotence, monotonicity, structural
+    invariants). Each checks a relation over the function's OWN outputs — no model value
+    is the oracle, so a pass is the scaffold's verdict, not the model's. With no
+    properties offered, it passes but records that behavior was not hard-verified — the
+    architecture stays honest about what it could and could not guarantee."""
+
+    name = "properties"
+    determinism = Determinism.HARD
+
+    def __init__(
+        self,
+        function_name: str,
+        properties: list[Property],
+        executor: Executor | None = None,
+        timeout: float = 10.0,
+    ) -> None:
+        self.function_name = function_name
+        self.properties = properties
+        self.executor = executor or _DEFAULT_EXECUTOR
+        self.timeout = timeout
+
+    def check(self, artifact: Artifact) -> GateResult:
+        if not self.properties:
+            return self._result(True, "no oracle-free properties offered — behavior not hard-verified")
+        env = {
+            **os.environ,
+            "VERITAS_PROPS": serialize(self.properties),
+            "VERITAS_FN": self.function_name,
+        }
+        result = self.executor.run(f"{artifact.payload}\n{PROPERTY_HARNESS}", env, self.timeout)
+        if result.ok:
+            held = "; ".join(p.describe() for p in self.properties)
+            return self._result(True, f"{len(self.properties)} oracle-free property(ies) hold: {held}")
+        last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "non-zero exit"
+        return self._result(False, last)
 
 
 class SecurityScanGate(Gate):
