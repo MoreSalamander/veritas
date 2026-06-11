@@ -20,6 +20,8 @@ from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome
 from orgs.software_studio.builder import build
 from orgs.software_studio.roster import roster as software_roster
+from orgs.web_studio.pipeline import build_page
+from orgs.web_studio.roster import roster as web_roster
 
 
 @dataclass
@@ -64,6 +66,22 @@ def _run_software(goal: str, provider: ModelProvider, memory: MemoryStore) -> Or
     )
 
 
+def _run_web(goal: str, provider: ModelProvider, memory: MemoryStore) -> OrgRun:
+    result = build_page(goal, provider, memory)
+    outcomes = [result.spec_outcome]
+    if result.page_outcome is not None:
+        outcomes.append(result.page_outcome)
+    return OrgRun(
+        org="web",
+        goal=goal,
+        accepted=result.accepted,
+        outcomes=outcomes,
+        informed_by=result.informed_by,
+        run_id=result.run_id,
+        activity=result.activity,
+    )
+
+
 REGISTRY: dict[str, OrgType] = {
     "software": OrgType(
         name="software",
@@ -77,6 +95,19 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a function that returns the nth Fibonacci number",
         build=_run_software,
         roster=software_roster,
+    ),
+    "web": OrgType(
+        name="web",
+        title="Web Studio",
+        description="Turns a goal into a working web page — a single self-contained HTML "
+        "document, verified by rendering it in a real browser.",
+        input_noun="a UI goal",
+        produces="a verified HTML page (renders clean, fits the viewport, accessible)",
+        verified_by="rendered in a real headless browser: loads with no console errors, no "
+        "layout overflow, the required elements present, and accessibility basics hold",
+        goal_hint="a landing page for a coffee shop",
+        build=_run_web,
+        roster=web_roster,
     ),
 }
 

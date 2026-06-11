@@ -284,23 +284,30 @@ function gateRosterRow(g) {
       <div class="gev">${esc(g.about)}</div></div>`;
 }
 
-async function loadOrg() {
-  const name = (ORGS[0] && ORGS[0].name) || 'software';
+async function loadOrg(name) {
+  if (!ORGS.length) ORGS = await api('/api/orgs');
+  name = name || (ORGS[0] && ORGS[0].name) || 'software';
   const o = ORGS.find(x => x.name === name) || {};
   const r = await api(`/api/orgs/${name}/roster`);
   if (r.error) { $('#orgbody').innerHTML = `<div class="muted">${esc(r.error)}</div>`; return; }
+
+  // With more than one org registered, let you switch which one you're inspecting.
+  const picker = ORGS.length > 1
+    ? `<div class="row" style="margin-bottom:14px"><select id="orgpick">${ORGS.map(x =>
+        `<option value="${esc(x.name)}"${x.name === name ? ' selected' : ''}>${esc(x.title)}</option>`).join('')}</select></div>`
+    : '';
 
   const cast = r.cast.map(c => `<div class="castrow">
       <div><span class="role">${esc(c.role)}</span><strong>${esc(c.name)}</strong></div>
       <div class="gev">${esc(c.produces)}</div></div>`).join('');
 
-  const labels = { function: 'Function', module: 'Module', app: 'App', all: 'Every run' };
-  const gates = ['function','module','app','all'].map(s => {
+  const labels = { page: 'Page', function: 'Function', module: 'Module', app: 'App', all: 'Every run' };
+  const gates = ['page','function','module','app','all'].map(s => {
     const gs = r.gates.filter(g => g.scope === s);
     return gs.length ? `<div class="scopelabel">${labels[s]}</div>${gs.map(gateRosterRow).join('')}` : '';
   }).join('');
 
-  $('#orgbody').innerHTML = `
+  $('#orgbody').innerHTML = picker + `
     <div class="panel">
       <div style="font-size:18px;font-weight:700">${esc(o.title || name)}</div>
       <div class="muted" style="margin-top:6px">${esc(o.description || '')}</div>
@@ -310,6 +317,9 @@ async function loadOrg() {
       <div><h2 style="margin-top:6px">The cast — proposers</h2><div class="panel">${cast}</div></div>
       <div><h2 style="margin-top:6px">The decision engine — gates</h2><div class="panel">${gates}</div></div>
     </div>`;
+
+  const pick = $('#orgpick');
+  if (pick) pick.onchange = () => loadOrg(pick.value);
 }
 
 async function loadRuns() {

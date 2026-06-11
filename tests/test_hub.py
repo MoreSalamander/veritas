@@ -77,7 +77,7 @@ def test_index_is_served(tmp_path):
 def test_orgs_endpoint_lists_registry(tmp_path):
     client = _client(tmp_path)
     orgs = client.get("/api/orgs").json()
-    assert {o["name"] for o in orgs} == {"software"}
+    assert {o["name"] for o in orgs} == {"software", "web"}
     assert all(o["input_noun"] and o["produces"] and o["verified_by"] for o in orgs)
 
 
@@ -107,6 +107,37 @@ def test_progress_for_unknown_token_is_an_error(tmp_path):
     assert client.get("/api/runs/progress/does-not-exist").json()["error"]
 
 
+# --- the second org (Web Studio) is a first-class citizen of the hub ---
+
+WEB_SPEC = json.dumps(
+    {"title": "Landing", "description": "a landing page", "required_elements": ["nav", "h1", "button"]}
+)
+WEB_PAGE = (
+    "<!doctype html><html><head><title>Landing</title></head><body>"
+    "<nav><a href='#'>Home</a></nav><h1>Welcome</h1><button>Go</button></body></html>"
+)
+
+
+def test_web_org_registered_with_an_all_hard_roster(tmp_path):
+    client = _client(tmp_path)
+    assert {o["name"] for o in client.get("/api/orgs").json()} >= {"software", "web"}
+    roster = client.get("/api/orgs/web/roster").json()
+    names = {g["name"] for g in roster["gates"]}
+    assert {"render", "layout", "structure", "a11y"} <= names
+    assert all(g["determinism"] == "hard" for g in roster["gates"])  # no soft gates yet
+
+
+def test_web_run_through_the_hub_renders_and_ships(tmp_path):
+    provider = ScriptedProvider({"designer": WEB_SPEC, "web-developer": WEB_PAGE})
+    client = TestClient(create_app(data_dir=tmp_path, provider=provider))
+    run = client.post("/api/runs", json={"goal": "a landing page", "org": "web"}).json()
+    assert run["accepted"] is True and run["org"] == "web"
+    gate_names = [g["gate"] for g in run["gates"]]
+    assert "render" in gate_names and "validation" in gate_names
+    # the two orgs keep separate institutional memory
+    assert (tmp_path / "memory" / "web" / "institutional").exists()
+
+
 def test_software_run_uses_isolated_memory_namespace(tmp_path):
     client = _client(tmp_path)
     sw = client.post("/api/runs", json={"goal": "add two numbers", "org": "software"}).json()
@@ -120,4 +151,4 @@ def test_software_run_uses_isolated_memory_namespace(tmp_path):
 
     dash = client.get("/api/dashboard").json()
     assert dash["total_runs"] == 1
-    assert dash["by_org"] == {"software": 1}
+    assert dash["by_org"]["software"] == 1 and dash["by_org"].get("web", 0) == 0
