@@ -88,6 +88,13 @@ def create_app(
             for org in REGISTRY.values()
         ]
 
+    @app.get("/api/orgs/{name}/roster")
+    def org_roster(name: str) -> dict[str, Any]:
+        org = REGISTRY.get(name)
+        if org is None or org.roster is None:
+            return {"error": "no roster for this org"}
+        return org.roster()
+
     @app.get("/api/dashboard")
     def dashboard() -> dict[str, Any]:
         all_runs = runs.list()

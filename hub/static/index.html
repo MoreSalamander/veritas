@@ -91,6 +91,18 @@
   .recentrow { padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; display: flex; gap: 8px; align-items: baseline; }
   .recentrow:last-child { border-bottom: 0; }
   .recentrow .rg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+
+  /* --- the Org view: the cast + the gates --- */
+  .castrow { padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .castrow:last-child { border-bottom: 0; }
+  .role { font-family: var(--mono); font-size: 10.5px; color: var(--cyan);
+          border: 1px solid rgba(34, 211, 238, .3); border-radius: 4px; padding: 1px 5px; margin-right: 6px; }
+  .scopelabel { font-family: var(--mono); font-size: 10.5px; letter-spacing: .5px; text-transform: uppercase;
+                color: var(--dim); margin: 14px 0 4px; }
+  .scopelabel:first-child { margin-top: 2px; }
+  .orgprinciple { margin-top: 12px; padding: 11px 13px; border-left: 3px solid var(--cyan);
+                  background: rgba(34, 211, 238, .05); border-radius: 0 8px 8px 0;
+                  color: var(--ink); font-size: 13px; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -99,6 +111,7 @@
   <div class="tagline">The model proposes. The gates decide.</div>
   <nav>
     <a data-view="dashboard" class="active">Mission Control</a>
+    <a data-view="orgview">Organization</a>
     <a data-view="runs">Runs</a>
     <a data-view="memory">Memory</a>
   </nav>
@@ -127,6 +140,7 @@
     <div id="latest"></div>
   </section>
 
+  <section id="orgview" class="hidden"><h1>The Organization</h1><div id="orgbody"></div></section>
   <section id="runs" class="hidden"><h1>Runs</h1><div id="runlist"></div></section>
   <section id="memory" class="hidden"><h1>Institutional Memory</h1><div id="memlist" class="grid2"></div></section>
 </main>
@@ -140,10 +154,11 @@ const isHard = g => g.determinism !== 'soft';
 document.querySelectorAll('nav a').forEach(a => a.onclick = () => {
   document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
   a.classList.add('active');
-  ['dashboard','runs','memory'].forEach(v => $('#'+v).classList.toggle('hidden', v !== a.dataset.view));
+  ['dashboard','orgview','runs','memory'].forEach(v => $('#'+v).classList.toggle('hidden', v !== a.dataset.view));
   if (a.dataset.view === 'runs') loadRuns();
   if (a.dataset.view === 'memory') loadMemory();
   if (a.dataset.view === 'dashboard') loadDash();
+  if (a.dataset.view === 'orgview') loadOrg();
 });
 
 // A gate row that makes the hard/soft split visceral: HARD gates are filled and tinted
@@ -238,6 +253,45 @@ async function loadDash() {
       }).join('')
     : '<div class="muted">No runs yet.</div>';
 }
+// A gate row in the Org view: same hard/soft vocabulary as the run ledger, but describing
+// what each gate is FOR rather than a verdict it returned.
+function gateRosterRow(g) {
+  const hard = g.determinism !== 'soft';
+  const marker = hard ? '●' : '○';
+  const color = hard ? 'var(--cyan)' : 'var(--amber)';
+  return `<div class="gate ${hard ? 'hard' : 'soft'}">
+      <div class="grow"><span class="gname"><span class="marker" style="color:${color}">${marker}</span><span class="tier">${hard ? 'HARD' : 'soft'}</span>${esc(g.name)}</span></div>
+      <div class="gev">${esc(g.about)}</div></div>`;
+}
+
+async function loadOrg() {
+  const name = (ORGS[0] && ORGS[0].name) || 'software';
+  const o = ORGS.find(x => x.name === name) || {};
+  const r = await api(`/api/orgs/${name}/roster`);
+  if (r.error) { $('#orgbody').innerHTML = `<div class="muted">${esc(r.error)}</div>`; return; }
+
+  const cast = r.cast.map(c => `<div class="castrow">
+      <div><span class="role">${esc(c.role)}</span><strong>${esc(c.name)}</strong></div>
+      <div class="gev">${esc(c.produces)}</div></div>`).join('');
+
+  const labels = { function: 'Function', module: 'Module', app: 'App', all: 'Every run' };
+  const gates = ['function','module','app','all'].map(s => {
+    const gs = r.gates.filter(g => g.scope === s);
+    return gs.length ? `<div class="scopelabel">${labels[s]}</div>${gs.map(gateRosterRow).join('')}` : '';
+  }).join('');
+
+  $('#orgbody').innerHTML = `
+    <div class="panel">
+      <div style="font-size:18px;font-weight:700">${esc(o.title || name)}</div>
+      <div class="muted" style="margin-top:6px">${esc(o.description || '')}</div>
+      <div class="orgprinciple">${esc(r.principle)}</div>
+    </div>
+    <div class="grid2">
+      <div><h2 style="margin-top:6px">The cast — proposers</h2><div class="panel">${cast}</div></div>
+      <div><h2 style="margin-top:6px">The decision engine — gates</h2><div class="panel">${gates}</div></div>
+    </div>`;
+}
+
 async function loadRuns() {
   const runs = await api('/api/runs');
   $('#runlist').innerHTML = runs.length ? runs.map(runCard).join('') : '<div class="muted">No runs yet.</div>';

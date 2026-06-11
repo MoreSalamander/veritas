@@ -13,11 +13,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from engine.memory import MemoryStore
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome
 from orgs.software_studio.builder import build
+from orgs.software_studio.roster import roster as software_roster
 
 
 @dataclass
@@ -46,6 +48,7 @@ class OrgType:
     verified_by: str  # the gate chain, so the trust story is visible
     goal_hint: str
     build: BuildFn
+    roster: Callable[[], dict[str, Any]] | None = None  # cast + gates, for the Org view
 
 
 def _run_software(goal: str, provider: ModelProvider, memory: MemoryStore) -> OrgRun:
@@ -73,6 +76,7 @@ REGISTRY: dict[str, OrgType] = {
         "must pass its integration test, an app must pass an end-to-end test that runs it",
         goal_hint="a function that returns the nth Fibonacci number",
         build=_run_software,
+        roster=software_roster,
     ),
 }
 
