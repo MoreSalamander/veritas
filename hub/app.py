@@ -164,7 +164,8 @@ def create_app(
 
     @app.get("/")
     def index() -> FileResponse:
-        return FileResponse(_STATIC / "index.html")
+        # Never cache the shell: the UI iterates fast and a stale index is pure confusion.
+        return FileResponse(_STATIC / "index.html", headers={"Cache-Control": "no-store"})
 
     if _STATIC.exists():
         app.mount("/static", StaticFiles(directory=_STATIC), name="static")
