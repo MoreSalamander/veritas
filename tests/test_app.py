@@ -65,25 +65,35 @@ def test_build_app_produces_a_runnable_app(tmp_path):
     assert result.accepted
     assert all(m.accepted for m in result.module_results)
     assert result.package_outcome is not None and result.package_outcome.accepted
+    assert result.e2e_outcome is not None and result.e2e_outcome.accepted  # the e2e contract
     assert result.entrypoint_outcome is not None and result.entrypoint_outcome.accepted
-    assert result.e2e_outcome is not None and result.e2e_outcome.accepted
-    gate_names = [g.gate_name for g in result.e2e_outcome.artifact.provenance.gate_results]
-    assert gate_names == ["e2e-spec", "e2e", "validation"]
+    # the entrypoint is gated by the e2e the PM designed
+    gate_names = [g.gate_name for g in result.entrypoint_outcome.artifact.provenance.gate_results]
+    assert gate_names == ["entrypoint", "e2e", "validation"]
 
 
 def test_entrypoint_without_main_rejected(tmp_path):
-    result = build_app("x", _seq(integrator=["def helper():\n    return 1\n"]), MemoryStore(tmp_path))
+    nomain = "def helper():\n    return 1\n"
+    result = build_app("x", _seq(integrator=[nomain, nomain, nomain]), MemoryStore(tmp_path))
     assert not result.accepted
     assert result.entrypoint_outcome is not None and not result.entrypoint_outcome.accepted
-    assert result.e2e_outcome is None  # never reached
+    ep = next(g for g in result.entrypoint_outcome.artifact.provenance.gate_results if g.gate_name == "entrypoint")
+    assert not ep.passed
 
 
 def test_e2e_failure_rejects_the_app(tmp_path):
-    result = build_app("x", _seq(pm=[PM_STORAGE, PM_OPS, json.dumps(["assert main(1) == False"])]),
-                       MemoryStore(tmp_path))
+    # The PM's contract demands main(1) == False; the integrator can't satisfy it -> retries -> rejected.
+    result = build_app(
+        "x",
+        _seq(
+            pm=[PM_STORAGE, PM_OPS, json.dumps(["assert main(1) == False"])],
+            integrator=[ENTRYPOINT, ENTRYPOINT, ENTRYPOINT],
+        ),
+        MemoryStore(tmp_path),
+    )
     assert not result.accepted
-    assert result.e2e_outcome is not None and not result.e2e_outcome.accepted
-    e2e = next(g for g in result.e2e_outcome.artifact.provenance.gate_results if g.gate_name == "e2e")
+    assert result.entrypoint_outcome is not None and not result.entrypoint_outcome.accepted
+    e2e = next(g for g in result.entrypoint_outcome.artifact.provenance.gate_results if g.gate_name == "e2e")
     assert not e2e.passed
 
 

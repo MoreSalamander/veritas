@@ -107,44 +107,44 @@ class E2ESpecGate(Gate):
 
 
 class E2EGate(Gate):
-    """Run the e2e tests against the whole app (package + entrypoint). This is the gate
-    that proves the app actually runs end to end."""
+    """Run the e2e tests against the whole app (package + entrypoint). Gates the ENTRYPOINT
+    artifact, so on a retry the re-written main() is re-checked against the same tests."""
 
     name = "e2e"
     determinism = Determinism.HARD
 
-    def __init__(self, app_code: str, executor: Executor | None = None, timeout: float = 10.0) -> None:
-        self.app_code = app_code
+    def __init__(
+        self, package_code: str, tests: list[str], executor: Executor | None = None, timeout: float = 10.0
+    ) -> None:
+        self.package_code = package_code
+        self.tests = tests
         self.executor = executor or _EXEC
         self.timeout = timeout
 
     def check(self, artifact: Artifact) -> GateResult:
-        try:
-            tests = parse_integration(artifact.payload)
-        except Exception as exc:
-            return self._result(False, f"e2e spec not usable: {exc}")
-        for index, test in enumerate(tests):
-            result = self.executor.run(f"import math\n{self.app_code}\n{test}\n", {**os.environ}, self.timeout)
+        app_code = f"{self.package_code}\n{artifact.payload}"
+        for index, test in enumerate(self.tests):
+            result = self.executor.run(f"import math\n{app_code}\n{test}\n", {**os.environ}, self.timeout)
             if not result.ok:
                 last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "non-zero exit"
                 return self._result(False, f"e2e test {index} failed: `{test.strip()}` -> {last}")
-        return self._result(True, f"{len(tests)}/{len(tests)} e2e tests pass — the app runs end to end")
+        return self._result(True, f"{len(self.tests)}/{len(self.tests)} e2e tests pass — the app runs end to end")
 
 
 # --- the Integrator role + e2e author -------------------------------------------
 
 INTEGRATOR_SYSTEM = (
-    "You are an integrator. Given an app goal and the functions already available, write a "
-    "single entrypoint function `def main(...)` that composes them to do the app's job. The "
-    "functions are ALREADY DEFINED — call them by name, do not redefine. `main` should return "
-    "its result (no input()/argv). Output ONLY the Python defining main."
+    "You are an integrator. Given an app goal, the available functions, and the end-to-end tests "
+    "the app MUST pass, write a single entrypoint `def main(...)` that composes the functions so "
+    "EVERY test passes. Call main(...) with the EXACT signature the tests use. The functions are "
+    "ALREADY DEFINED — call them by name, do not redefine. Output ONLY the Python defining main."
 )
 E2E_SYSTEM = (
-    "You are a PM defining end-to-end acceptance for an app that exposes a `main(...)` "
-    "entrypoint. Respond with ONLY a JSON array of Python assertion strings that CALL "
-    "main(...). PREFER checks that DO NOT require computing exact numbers — round-trips that "
-    "return the input, invariants, fixed points. For float comparisons use math.isclose(...), "
-    "never ==. `math` is available. No prose, no fences."
+    "You are a PM defining end-to-end acceptance for an app. You DESIGN a single entrypoint "
+    "`main(...)` and write the tests that exercise it. Respond with ONLY a JSON array of Python "
+    "assertion strings that CALL main(...), using ONE consistent simple signature across all "
+    "tests. PREFER checks that don't require computing exact numbers (round-trips, invariants, "
+    "fixed points); for floats use math.isclose(...), never ==. `math` is available. No prose, no fences."
 )
 
 
@@ -155,9 +155,15 @@ class IntegratorAgent:
         self.provider = provider
 
     def propose(
-        self, goal: str, function_names: list[str], parent_id: str, lessons: str | None = None
+        self, goal: str, function_names: list[str], tests: list[str], parent_id: str,
+        lessons: str | None = None, feedback: str | None = None,
     ) -> Artifact:
-        prompt = f"App goal: {goal}\nAvailable functions: {', '.join(function_names)}"
+        prompt = (
+            f"App goal: {goal}\nAvailable functions: {', '.join(function_names)}\n"
+            f"End-to-end tests main() must pass:\n" + "\n".join(tests)
+        )
+        if feedback:
+            prompt = f"Your previous main() was REJECTED: {feedback}\nFix it.\n\n{prompt}"
         if lessons:
             prompt = f"{lessons}\n\n{prompt}"
         raw = self.provider.propose(role=self.role, prompt=prompt, system=INTEGRATOR_SYSTEM)
@@ -225,25 +231,35 @@ def build_app(goal: str, provider: ModelProvider, memory: MemoryStore) -> AppRes
     package_code = package_artifact.payload
     function_names = _top_level_functions(package_code)
 
-    # ENTRYPOINT — wire the package into a runnable main()
-    entry_artifact = IntegratorAgent(provider).propose(
-        goal, function_names, parent_id=package_artifact.id, lessons=lessons
-    )
-    entry_artifact.provenance.informed_by.extend(informed_by)
-    entry_outcome = run.submit(entry_artifact, [EntrypointGate(package_code)])
-    if not entry_outcome.accepted:
-        return result(plan_outcome, module_results, package_outcome, entry_outcome, None, False)
-
-    app_code = f"{package_code}\n{entry_artifact.payload}"
-
-    # E2E — the PM defines end-to-end acceptance; E2EGate runs the whole app
+    # E2E SPEC — the PM designs main()'s contract by writing the tests it must pass.
     e2e_raw = provider.propose(
-        role="pm", prompt=f"App goal: {goal}\nThe app exposes main(...).", system=E2E_SYSTEM
+        role="pm",
+        prompt=f"App goal: {goal}\nThe package exposes these functions: {', '.join(function_names)}",
+        system=E2E_SYSTEM,
     )
     e2e_artifact = Artifact.propose(
         type="e2e-spec", owner="pm-agent", payload=e2e_raw,
-        rationale=f"end-to-end acceptance for app {plan.app_name}", parent_id=entry_artifact.id,
+        rationale=f"end-to-end acceptance for app {plan.app_name}", parent_id=package_artifact.id,
     )
     e2e_artifact.provenance.informed_by.extend(informed_by)
-    e2e_outcome = run.submit(e2e_artifact, [E2ESpecGate(), E2EGate(app_code), ValidationGate()])
-    return result(plan_outcome, module_results, package_outcome, entry_outcome, e2e_outcome, e2e_outcome.accepted)
+    e2e_outcome = run.submit(e2e_artifact, [E2ESpecGate()])
+    if not e2e_outcome.accepted:
+        return result(plan_outcome, module_results, package_outcome, None, e2e_outcome, False)
+    tests = parse_integration(e2e_artifact.payload)
+
+    # ENTRYPOINT — implement main() to satisfy the e2e tests; retry against the e2e gate so
+    # a main that doesn't match the tests' interface or behavior fixes itself.
+    def propose_entry(feedback: str | None) -> Artifact:
+        art = IntegratorAgent(provider).propose(
+            goal, function_names, tests, parent_id=package_artifact.id, lessons=lessons, feedback=feedback
+        )
+        art.provenance.informed_by.extend(informed_by)
+        return art
+
+    entry_outcome = run.attempt(
+        propose_entry,
+        [EntrypointGate(package_code), E2EGate(package_code, tests), ValidationGate()],
+    )
+    return result(
+        plan_outcome, module_results, package_outcome, entry_outcome, e2e_outcome, entry_outcome.accepted
+    )
