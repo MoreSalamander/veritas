@@ -25,7 +25,12 @@ from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome, Run
 from engine.validation import ValidationGate
 from orgs.software_studio.agents import _strip_code_fences
-from orgs.software_studio.gates import SecurityScanGate
+from orgs.software_studio.gates import SecurityScanGate, run_properties
+from orgs.software_studio.properties import (
+    Property,
+    PropertyParseError,
+    parse_properties,
+)
 from orgs.software_studio.spec import Case
 
 _EXEC = LocalSubprocessExecutor()
@@ -46,7 +51,8 @@ class IntegrationParseError(ValueError):
 class FunctionSpec:
     name: str
     signature: str
-    cases: list[Case]
+    cases: list[Case]  # exact-value cases — model-authored oracle, verified SOFT
+    properties: list[Property] = field(default_factory=list)  # oracle-free — verified HARD
 
 
 @dataclass
@@ -101,7 +107,18 @@ def parse_contract(payload: str) -> ModuleContract:
             ):
                 raise ContractParseError(f"{fn}: malformed case")
             cases.append(Case(args=case["args"], expected=case["expected"]))
-        functions.append(FunctionSpec(name=fn, signature=str(entry.get("signature", "")), cases=cases))
+        try:
+            properties = parse_properties(entry.get("properties"))
+        except PropertyParseError as exc:
+            raise ContractParseError(f"{fn}: unusable property: {exc}") from exc
+        functions.append(
+            FunctionSpec(
+                name=fn,
+                signature=str(entry.get("signature", "")),
+                cases=cases,
+                properties=properties,
+            )
+        )
 
     return ModuleContract(module_name=name, functions=functions)
 
@@ -126,8 +143,17 @@ ARCHITECT_SYSTEM = (
     "You are a software architect. Given a goal, design a small module as ONLY a JSON "
     "object — no prose, no fences. Schema: {\"module_name\": <identifier>, \"functions\": "
     "[{\"function_name\": <identifier>, \"signature\": <string>, \"description\": <string>, "
-    "\"cases\": [{\"args\": [...], \"expected\": <value>}]}]}. Provide AT LEAST 2 related "
-    "functions, each with at least one concrete case."
+    "\"cases\": [{\"args\": [...], \"expected\": <value>}], \"properties\": [<oracle-free>]}]}. "
+    "Provide AT LEAST 2 related functions, each with at least one concrete case. ALSO give "
+    "each function 'properties' — relations that must hold REGARDLESS of the exact output, "
+    "which is how the system verifies it WITHOUT trusting your numbers. Each is one of: "
+    "{\"kind\":\"round_trip\",\"inverse\":<a SIBLING function name>,\"inputs\":[[x],...]} "
+    "(use this for any inverse pair, e.g. encode/decode, to_c/to_f — it goes here because "
+    "the sibling is in scope); {\"kind\":\"monotonic\",\"direction\":\"increasing\"|"
+    "\"decreasing\",\"inputs\":[[x1],[x2],...]}; {\"kind\":\"idempotent\",\"inputs\":[[x],...]}; "
+    "{\"kind\":\"invariant\",\"invariant\":<sorted_ascending|sorted_descending|"
+    "is_permutation_of_input|length_preserved|elements_unique|non_negative>,\"inputs\":[[x],...]}. "
+    "Omit 'properties' (or []) for a function only when no such relation applies."
 )
 PM_SYSTEM = (
     "You are a product manager defining acceptance for a module. Given its functions, "
@@ -154,6 +180,7 @@ def _contract_to_json(contract: ModuleContract) -> str:
                     "function_name": f.name,
                     "signature": f.signature,
                     "cases": [{"args": c.args, "expected": c.expected} for c in f.cases],
+                    "properties": [p.to_payload() for p in f.properties],
                 }
                 for f in contract.functions
             ],
@@ -325,8 +352,12 @@ class ModuleSyntaxGate(Gate):
 
 
 class ModuleAcceptanceGate(Gate):
+    """Per-function exact-value cases. SOFT (P13): the `expected` values are model-authored
+    oracles, so a discrepancy is advisory. ModulePropertyGate (oracle-free) and the
+    IntegrationGate (cross-function relations) are the hard behavioral authorities."""
+
     name = "acceptance-tests"
-    determinism = Determinism.HARD
+    determinism = Determinism.SOFT
 
     def __init__(self, contract: ModuleContract, executor: Executor | None = None, timeout: float = 10.0) -> None:
         self.contract = contract
@@ -340,7 +371,40 @@ class ModuleAcceptanceGate(Gate):
             for c in f.cases
         ]
         passed, evidence = _run_module_cases(self.executor, artifact.payload, triples, self.timeout)
-        return self._result(passed, evidence)
+        if passed:
+            return self._result(True, evidence)
+        return self._result(False, f"case discrepancy (advisory, model-authored oracle): {evidence}")
+
+
+class ModulePropertyGate(Gate):
+    """HARD: each function's oracle-free properties, checked against the WHOLE module so a
+    round_trip's inverse sibling is in scope. No model value is the oracle. Functions with
+    no properties contribute nothing to the hard verdict (honestly not hard-verified)."""
+
+    name = "properties"
+    determinism = Determinism.HARD
+
+    def __init__(self, contract: ModuleContract, executor: Executor | None = None, timeout: float = 10.0) -> None:
+        self.contract = contract
+        self.executor = executor or _EXEC
+        self.timeout = timeout
+
+    def check(self, artifact: Artifact) -> GateResult:
+        checked = 0
+        held: list[str] = []
+        for f in self.contract.functions:
+            if not f.properties:
+                continue
+            passed, evidence = run_properties(
+                self.executor, artifact.payload, f.name, f.properties, self.timeout
+            )
+            if not passed:
+                return self._result(False, f"{f.name}: {evidence}")
+            checked += 1
+            held.append(f"{f.name} ({len(f.properties)})")
+        if checked == 0:
+            return self._result(True, "no oracle-free properties offered — behavior not hard-verified")
+        return self._result(True, f"oracle-free properties hold for {', '.join(held)}")
 
 
 class IntegrationGate(Gate):
@@ -410,9 +474,10 @@ def build_module(goal: str, provider: ModelProvider, memory: MemoryStore) -> Mod
         propose_module,
         [
             ModuleSyntaxGate(names),
-            ModuleAcceptanceGate(contract),
+            ModulePropertyGate(contract),  # HARD: per-function oracle-free (round_trip goes hard here)
+            ModuleAcceptanceGate(contract),  # SOFT: per-function exact cases, advisory
             SecurityScanGate(),
-            IntegrationGate(tests),
+            IntegrationGate(tests),  # HARD: cross-function relations (PM round-trips/invariants)
             ValidationGate(),  # final authority — must run last
         ],
     )

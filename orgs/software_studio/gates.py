@@ -62,6 +62,27 @@ print("OK", len(_cases), "cases")
 _DEFAULT_EXECUTOR = LocalSubprocessExecutor()
 
 
+def run_properties(
+    executor: Executor,
+    code: str,
+    function_name: str,
+    properties: list[Property],
+    timeout: float,
+) -> tuple[bool, str]:
+    """Run oracle-free properties for one function against `code` (which may define its
+    siblings too — so round_trip's inverse is in scope at the module/app level).
+    Deterministic given the same code+properties; no model value is ever the oracle."""
+    if not properties:
+        return True, "no oracle-free properties offered — behavior not hard-verified"
+    env = {**os.environ, "VERITAS_PROPS": serialize(properties), "VERITAS_FN": function_name}
+    result = executor.run(f"{code}\n{PROPERTY_HARNESS}", env, timeout)
+    if result.ok:
+        held = "; ".join(p.describe() for p in properties)
+        return True, f"{len(properties)} oracle-free property(ies) hold: {held}"
+    last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "non-zero exit"
+    return False, last
+
+
 def _run_cases(
     executor: Executor,
     code: str,
@@ -172,19 +193,10 @@ class PropertyGate(Gate):
         self.timeout = timeout
 
     def check(self, artifact: Artifact) -> GateResult:
-        if not self.properties:
-            return self._result(True, "no oracle-free properties offered — behavior not hard-verified")
-        env = {
-            **os.environ,
-            "VERITAS_PROPS": serialize(self.properties),
-            "VERITAS_FN": self.function_name,
-        }
-        result = self.executor.run(f"{artifact.payload}\n{PROPERTY_HARNESS}", env, self.timeout)
-        if result.ok:
-            held = "; ".join(p.describe() for p in self.properties)
-            return self._result(True, f"{len(self.properties)} oracle-free property(ies) hold: {held}")
-        last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "non-zero exit"
-        return self._result(False, last)
+        passed, evidence = run_properties(
+            self.executor, artifact.payload, self.function_name, self.properties, self.timeout
+        )
+        return self._result(passed, evidence)
 
 
 class SecurityScanGate(Gate):

@@ -60,7 +60,49 @@ def test_clean_module_ships_with_full_provenance(tmp_path):
     assert result.integration_outcome.artifact.type == "integration-spec"
     assert result.code_outcome is not None and result.code_outcome.accepted
     gate_names = [g.gate_name for g in result.code_outcome.artifact.provenance.gate_results]
-    assert gate_names == ["module-syntax", "acceptance-tests", "security-scan", "integration", "validation"]
+    assert gate_names == [
+        "module-syntax", "properties", "acceptance-tests", "security-scan", "integration", "validation",
+    ]
+
+
+RT_CONTRACT = json.dumps(
+    {
+        "module_name": "codec",
+        "functions": [
+            {
+                "function_name": "encode",
+                "signature": "def encode(x)",
+                "cases": [{"args": [5], "expected": 6}],
+                # round_trip goes HARD here because the inverse sibling is in scope — no
+                # model-authored output value is trusted, only "decode undoes encode".
+                "properties": [{"kind": "round_trip", "inverse": "decode", "inputs": [[5], [0], [42]]}],
+            },
+            {
+                "function_name": "decode",
+                "signature": "def decode(y)",
+                "cases": [{"args": [6], "expected": 5}],
+            },
+        ],
+    }
+)
+RT_PM = json.dumps(["assert decode(encode(9)) == 9"])
+RT_GOOD = "def encode(x):\n    return x + 1\n\ndef decode(y):\n    return y - 1\n"
+RT_BROKEN_INVERSE = "def encode(x):\n    return x + 1\n\ndef decode(y):\n    return y - 2\n"
+
+
+def test_round_trip_goes_hard_at_module_level(tmp_path):
+    # GOOD: the property holds, and the gate that holds it is HARD.
+    ok = build_module("a codec", _provider(RT_CONTRACT, RT_PM, RT_GOOD), MemoryStore(tmp_path))
+    assert ok.accepted
+    prop = next(g for g in ok.code_outcome.artifact.provenance.gate_results if g.gate_name == "properties")
+    assert prop.passed and prop.determinism.value == "hard"
+
+    # BROKEN inverse: decode no longer undoes encode -> the HARD property gate rejects, with
+    # no `expected` value anywhere in the verdict.
+    bad = build_module("a codec", _provider(RT_CONTRACT, RT_PM, RT_BROKEN_INVERSE), MemoryStore(tmp_path))
+    assert not bad.accepted
+    prop = next(g for g in bad.code_outcome.artifact.provenance.gate_results if g.gate_name == "properties")
+    assert not prop.passed and "round_trip" in prop.evidence
 
 
 def test_integration_gate_catches_composition_failure(tmp_path):

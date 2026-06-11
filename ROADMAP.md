@@ -187,8 +187,10 @@ The build chunk proved the thesis *works*; the next rungs make it **robust** and
   - **P13b · PropertyGate hard / cases soft** ✅ — oracle-free `PropertyGate` is the HARD
     behavioral authority; exact `expected` cases demoted to SOFT (model-authored oracle =
     advisory). The honest limit (no relation pins `a+b` vs `a-b`) is documented as a test.
-  - **P13c · Carry up** — properties become the module + app HARD acceptance; round_trip
-    goes hard (the inverse function is in scope), so `f2c(c2f(x)) ≈ x` is a hard guarantee.
+  - **P13c · Carry up** ✅ — per-function oracle-free properties become a HARD
+    `ModulePropertyGate`; per-function exact cases demoted to SOFT. round_trip goes hard
+    (the inverse sibling is in scope). The app inherits it transitively via `build_module`;
+    cross-function behavior stays hard via the IntegrationGate's relational snippets.
   - **P13d · Graded-confidence oracle (soft-tier upgrade)** — for the value gap properties
     can't reach, strengthen the SOFT check: N independent draws / multiple models vote on
     the oracle and report *agreement level* as graded confidence (drives retry, flags a
