@@ -9,9 +9,11 @@ seam. Static UI is served at /.
 from __future__ import annotations
 
 import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -20,6 +22,7 @@ from pydantic import BaseModel
 
 from engine.memory import MemoryStore
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
+from engine.run import ActivityEntry, set_activity_listener
 from hub.store import RunStore, summarize
 from orgs.registry import REGISTRY, get_org
 
@@ -70,6 +73,19 @@ def create_app(
         if org_name not in memories:
             memories[org_name] = MemoryStore(base / "memory" / org_name)
         return memories[org_name]
+
+    # Live run state, keyed by a one-shot token, so the UI can watch a run unfold
+    # (Explain -> Synthesize -> Verify -> Persist) instead of only seeing the result.
+    progress: dict[str, dict[str, Any]] = {}
+
+    def _event(entry: ActivityEntry) -> dict[str, Any]:
+        return {
+            "phase": entry.phase.value,
+            "actor": entry.actor,
+            "message": entry.message,
+            "duration_ms": round(entry.duration_ms, 1),
+            "at": entry.at,
+        }
 
     app = FastAPI(title="Veritas Hub")
 
@@ -126,6 +142,52 @@ def create_app(
     @app.get("/api/models")
     def list_models() -> list[dict[str, str]]:
         return [{"name": k, "label": v["label"], "cost": v["cost"]} for k, v in MODELS.items()]
+
+    @app.post("/api/runs/start")
+    def start_run(req: RunRequest) -> dict[str, str]:
+        """Kick off a run in the background and return a token to watch it by. The build
+        is unchanged — it just runs under a listener that streams its activity into
+        `progress[token]`, which the timeline polls."""
+        token = uuid4().hex
+        progress[token] = {
+            "events": [
+                {
+                    "phase": "explain",
+                    "actor": "run",
+                    "message": "run started — the cast is proposing…",
+                    "duration_ms": 0.0,
+                    "at": datetime.now(timezone.utc).isoformat(),
+                }
+            ],
+            "done": False,
+            "run": None,
+            "error": None,
+        }
+
+        def worker() -> None:
+            set_activity_listener(lambda e: progress[token]["events"].append(_event(e)))
+            try:
+                org = get_org(req.org)
+                prov = injected_provider or _provider_for(req.model)
+                result = org.build(req.goal, prov, org_memory(org.name))
+                summary = summarize(result, datetime.now(timezone.utc).isoformat(), model=req.model)
+                runs.save(summary)
+                progress[token]["run"] = runs.get(summary.id)
+            except Exception as exc:  # missing key, unknown model/org, model API error
+                progress[token]["error"] = f"{type(exc).__name__}: {exc}"
+            finally:
+                progress[token]["done"] = True
+                set_activity_listener(None)
+
+        threading.Thread(target=worker, daemon=True).start()
+        return {"token": token}
+
+    @app.get("/api/runs/progress/{token}")
+    def run_progress(token: str) -> dict[str, Any]:
+        state = progress.get(token)
+        if state is None:
+            return {"error": "unknown run token"}
+        return state
 
     @app.post("/api/runs")
     def create_run(req: RunRequest) -> dict[str, Any]:

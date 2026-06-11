@@ -8,6 +8,7 @@ documents the function (the doc role), so its examples are verified to run too.
 from __future__ import annotations
 
 import json
+import time
 
 from fastapi.testclient import TestClient
 
@@ -78,6 +79,32 @@ def test_orgs_endpoint_lists_registry(tmp_path):
     orgs = client.get("/api/orgs").json()
     assert {o["name"] for o in orgs} == {"software"}
     assert all(o["input_noun"] and o["produces"] and o["verified_by"] for o in orgs)
+
+
+def test_start_run_streams_real_activity_then_completes(tmp_path):
+    client = _client(tmp_path)
+    token = client.post("/api/runs/start", json={"goal": "add two numbers"}).json()["token"]
+
+    state = None
+    for _ in range(200):  # the offline build finishes in well under this
+        state = client.get(f"/api/runs/progress/{token}").json()
+        if state.get("done"):
+            break
+        time.sleep(0.05)
+
+    assert state is not None and state["done"] and state["error"] is None
+    assert state["run"] is not None and state["run"]["accepted"]
+    # the timeline carried REAL gate verdicts and the persist step — not a script
+    phases = {e["phase"] for e in state["events"]}
+    assert {"verify", "persist"} <= phases
+    assert "validation" in [e["actor"] for e in state["events"]]
+    # and the finished run landed in the persisted list
+    assert len(client.get("/api/runs").json()) == 1
+
+
+def test_progress_for_unknown_token_is_an_error(tmp_path):
+    client = _client(tmp_path)
+    assert client.get("/api/runs/progress/does-not-exist").json()["error"]
 
 
 def test_software_run_uses_isolated_memory_namespace(tmp_path):

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -40,6 +41,19 @@ class ActivityEntry:
     at: str = field(default_factory=_now)
 
 
+# A live tap on the activity stream, for the Hub's run timeline. It is purely
+# observational — set per execution context (per worker thread), default off, and a
+# misbehaving listener can never affect a verdict. The decision engine does not know or
+# care that anyone is watching.
+_activity_listener: ContextVar[Callable[[ActivityEntry], None] | None] = ContextVar(
+    "veritas_activity_listener", default=None
+)
+
+
+def set_activity_listener(listener: Callable[[ActivityEntry], None] | None) -> None:
+    _activity_listener.set(listener)
+
+
 @dataclass
 class Outcome:
     artifact: Artifact
@@ -58,9 +72,14 @@ class Run:
 
     def _activity(self, phase: Phase, actor: str, message: str, duration_ms: float = 0.0) -> None:
         self.phase = phase
-        self.log.append(
-            ActivityEntry(phase=phase, actor=actor, message=message, duration_ms=duration_ms)
-        )
+        entry = ActivityEntry(phase=phase, actor=actor, message=message, duration_ms=duration_ms)
+        self.log.append(entry)
+        listener = _activity_listener.get()
+        if listener is not None:
+            try:
+                listener(entry)
+            except Exception:  # a watcher must never be able to disturb the run
+                pass
 
     def verify(self, artifact: Artifact, gates: Sequence[Gate]) -> list[GateResult]:
         """Run every gate, recording each verdict onto the artifact's provenance."""

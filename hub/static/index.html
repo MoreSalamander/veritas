@@ -103,6 +103,26 @@
   .orgprinciple { margin-top: 12px; padding: 11px 13px; border-left: 3px solid var(--cyan);
                   background: rgba(34, 211, 238, .05); border-radius: 0 8px 8px 0;
                   color: var(--ink); font-size: 13px; line-height: 1.5; }
+
+  /* --- the live run timeline (D) --- */
+  .verdict.running { color: var(--cyan); }
+  .livedot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+             background: var(--cyan); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+  .tlrow { display: flex; gap: 10px; align-items: baseline; padding: 7px 12px;
+           border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px;
+           animation: slidein .18s ease-out; }
+  .tlrow:last-child { border-bottom: 0; }
+  @keyframes slidein { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; } }
+  .tlphase { font-size: 9px; letter-spacing: .5px; text-transform: uppercase; padding: 2px 6px;
+             border-radius: 4px; border: 1px solid var(--line); color: var(--dim);
+             min-width: 70px; text-align: center; flex-shrink: 0; }
+  .tlphase.verify { color: var(--cyan); border-color: rgba(34, 211, 238, .4); }
+  .tlphase.persist { color: var(--green); border-color: rgba(52, 211, 153, .4); }
+  .tlphase.synthesize { color: var(--amber); border-color: rgba(251, 191, 36, .4); }
+  .tlactor { font-weight: 700; min-width: 110px; flex-shrink: 0; }
+  .tlmsg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tldur { margin-left: auto; flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -310,21 +330,49 @@ async function loadMemory() {
   }).join('') : '<div class="muted">Memory is empty.</div>';
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// One line in the live timeline. The phase chip and a pass/fail tint let you read the run
+// as it happens; the full hard/soft ledger renders once it finishes.
+function timelineRow(ev) {
+  const m = ev.message || '';
+  const cls = (m.startsWith('PASS') || m.startsWith('accepted') || m.startsWith('APPROVED')) ? 'pass'
+            : (m.startsWith('FAIL') || m.startsWith('rejected') || m.startsWith('WITHHELD')) ? 'fail' : 'muted';
+  const dur = ev.duration_ms ? `<span class="muted tldur">${ev.duration_ms}ms</span>` : '';
+  return `<div class="tlrow"><span class="tlphase ${esc(ev.phase)}">${esc(ev.phase)}</span><span class="tlactor">${esc(ev.actor)}</span><span class="tlmsg ${cls}">${esc(m)}</span>${dur}</div>`;
+}
+
+function runError(msg) {
+  $('#latest').innerHTML = `<h2>Latest Run</h2><div class="panel"><span class="fail">Run failed:</span> <span class="mono">${esc(msg)}</span><div class="muted" style="margin-top:6px">Claude models need ANTHROPIC_API_KEY set where the hub runs.</div></div>`;
+}
+
 $('#org').onchange = syncHint;
 $('#go').onclick = async () => {
   const goal = $('#goal').value.trim();
   if (!goal) return;
-  $('#go').disabled = true; $('#runhint').textContent = 'Running… the cast is reviewing the proposal.';
+  $('#go').disabled = true;
+  $('#runhint').textContent = 'Running… watch the cast propose and the gates decide.';
+  $('#latest').innerHTML = `<h2>Latest Run</h2><div class="panel">
+      <div class="verdict running"><span class="livedot"></span> RUNNING…</div>
+      <div id="timeline" class="gates"></div></div>`;
   try {
-    const r = await api('/api/runs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({goal, org: $('#org').value, model: $('#model').value}) });
-    if (r.error) {
-      $('#latest').innerHTML = `<h2>Latest Run</h2><div class="panel"><span class="fail">Run failed:</span> <span class="mono">${esc(r.error)}</span><div class="muted" style="margin-top:6px">Claude models need ANTHROPIC_API_KEY set where the hub runs.</div></div>`;
-    } else {
-      $('#latest').innerHTML = '<h2>Latest Run</h2>' + runCard(r);
-      loadDash();
+    const start = await api('/api/runs/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({goal, org: $('#org').value, model: $('#model').value}) });
+    if (start.error || !start.token) { runError(start.error || 'could not start run'); return; }
+    while (true) {
+      const p = await api('/api/runs/progress/' + start.token);
+      if (p.error) { runError(p.error); return; }
+      const tl = $('#timeline');
+      if (tl) tl.innerHTML = p.events.map(timelineRow).join('');
+      if (p.done) {
+        if (p.error) runError(p.error);
+        else if (p.run) { $('#latest').innerHTML = '<h2>Latest Run</h2>' + runCard(p.run); loadDash(); }
+        return;
+      }
+      await sleep(350);
     }
   } finally {
-    $('#go').disabled = false; $('#runhint').textContent = 'The model proposes; the deterministic gates decide.';
+    $('#go').disabled = false;
+    $('#runhint').textContent = 'The model proposes; the deterministic gates decide.';
   }
 };
 
