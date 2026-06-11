@@ -70,7 +70,7 @@ veritas/
 
 ## The phases
 
-### Phase 0 — The Spine  *(engine, offline, no LLM)*
+### Phase 0 — The Spine  *(engine, offline, no LLM)* ✅
 The data model and the loop, before a single agent exists.
 - **Build:** `Artifact` (typed, owned, status, full provenance) · `Gate`
   (interface declaring **hard|soft**, returns pass/fail + evidence) · `Memory` store
@@ -81,7 +81,7 @@ The data model and the loop, before a single agent exists.
   gate persists with a complete provenance trail, and through a *stub failing* gate lands
   in failure memory. Proposers are stubs. The loop is real even though nothing is smart yet.
 
-### Phase 1 — One Honest Run  *(software_studio, minimal cast)*
+### Phase 1 — One Honest Run  *(software_studio, minimal cast)* ✅
 The thesis, proven in the smallest unit that can prove it.
 - **Build:** one narrow capability (e.g. "goal → one REST endpoint"). A **Spec** agent
   (one local proposer) → Spec artifact gated by a **spec-scorer** that *rejects any spec
@@ -92,7 +92,7 @@ The thesis, proven in the smallest unit that can prove it.
   second run (bad spec or failing code) produces a real rejection in failure memory. The
   green is earned. This is the homerun swing in miniature.
 
-### Phase 2 — The Cast  *(software_studio fills out)*
+### Phase 2 — The Cast  *(software_studio fills out)* ✅
 The full organization from the preview, made real.
 - **Build:** Architect, QA, Security, Validation as additional proposers, each emitting a
   typed artifact (API-CONTRACT / PLAN / TEST / SECURITY-REPORT) behind its own gate.
@@ -103,7 +103,7 @@ The full organization from the preview, made real.
   with at least one gate capable of halting or triggering a retry, and no artifact reaches
   memory without complete provenance.
 
-### Phase 3 — The Org Learns  *(institutional memory goes active)*
+### Phase 3 — The Org Learns  *(institutional memory goes active)* ✅
 Where "the system that learns how to build the system" stops being a slogan.
 - **Build:** failure + lesson **retrieval** — when a new task starts, surface relevant
   past failures/lessons (tag or embedding match over institutional memory) into the
@@ -112,7 +112,7 @@ Where "the system that learns how to build the system" stops being a slogan.
   avoids* a mistake a prior run made — with the retrieved memory recorded in its
   provenance.
 
-### Phase 4 — The Hub  *(control plane, extracted from what the org proved it needs)*
+### Phase 4 — The Hub  *(control plane, extracted from what the org proved it needs)* ✅
 Now the central hub the organizations live in.
 - **Build:** org **registry** (an org = substrate + a cast manifest; stand one up from
   config) · **Mission Control** API + dashboard fed by *real* telemetry · cross-org shared
@@ -120,7 +120,7 @@ Now the central hub the organizations live in.
 - **Done when:** you start a run from the hub UI, watch real (not scripted) telemetry,
   and browse real institutional memory — all backed by the engine, nothing mocked.
 
-### Phase 5 — Second Org Type  *(prove the reusability claim)*
+### Phase 5 — Second Org Type  *(prove the reusability claim)* ⏳ *(next — see P14)*
 The meta-thesis validated.
 - **Build:** stand up a second org (e.g. a Research Lab, or a Production Studio echoing
   scene/beats) on the **unchanged** substrate by swapping only the cast + its gates.
@@ -143,45 +143,57 @@ the gate that is capable of rejecting.
 
 ## The 10-month arc (Jun 2026 → Apr 2027)
 
-P0–P5 + hub + registry are done. North star: **an autonomous org that reliably builds a
-small-but-real multi-file app — the full cast earning their seats — and takes its first
-proven step toward building its own parts.** The cast grows as the deliverable grows;
-nothing earns a seat before there is something for it to verify.
+**Status (Jun 2026):** P0–P12 are done — the full build chunk landed ahead of the arc.
+The engine substrate, the software org with its complete cast, institutional memory
+(failures *and* decisions), the retry loop, the hub + registry, the cloud model provider,
+and a 3-way model toggle (local / Haiku / Sonnet / Opus) are all built and tested. The
+north star of this chunk is **met**: a natural-language goal now walks autonomously through
+*plan → modules → assembled package → entrypoint → end-to-end-verified runnable app* — and
+a representative build came back **accepted green, zero retries, on a frontier model.** The
+cast earned their seats one verifiable artifact at a time; nothing was added before there
+was something for it to check.
 
-- **P6 · Module** (Jun–Jul) — grow the unit from one function to a few-file module +
-  integration test, all building green together. **Architect** (module boundaries /
-  contract — validates against schema, types check) and **PM** (acceptance criteria as
-  executable tests) earn real, gated seats.
-- **P7 · App skeleton** (Aug–Oct) — modules compose into a runnable app (small API/CLI).
-  New verifiable artifacts: API contract validates, end-to-end test runs. **CEO/PM**
-  decompose a goal into modules/tickets; the **Memory** role earns its seat (decision
-  records across the app).
-- **P8 · Autonomy** (Oct–Dec) — the retry loop (rejection → re-propose with gate feedback)
-  + scoring, so the org drives multi-step builds to a passing bar on its own; failure
-  retrieval across the larger surface.
-- **P9 · Hosting prep** (Dec–Feb) — sandboxed Executor (real isolation for bigger/untrusted
-  builds), cloud model provider, DB-backed memory + run history. The deferred deployment work.
-- **P10 · Bootstrap** (Feb–Apr) — point the proven org at building one real Veritas
-  component (a new gate or role) under its own gates. The strange loop, earned — and only
-  after it reliably builds ordinary apps.
+### The build chunk — done (fine rungs; numbers climb monotonically forever)
 
-### The fine rungs (single-job; phase numbers climb monotonically)
-
-The milestones above are coarse targets; the actual work is finer rungs, each adding one
-verifiable thing behind one gate. The next chunk, toward "a small running app":
+Each rung added one verifiable thing behind one gate.
 
 - **P6 · Module** ✅ — function → module; Architect + PM gated; integration gate guards composition.
 - **P7 · Unify + wire** ✅ — one `build(goal)` routes function vs module; hub rides on it.
-- **P8 · Planner** — a goal too big for one module → a *plan* (list of module contracts).
-  CEO/Planner earns a seat. Gate: `PlanGate`. Done: validated multi-module plan, no code.
-- **P9 · Assembly** — build each planned module; prove they coexist (importable together,
-  no name clashes). Gate: `AssemblyGate`. Done: plan → assembled package.
-- **P10rung · Entrypoint + E2E** — app = modules + entrypoint (CLI) + end-to-end test.
-  Integrator earns a seat. Gate: `E2EGate`. Done: goal → runnable small app, e2e green.
-- **P11 · Memory seat** — decision records persisted and surfaced on related builds.
-  Done: a build's decisions inform a later related build.
-- **P12 · Retry loop** — on rejection, re-propose with gate feedback within the run
-  (`run.attempt` + scoring). Done: fail → feedback → succeed, in one run. Autonomy begins.
+- **P8 · Planner** ✅ — a goal too big for one module → a *plan* (list of module contracts).
+  Planner seat; `PlanGate`. Validated multi-module plan, no code.
+- **P9 · Assembly** ✅ — build each planned module; prove they coexist (importable together,
+  no name clashes). `AssemblyGate`. Plan → assembled package.
+- **P10 · Entrypoint + E2E** ✅ — app = modules + entrypoint + end-to-end test. Integrator
+  seat; `EntrypointGate` + `E2EGate`. Goal → runnable small app, e2e green. The
+  entrypoint↔e2e *handshake* fix (PM authors the e2e first, as `main()`'s contract;
+  Integrator implements against it; retry re-checks against the same tests) is what carried
+  a whole app to green on a frontier model.
+- **P11 · Memory seat** ✅ — decision records persisted and surfaced on related builds; a
+  build's decisions now inform a later related build (`MemoryRecord.from_decision`).
+- **P12 · Retry loop** ✅ — on rejection, re-propose with gate feedback within the run
+  (`run.attempt` + scoring). Fail → feedback → succeed, in one run. Autonomy began here.
 
-Hosting (sandboxed Executor, cloud model, DB-backed memory) and the bootstrap stay past
-this chunk.
+### What's next (the remaining arc, Jul 2026 → Apr 2027)
+
+The build chunk proved the thesis *works*; the next rungs make it **robust** and **plural**.
+
+- **P13 · Structured oracles** (Jul–Sep) — take raw LLM-authored value assertions out of the
+  HARD gates entirely. Hard gates verify only against structured/metamorphic specs
+  (round-trips, invariants, fixed points, type/contract checks) — never a number the model
+  wrote. *Done: no app hard gate trusts a model-written oracle; app builds move from
+  occasionally-lucky to reliably-green.* This is the deepest robustness play.
+- **P14 · Second org type** (Sep–Nov) — stand up an org with a **genuinely different
+  verification model** on the *unchanged* engine — e.g. a research/docs org gated by
+  citation integrity, claim-to-source grounding, and internal consistency (a topic with no
+  code to run). *Done: a non-software org runs on the same substrate — the reusability claim,
+  proven, not asserted.*
+- **P15 · Hub maturation** (Nov–Dec) — polish the app route; real run-history browsing,
+  per-run telemetry, and an audit view over institutional memory. *Done: start, watch, and
+  audit any run from the hub with nothing mocked.*
+- **P16 · Hosting** (Dec–Feb) — sandboxed Executor (real isolation for bigger/untrusted
+  builds) + DB-backed memory and run history. (The cloud model provider already landed
+  early, alongside the toggle.) *Done: a build runs isolated, persisted to a real store.*
+- **P17 · Bootstrap** (Feb–Apr) — point the proven org at building one real Veritas
+  component (a new gate or role) under its own gates. The strange loop, earned — and only
+  after it reliably builds ordinary apps. *Done: a Veritas part ships that the org built and
+  its own gates accepted.*
