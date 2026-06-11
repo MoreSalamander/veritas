@@ -73,7 +73,7 @@ def build_software(
     run = Run(goal=goal, memory=memory)
 
     # The org reads its own memory first.
-    recalled = memory.recall(goal, categories=["failure", "lesson"], limit=3)
+    recalled = memory.recall(goal, categories=["failure", "lesson", "decision"], limit=3)
     lessons = format_lessons(recalled)
     informed_by = [record.id for record in recalled]
 

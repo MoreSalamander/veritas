@@ -48,17 +48,28 @@ def _tokens(text: str) -> set[str]:
 
 
 def format_lessons(recalled: list["MemoryRecord"]) -> str | None:
-    """Turn recalled failures/lessons into a prompt preamble. Org-agnostic — any
-    org's proposers can be warned by the org's own past mistakes this way."""
+    """Turn recalled memory into a prompt preamble. Failures/lessons warn the proposer off
+    past mistakes; decisions tell it how the org structured similar goals before (so new
+    work stays consistent). Org-agnostic."""
     if not recalled:
         return None
-    lines = ["Lessons from past attempts at similar goals (avoid repeating these):"]
-    for record in recalled:
-        reason = record.provenance.get("rejected_because")
-        if not reason:
-            reason = record.body.splitlines()[0] if record.body else record.title
-        lines.append(f"- {record.title}: {reason}")
-    return "\n".join(lines)
+    failures = [r for r in recalled if r.category != "decision"]
+    decisions = [r for r in recalled if r.category == "decision"]
+    blocks: list[str] = []
+    if failures:
+        lines = ["Lessons from past attempts at similar goals (avoid repeating these):"]
+        for r in failures:
+            reason = r.provenance.get("rejected_because")
+            if not reason:
+                reason = r.body.splitlines()[0] if r.body else r.title
+            lines.append(f"- {r.title}: {reason}")
+        blocks.append("\n".join(lines))
+    if decisions:
+        lines = ["How the org structured similar goals before (prefer consistency):"]
+        for r in decisions:
+            lines.append(f"- {r.title}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks) if blocks else None
 
 
 @dataclass
@@ -81,6 +92,24 @@ class MemoryRecord:
             source_artifact_id=artifact.id,
             tags=[artifact.type, "accepted"],
             provenance=_provenance_dict(artifact),
+        )
+
+    @classmethod
+    def from_decision(
+        cls, *, goal: str, shape: str, artifact_types: list[str], source_ids: list[str]
+    ) -> "MemoryRecord":
+        """A factual record of what the org decided and shipped — the Memory seat. Not an
+        LLM proposal: it's built deterministically from an accepted build, so it's complete
+        and explainable by construction (Rule 4)."""
+        return cls(
+            category="decision",
+            title=f"built {goal!r} as a {shape}",
+            body=(
+                f"Goal: {goal}\nChosen shape: {shape}\n"
+                f"Produced: {', '.join(artifact_types)}\nShipped — verified by the org's gates."
+            ),
+            tags=["decision", shape],
+            provenance={"goal": goal, "shape": shape, "artifacts": list(source_ids)},
         )
 
     @classmethod

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from engine.memory import MemoryStore
+from engine.memory import MemoryRecord, MemoryStore
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome
 from orgs.software_studio.app import build_app
@@ -68,21 +68,32 @@ def build(
         for o in (a.package_outcome, a.entrypoint_outcome, a.e2e_outcome):
             if o is not None:
                 outcomes.append(o)
-        return BuildResult("app", a.accepted, outcomes, a.informed_by, a.run_id, a.activity)
-
-    if chosen == "module":
+        result = BuildResult("app", a.accepted, outcomes, a.informed_by, a.run_id, a.activity)
+    elif chosen == "module":
         m = build_module(goal, provider, memory)
         outcomes = [m.contract_outcome]
         if m.integration_outcome is not None:
             outcomes.append(m.integration_outcome)
         if m.code_outcome is not None:
             outcomes.append(m.code_outcome)
-        return BuildResult("module", m.accepted, outcomes, m.informed_by, m.run_id, m.activity)
+        result = BuildResult("module", m.accepted, outcomes, m.informed_by, m.run_id, m.activity)
+    else:
+        s = build_software(goal, provider, memory, document=True)
+        outcomes = [s.spec_outcome]
+        if s.code_outcome is not None:
+            outcomes.append(s.code_outcome)
+        if s.doc_outcome is not None:
+            outcomes.append(s.doc_outcome)
+        result = BuildResult("function", s.accepted, outcomes, s.informed_by, s.run_id, s.activity)
 
-    s = build_software(goal, provider, memory, document=True)
-    outcomes = [s.spec_outcome]
-    if s.code_outcome is not None:
-        outcomes.append(s.code_outcome)
-    if s.doc_outcome is not None:
-        outcomes.append(s.doc_outcome)
-    return BuildResult("function", s.accepted, outcomes, s.informed_by, s.run_id, s.activity)
+    # MEMORY seat: record what was decided, on acceptance, so related future builds recall it.
+    if result.accepted:
+        memory.persist(
+            MemoryRecord.from_decision(
+                goal=goal,
+                shape=result.shape,
+                artifact_types=[o.artifact.type for o in result.outcomes],
+                source_ids=[o.artifact.id for o in result.outcomes],
+            )
+        )
+    return result
