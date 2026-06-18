@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from engine.artifact import Determinism
+from engine.artifact import Artifact, Determinism
 from engine.memory import MemoryStore, format_lessons
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome, Run
@@ -52,13 +52,17 @@ def build_page(
     def result(spec_o: Outcome, page_o: Outcome | None, accepted: bool) -> PageResult:
         return PageResult(spec_o, page_o, accepted, informed_by, run.id, list(run.log))
 
-    # EXPLAIN — the spec names the page's contract before any HTML exists.
-    spec_artifact = DesignerAgent(provider).propose(goal, lessons=lessons)
-    spec_artifact.provenance.informed_by.extend(informed_by)
-    spec_outcome = run.submit(spec_artifact, [PageSpecGate()])
+    # EXPLAIN — the spec names the page's contract before any HTML exists. Retry on rejection
+    # with the gate's feedback, so a malformed spec self-corrects instead of killing the build.
+    def propose_spec(feedback: str | None) -> Artifact:
+        art = DesignerAgent(provider).propose(goal, lessons=lessons, feedback=feedback)
+        art.provenance.informed_by.extend(informed_by)
+        return art
+
+    spec_outcome = run.attempt(propose_spec, [PageSpecGate()])
     if not spec_outcome.accepted:
         return result(spec_outcome, None, False)
-    spec = parse_page_spec(spec_artifact.payload)
+    spec = parse_page_spec(spec_outcome.artifact.payload)
     required = spec.required_elements
 
     # SYNTHESIZE + VERIFY — render once per attempt; the whole chain rules on that render;
@@ -69,7 +73,7 @@ def build_page(
     best_score = -1
     for attempt in range(1, max_attempts + 1):
         page_artifact = WebDeveloperAgent(provider).propose(
-            spec, parent_id=spec_artifact.id, lessons=lessons, feedback=feedback
+            spec, parent_id=spec_outcome.artifact.id, lessons=lessons, feedback=feedback
         )
         page_artifact.provenance.informed_by.extend(informed_by)
         rendered = executor.render(page_artifact.payload, required)

@@ -98,8 +98,15 @@ class SpecAgent:
     def __init__(self, provider: ModelProvider) -> None:
         self.provider = provider
 
-    def propose(self, goal: str, lessons: str | None = None) -> Artifact:
+    def propose(
+        self, goal: str, lessons: str | None = None, feedback: str | None = None
+    ) -> Artifact:
         prompt = f"Goal: {goal}"
+        if feedback:
+            prompt = (
+                f"Your previous spec was REJECTED: {feedback}\n"
+                f"Return a corrected spec that fixes exactly that.\n\n{prompt}"
+            )
         if lessons:
             prompt = f"{lessons}\n\n{prompt}"
         raw = self.provider.propose(role=self.role, prompt=prompt, system=SPEC_SYSTEM)

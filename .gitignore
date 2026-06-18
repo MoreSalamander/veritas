@@ -29,3 +29,4 @@ hub_data/
 .env
 .env.*
 !.env.example
+bench/results/

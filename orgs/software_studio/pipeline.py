@@ -45,13 +45,14 @@ def build_function(goal: str, provider: ModelProvider, memory: MemoryStore) -> S
     """Phase 1 pipeline: goal -> spec -> code, with the core hard gates only."""
     run = Run(goal=goal, memory=memory)
 
-    spec_artifact = SpecAgent(provider).propose(goal)
-    spec_outcome = run.submit(spec_artifact, [SpecScorerGate()])
+    spec_outcome = run.attempt(
+        lambda fb: SpecAgent(provider).propose(goal, feedback=fb), [SpecScorerGate()]
+    )
     if not spec_outcome.accepted:
         return StudioResult(spec_outcome, None, False, [], run.id, list(run.log))
 
-    spec = parse_spec(spec_artifact.payload)
-    code_artifact = DeveloperAgent(provider).propose(spec, parent_id=spec_artifact.id)
+    spec = parse_spec(spec_outcome.artifact.payload)
+    code_artifact = DeveloperAgent(provider).propose(spec, parent_id=spec_outcome.artifact.id)
     code_outcome = run.submit(
         code_artifact,
         [
@@ -90,13 +91,17 @@ def build_software(
     lessons = format_lessons(recalled)
     informed_by = [record.id for record in recalled]
 
-    # EXPLAIN — the spec must be executable before anyone writes code.
-    spec_artifact = SpecAgent(provider).propose(goal, lessons=lessons)
-    spec_artifact.provenance.informed_by.extend(informed_by)
-    spec_outcome = run.submit(spec_artifact, [SpecScorerGate()])
+    # EXPLAIN — the spec must be executable before anyone writes code. Retry on rejection with
+    # the gate's feedback, so a local model's occasional non-executable spec self-corrects.
+    def propose_spec(feedback: str | None) -> Artifact:
+        art = SpecAgent(provider).propose(goal, lessons=lessons, feedback=feedback)
+        art.provenance.informed_by.extend(informed_by)
+        return art
+
+    spec_outcome = run.attempt(propose_spec, [SpecScorerGate()])
     if not spec_outcome.accepted:
         return StudioResult(spec_outcome, None, False, informed_by, run.id, list(run.log))
-    spec = parse_spec(spec_artifact.payload)
+    spec = parse_spec(spec_outcome.artifact.payload)
 
     # QA writes independent tests from the spec — never seeing the implementation.
     qa_cases = QAAgent(provider).propose_cases(spec)
@@ -105,7 +110,7 @@ def build_software(
     # the developer re-writes with the failing gates' evidence, up to a few attempts.
     def propose_code(feedback: str | None) -> Artifact:
         art = DeveloperAgent(provider).propose(
-            spec, parent_id=spec_artifact.id, lessons=lessons, feedback=feedback
+            spec, parent_id=spec_outcome.artifact.id, lessons=lessons, feedback=feedback
         )
         art.provenance.informed_by.extend(informed_by)
         return art
