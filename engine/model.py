@@ -40,17 +40,22 @@ class OllamaProvider(ModelProvider):
         timeout: float = 120.0,
         think: bool = False,
         num_ctx: int | None = None,
+        num_predict: int | None = None,
     ) -> None:
         self.model = model
         self.host = host.rstrip("/")
         self.temperature = temperature
         self.timeout = timeout
         self.think = think
-        # Reasoning needs context room. Ollama defaults each REQUEST to a small window (~4k)
-        # regardless of the model's max — so with thinking ON the <think> block fills it and the
-        # answer never arrives (done_reason="length", empty response). Raise it for thinking
-        # runs unless told otherwise. (A non-thinking call leaves the model default in place.)
-        self.num_ctx = num_ctx if num_ctx is not None else (32768 if think else None)
+        # Reasoning is unbounded and needs TWO things, or it returns an empty answer
+        # (done_reason="length") — verified the hard way with Qwen3.5:
+        #   num_ctx     — room to hold the prompt + the whole <think> block + the answer.
+        #   num_predict — generation budget; Ollama caps each request (~4k by default), and a
+        #                 long <think> burns it before the answer is ever emitted.
+        # We raise both for thinking runs unless told otherwise; non-thinking calls leave the
+        # model defaults in place (a direct answer is short and fast).
+        self.num_ctx = num_ctx if num_ctx is not None else (16384 if think else None)
+        self.num_predict = num_predict if num_predict is not None else (8192 if think else None)
 
     def propose(self, *, role: str, prompt: str, system: str | None = None) -> str:
         # When think=False (the structured-proposal default) a reasoning model answers directly,
@@ -59,6 +64,8 @@ class OllamaProvider(ModelProvider):
         options: dict[str, Any] = {"temperature": self.temperature}
         if self.num_ctx is not None:
             options["num_ctx"] = self.num_ctx
+        if self.num_predict is not None:
+            options["num_predict"] = self.num_predict
         body = {
             "model": self.model,
             "prompt": prompt,
