@@ -194,8 +194,15 @@ class ArchitectAgent:
     def __init__(self, provider: ModelProvider) -> None:
         self.provider = provider
 
-    def propose(self, goal: str, lessons: str | None = None) -> Artifact:
+    def propose(
+        self, goal: str, lessons: str | None = None, feedback: str | None = None
+    ) -> Artifact:
         prompt = f"Goal: {goal}"
+        if feedback:
+            prompt = (
+                f"Your previous contract was REJECTED: {feedback}\n"
+                f"Return a corrected contract that fixes exactly that.\n\n{prompt}"
+            )
         if lessons:
             prompt = f"{lessons}\n\n{prompt}"
         raw = self.provider.propose(role=self.role, prompt=prompt, system=ARCHITECT_SYSTEM)
@@ -443,17 +450,22 @@ def build_module(goal: str, provider: ModelProvider, memory: MemoryStore) -> Mod
     lessons = format_lessons(recalled)
     informed_by = [record.id for record in recalled]
 
-    # ARCHITECT — design the contract; gate it for usability.
-    contract_artifact = ArchitectAgent(provider).propose(goal, lessons=lessons)
-    contract_artifact.provenance.informed_by.extend(informed_by)
-    contract_outcome = run.submit(contract_artifact, [ContractGate()])
+    # ARCHITECT — design the contract; gate it for usability. Retry on rejection with the
+    # gate's feedback: a local model occasionally emits one off-format case, and a single slip
+    # shouldn't kill the whole build when the architect can simply fix it.
+    def propose_contract(feedback: str | None) -> Artifact:
+        art = ArchitectAgent(provider).propose(goal, lessons=lessons, feedback=feedback)
+        art.provenance.informed_by.extend(informed_by)
+        return art
+
+    contract_outcome = run.attempt(propose_contract, [ContractGate()])
     if not contract_outcome.accepted:
         return ModuleResult(contract_outcome, None, None, False, informed_by, run.id, list(run.log))
-    contract = parse_contract(contract_artifact.payload)
+    contract = parse_contract(contract_outcome.artifact.payload)
     names = [f.name for f in contract.functions]
 
     # PM — define the integration test against the contract.
-    pm_artifact = PMAgent(provider).propose(contract, parent_id=contract_artifact.id, lessons=lessons)
+    pm_artifact = PMAgent(provider).propose(contract, parent_id=contract_outcome.artifact.id, lessons=lessons)
     pm_artifact.provenance.informed_by.extend(informed_by)
     integration_outcome = run.submit(pm_artifact, [IntegrationSpecGate(names)])
     if not integration_outcome.accepted:
@@ -465,7 +477,7 @@ def build_module(goal: str, provider: ModelProvider, memory: MemoryStore) -> Mod
     # subtly-wrong implementation gets fixed instead of killing the build.
     def propose_module(feedback: str | None) -> Artifact:
         art = ModuleDeveloperAgent(provider).propose(
-            contract, parent_id=contract_artifact.id, lessons=lessons, feedback=feedback
+            contract, parent_id=contract_outcome.artifact.id, lessons=lessons, feedback=feedback
         )
         art.provenance.informed_by.extend(informed_by)
         return art

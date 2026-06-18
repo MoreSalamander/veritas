@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import urllib.request
 from abc import ABC, abstractmethod
+from typing import Any
 
 
 class ModelProvider(ABC):
@@ -38,25 +39,33 @@ class OllamaProvider(ModelProvider):
         temperature: float = 0.2,
         timeout: float = 120.0,
         think: bool = False,
+        num_ctx: int | None = None,
     ) -> None:
         self.model = model
         self.host = host.rstrip("/")
         self.temperature = temperature
         self.timeout = timeout
         self.think = think
+        # Reasoning needs context room. Ollama defaults each REQUEST to a small window (~4k)
+        # regardless of the model's max — so with thinking ON the <think> block fills it and the
+        # answer never arrives (done_reason="length", empty response). Raise it for thinking
+        # runs unless told otherwise. (A non-thinking call leaves the model default in place.)
+        self.num_ctx = num_ctx if num_ctx is not None else (32768 if think else None)
 
     def propose(self, *, role: str, prompt: str, system: str | None = None) -> str:
-        # think=False is essential for reasoning models (e.g. Qwen3.5): with thinking ON they
-        # can spend the entire generation budget on <think> and return an EMPTY response
-        # (done_reason="length"). We want the structured proposal, not the chain-of-thought —
-        # and it's faster for every model. Harmless for non-thinking models (Ollama ignores it).
+        # When think=False (the structured-proposal default) a reasoning model answers directly,
+        # which is what we want — the artifact, not the chain-of-thought — and faster. When ON,
+        # we keep only `response`; `thinking` is the proposer's private process the gates ignore.
+        options: dict[str, Any] = {"temperature": self.temperature}
+        if self.num_ctx is not None:
+            options["num_ctx"] = self.num_ctx
         body = {
             "model": self.model,
             "prompt": prompt,
             "system": system or "",
             "stream": False,
             "think": self.think,
-            "options": {"temperature": self.temperature},
+            "options": options,
         }
         request = urllib.request.Request(
             f"{self.host}/api/generate",
