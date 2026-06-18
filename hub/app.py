@@ -12,7 +12,7 @@ import os
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 from uuid import uuid4
 
 from fastapi import FastAPI
@@ -28,15 +28,24 @@ from orgs.registry import REGISTRY, get_org
 
 # The model toggle: local Ollama models (free) plus the three Claude tiers. Reliability comes
 # from the gates regardless of which model proposes — this just lets you discover which model a
-# build needs. Each entry declares its kind ("ollama" | "claude") and the exact id to load.
-# Qwen3.5 9B is the default — the star of the show.
-MODELS: dict[str, dict[str, str]] = {
-    "qwen": {"label": "Qwen3.5 9B · local ★", "cost": "free", "kind": "ollama", "id": "qwen3.5:9b"},
-    "qwen-64k": {"label": "Qwen3.5 64k · local", "cost": "free", "kind": "ollama", "id": "qwen3.5-64k:latest"},
-    "llama": {"label": "Llama3.1 8B · local", "cost": "free", "kind": "ollama", "id": "llama3.1:8b"},
-    "haiku": {"label": "Claude Haiku", "cost": "~1–3¢/build", "kind": "claude", "id": "claude-haiku-4-5"},
-    "sonnet": {"label": "Claude Sonnet", "cost": "~4–8¢/build", "kind": "claude", "id": "claude-sonnet-4-6"},
-    "opus": {"label": "Claude Opus", "cost": "~6–13¢/build", "kind": "claude", "id": "claude-opus-4-8"},
+# build needs. Each entry declares its kind ("ollama" | "claude"), the exact id, and whether to
+# run with reasoning ON. `think` pairs with context: qwen3.5:9b runs think-off (fast, direct);
+# qwen3.5-64k has the context headroom to reason AND still answer, so it runs think-on.
+class ModelSpec(TypedDict):
+    label: str
+    cost: str
+    kind: str  # "ollama" | "claude"
+    id: str
+    think: bool
+
+
+MODELS: dict[str, ModelSpec] = {
+    "qwen": {"label": "Qwen3.5 9B · local ★", "cost": "free", "kind": "ollama", "id": "qwen3.5:9b", "think": False},
+    "qwen-64k": {"label": "Qwen3.5 64k · local · thinking", "cost": "free", "kind": "ollama", "id": "qwen3.5-64k:latest", "think": True},
+    "llama": {"label": "Llama3.1 8B · local", "cost": "free", "kind": "ollama", "id": "llama3.1:8b", "think": False},
+    "haiku": {"label": "Claude Haiku", "cost": "~1–3¢/build", "kind": "claude", "id": "claude-haiku-4-5", "think": False},
+    "sonnet": {"label": "Claude Sonnet", "cost": "~4–8¢/build", "kind": "claude", "id": "claude-sonnet-4-6", "think": False},
+    "opus": {"label": "Claude Opus", "cost": "~6–13¢/build", "kind": "claude", "id": "claude-opus-4-8", "think": False},
 }
 
 DEFAULT_MODEL = "qwen"
@@ -47,7 +56,10 @@ def _provider_for(model: str) -> ModelProvider:
     if spec is None:
         raise ValueError(f"unknown model {model!r}")
     if spec["kind"] == "ollama":
-        return OllamaProvider(model=spec["id"])
+        # reasoning runs generate far more tokens, so give them a longer leash
+        return OllamaProvider(
+            model=spec["id"], think=spec["think"], timeout=600.0 if spec["think"] else 120.0
+        )
     return ClaudeProvider(spec["id"])
 
 # Anchor the data dir to the repo root, NOT the launch directory, so the hub finds the
