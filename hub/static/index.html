@@ -366,10 +366,26 @@ $('#go').onclick = async () => {
       <div class="verdict running"><span class="livedot"></span> RUNNING…</div>
       <div id="timeline" class="gates"></div></div>`;
   try {
-    const start = await api('/api/runs/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({goal, org: $('#org').value, model: $('#model').value}) });
+    let start;
+    try {
+      start = await api('/api/runs/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({goal, org: $('#org').value, model: $('#model').value}) });
+    } catch (e) {
+      runError('could not reach the hub — is the server running? (' + e + ')');
+      return;
+    }
     if (start.error || !start.token) { runError(start.error || 'could not start run'); return; }
+    let hiccups = 0;
     while (true) {
-      const p = await api('/api/runs/progress/' + start.token);
+      let p;
+      try {
+        p = await api('/api/runs/progress/' + start.token);
+      } catch (e) {
+        // a transient fetch/parse failure shouldn't freeze the run forever; tolerate a few
+        if (++hiccups > 8) { runError('lost contact with the run (' + e + ')'); return; }
+        await sleep(500);
+        continue;
+      }
+      hiccups = 0;
       if (p.error) { runError(p.error); return; }
       const tl = $('#timeline');
       if (tl) tl.innerHTML = p.events.map(timelineRow).join('');
