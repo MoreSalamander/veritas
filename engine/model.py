@@ -37,18 +37,25 @@ class OllamaProvider(ModelProvider):
         host: str = "http://localhost:11434",
         temperature: float = 0.2,
         timeout: float = 120.0,
+        think: bool = False,
     ) -> None:
         self.model = model
         self.host = host.rstrip("/")
         self.temperature = temperature
         self.timeout = timeout
+        self.think = think
 
     def propose(self, *, role: str, prompt: str, system: str | None = None) -> str:
+        # think=False is essential for reasoning models (e.g. Qwen3.5): with thinking ON they
+        # can spend the entire generation budget on <think> and return an EMPTY response
+        # (done_reason="length"). We want the structured proposal, not the chain-of-thought —
+        # and it's faster for every model. Harmless for non-thinking models (Ollama ignores it).
         body = {
             "model": self.model,
             "prompt": prompt,
             "system": system or "",
             "stream": False,
+            "think": self.think,
             "options": {"temperature": self.temperature},
         }
         request = urllib.request.Request(

@@ -26,23 +26,29 @@ from engine.run import ActivityEntry, set_activity_listener
 from hub.store import RunStore, summarize
 from orgs.registry import REGISTRY, get_org
 
-# The model toggle: local (free) plus the three Claude tiers. Reliability comes from the
-# gates regardless of which proposes — this just lets you discover which model a build needs.
+# The model toggle: local Ollama models (free) plus the three Claude tiers. Reliability comes
+# from the gates regardless of which model proposes — this just lets you discover which model a
+# build needs. Each entry declares its kind ("ollama" | "claude") and the exact id to load.
+# Qwen3.5 9B is the default — the star of the show.
 MODELS: dict[str, dict[str, str]] = {
-    "local": {"label": "Local · llama3.1:8b", "cost": "free", "claude_id": ""},
-    "haiku": {"label": "Claude Haiku", "cost": "~1–3¢/build", "claude_id": "claude-haiku-4-5"},
-    "sonnet": {"label": "Claude Sonnet", "cost": "~4–8¢/build", "claude_id": "claude-sonnet-4-6"},
-    "opus": {"label": "Claude Opus", "cost": "~6–13¢/build", "claude_id": "claude-opus-4-8"},
+    "qwen": {"label": "Qwen3.5 9B · local ★", "cost": "free", "kind": "ollama", "id": "qwen3.5:9b"},
+    "qwen-64k": {"label": "Qwen3.5 64k · local", "cost": "free", "kind": "ollama", "id": "qwen3.5-64k:latest"},
+    "llama": {"label": "Llama3.1 8B · local", "cost": "free", "kind": "ollama", "id": "llama3.1:8b"},
+    "haiku": {"label": "Claude Haiku", "cost": "~1–3¢/build", "kind": "claude", "id": "claude-haiku-4-5"},
+    "sonnet": {"label": "Claude Sonnet", "cost": "~4–8¢/build", "kind": "claude", "id": "claude-sonnet-4-6"},
+    "opus": {"label": "Claude Opus", "cost": "~6–13¢/build", "kind": "claude", "id": "claude-opus-4-8"},
 }
+
+DEFAULT_MODEL = "qwen"
 
 
 def _provider_for(model: str) -> ModelProvider:
-    if model == "local":
-        return OllamaProvider(model=os.environ.get("VERITAS_MODEL", "llama3.1:8b"))
     spec = MODELS.get(model)
-    if not spec or not spec["claude_id"]:
+    if spec is None:
         raise ValueError(f"unknown model {model!r}")
-    return ClaudeProvider(spec["claude_id"])
+    if spec["kind"] == "ollama":
+        return OllamaProvider(model=spec["id"])
+    return ClaudeProvider(spec["id"])
 
 # Anchor the data dir to the repo root, NOT the launch directory, so the hub finds the
 # same runs no matter where it's started from. (Relative "./hub_data" silently moved the
@@ -55,7 +61,7 @@ _STATIC = Path(__file__).parent / "static"
 class RunRequest(BaseModel):
     goal: str
     org: str = "software"
-    model: str = "local"
+    model: str = DEFAULT_MODEL
 
 
 def create_app(
