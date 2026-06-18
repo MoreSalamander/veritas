@@ -153,7 +153,11 @@ ARCHITECT_SYSTEM = (
     "\"decreasing\",\"inputs\":[[x1],[x2],...]}; {\"kind\":\"idempotent\",\"inputs\":[[x],...]}; "
     "{\"kind\":\"invariant\",\"invariant\":<sorted_ascending|sorted_descending|"
     "is_permutation_of_input|length_preserved|elements_unique|non_negative>,\"inputs\":[[x],...]}. "
-    "Omit 'properties' (or []) for a function only when no such relation applies."
+    "MATCH THE PROPERTY TO THE OUTPUT TYPE: the list invariants (sorted_ascending, "
+    "sorted_descending, is_permutation_of_input, length_preserved, elements_unique) are ONLY "
+    "valid when the function RETURNS A LIST; for numbers use monotonic, round_trip, idempotent, "
+    "or non_negative. A property that doesn't fit the type will reject correct code — so when in "
+    "doubt, OMIT it (use []) rather than a wrong one."
 )
 PM_SYSTEM = (
     "You are a product manager defining acceptance for a module. Given its functions, "
