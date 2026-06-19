@@ -7,15 +7,22 @@
 cross-run learning, so this measures raw model+scaffold capability). Each cell is
 `accepted-rate · mean wall-clock`. Run: 2026-06-19.
 
-| goal | shape | qwen-9B (no-think) | llama-8B (no-think) | qwen-64K (thinking) | sonnet (cloud) |
-|---|---|---|---|---|---|
-| double | function | **3/3** · 9s | **3/3** · 8s | **3/3** · 381s | **2/2** · 12s |
-| reverse | function | 0/3 · 15s | **3/3** · 8s | **3/3** · 297s | 1/2 · 16s |
-| clamp | function | **3/3** · 11s | **3/3** · 10s | **3/3** · 462s | **2/2** · 13s |
-| temp | module | 0/3 · 67s | 0/3 · 13s | 1/3 · 493s | **2/2** · 15s |
-| codec | module | 0/3 · 64s | 0/3 · 20s | 0/3 · 639s | **2/2** · 12s |
+| goal | shape | qwen-9B | gemma-12B | llama-8B | qwen-64K (thinking) | sonnet (cloud) |
+|---|---|---|---|---|---|---|
+| double | function | **3/3** · 9s | **2/2** · 17s | **3/3** · 8s | **3/3** · 381s | **2/2** · 12s |
+| reverse | function | 0/3 | 0/2 | **3/3** · 8s | **3/3** · 297s | 1/2 |
+| clamp | function | **3/3** · 11s | 1/2 · 30s | **3/3** · 10s | **3/3** · 462s | **2/2** · 13s |
+| temp | module | 0/3 | 1/2 · 33s | 0/3 | 1/3 · 493s | **2/2** · 15s |
+| codec | module | 0/3 | 0/2 | 0/3 | 0/3 | **2/2** · 12s |
 
-_(local cells 3 repeats; sonnet 2 repeats)_
+_(qwen-9B/llama/qwen-64K 3 repeats; gemma-12B & sonnet 2 repeats)_
+
+**On model size (gemma-12B vs qwen-9B):** bigger was *not* clearly better. The 12B was flakier on
+functions (`clamp` 1/2 vs the 9B's 3/3) — its failures trace to shakier oracle-free *properties*
+(the same `reverse`/`clamp` property bug, model-independent), not capacity. At module scale it
+nudged the ceiling (`temp` 1/2, matching the thinking model) but still couldn't clear `codec`
+(0/2 — 0 for every local model). Takeaway: at this scale, proposal quality and cloud are the
+levers, not parameter count.
 
 ## Findings
 
