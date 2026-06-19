@@ -37,7 +37,7 @@ PROVIDER = ScriptedProvider(
 
 
 def test_registry_lists_orgs():
-    assert set(REGISTRY) == {"software", "web"}  # two genuinely different verification models
+    assert set(REGISTRY) == {"software", "web", "research"}  # three verification models
     for org in REGISTRY.values():
         assert org.title and org.description and org.goal_hint
         assert org.input_noun and org.produces and org.verified_by
@@ -45,7 +45,7 @@ def test_registry_lists_orgs():
 
 def test_unknown_org_raises_with_known_names():
     with pytest.raises(KeyError, match="software"):
-        get_org("research")
+        get_org("biology")
 
 
 def test_software_runs_through_registry_and_documents(tmp_path):

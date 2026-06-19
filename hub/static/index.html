@@ -34,6 +34,9 @@
          padding: 12px 14px; border-radius: 10px; font-size: 14px; }
   select { background: #0c1119; border: 1px solid var(--line); color: var(--ink);
          padding: 12px 10px; border-radius: 10px; font-size: 14px; }
+  textarea#sources { width: 100%; margin-top: 10px; min-height: 92px; resize: vertical;
+         background: #0c1119; border: 1px solid var(--line); color: var(--ink);
+         padding: 10px 12px; border-radius: 10px; font-size: 13px; font-family: var(--mono); }
   .pill.org { border-color: var(--cyan); color: var(--cyan); }
   .orginfo { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; color: var(--dim); }
   .orginfo .what { color: var(--ink); margin-bottom: 6px; font-size: 14px; }
@@ -154,6 +157,7 @@
         <input type="text" id="goal" placeholder="" />
         <button id="go">Run</button>
       </div>
+      <textarea id="sources" class="hidden" placeholder="Paste your sources here — the report can only cite these. Separate multiple sources with a line containing only ---"></textarea>
       <div class="muted" id="runhint" style="margin-top:10px">The model proposes; the deterministic gates decide. A real run takes a few seconds.</div>
       <div id="orginfo" class="orginfo"></div>
     </div>
@@ -242,6 +246,7 @@ function syncHint() {
   const o = ORGS.find(x => x.name === $('#org').value);
   if (!o) return;
   $('#goal').placeholder = o.goal_hint;
+  $('#sources').classList.toggle('hidden', !o.needs_sources);  // sources box only when the org needs it
   $('#orginfo').innerHTML =
     `<div class="what">${esc(o.description)}</div>
      <div class="flow">You give it <b>${esc(o.input_noun)}</b> → you get <b>${esc(o.produces)}</b></div>
@@ -301,8 +306,8 @@ async function loadOrg(name) {
       <div><span class="role">${esc(c.role)}</span><strong>${esc(c.name)}</strong></div>
       <div class="gev">${esc(c.produces)}</div></div>`).join('');
 
-  const labels = { page: 'Page', function: 'Function', module: 'Module', app: 'App', all: 'Every run' };
-  const gates = ['page','function','module','app','all'].map(s => {
+  const labels = { report: 'Report', page: 'Page', function: 'Function', module: 'Module', app: 'App', all: 'Every run' };
+  const gates = ['report','page','function','module','app','all'].map(s => {
     const gs = r.gates.filter(g => g.scope === s);
     return gs.length ? `<div class="scopelabel">${labels[s]}</div>${gs.map(gateRosterRow).join('')}` : '';
   }).join('');
@@ -368,7 +373,13 @@ $('#go').onclick = async () => {
   try {
     let start;
     try {
-      start = await api('/api/runs/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({goal, org: $('#org').value, model: $('#model').value}) });
+      const orgName = $('#org').value;
+    const orgMeta = ORGS.find(x => x.name === orgName);
+    let sources = [];
+    if (orgMeta && orgMeta.needs_sources) {  // split the box into one corpus entry per source
+      sources = $('#sources').value.split(/^\s*---\s*$/m).map(s => s.trim()).filter(Boolean);
+    }
+    start = await api('/api/runs/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({goal, org: orgName, model: $('#model').value, sources}) });
     } catch (e) {
       runError('could not reach the hub — is the server running? (' + e + ')');
       return;

@@ -77,7 +77,7 @@ def test_index_is_served(tmp_path):
 def test_orgs_endpoint_lists_registry(tmp_path):
     client = _client(tmp_path)
     orgs = client.get("/api/orgs").json()
-    assert {o["name"] for o in orgs} == {"software", "web"}
+    assert {o["name"] for o in orgs} == {"software", "web", "research"}
     assert all(o["input_noun"] and o["produces"] and o["verified_by"] for o in orgs)
 
 
@@ -136,6 +136,38 @@ def test_web_run_through_the_hub_renders_and_ships(tmp_path):
     assert "render" in gate_names and "validation" in gate_names
     # the two orgs keep separate institutional memory
     assert (tmp_path / "memory" / "web" / "institutional").exists()
+
+
+# --- the third org (Research Studio): grounded over sources passed through the hub ---
+
+RESEARCH_REPORT = json.dumps({
+    "topic": "eagles",
+    "claims": [{"text": "Bald eagles fly up to 30 mph",
+                "citations": [{"source": "src1", "quote": "fly at speeds of up to 30 mph"}]}],
+})
+
+
+def test_research_org_registered_and_needs_sources(tmp_path):
+    client = _client(tmp_path)
+    orgs = {o["name"]: o for o in client.get("/api/orgs").json()}
+    assert "research" in orgs and orgs["research"]["needs_sources"] is True
+    assert orgs["software"]["needs_sources"] is False
+    roster = client.get("/api/orgs/research/roster").json()
+    assert {"citations-resolve", "quotes-verbatim", "support"} <= {g["name"] for g in roster["gates"]}
+
+
+def test_research_run_through_the_hub_grounds_over_sources(tmp_path):
+    provider = ScriptedProvider({"researcher": RESEARCH_REPORT,
+                                 "judge": json.dumps([{"index": 0, "verdict": "SUPPORTED"}])})
+    client = TestClient(create_app(data_dir=tmp_path, provider=provider))
+    run = client.post("/api/runs", json={
+        "goal": "how fast do bald eagles fly", "org": "research",
+        "sources": ["Bald eagles can fly at speeds of up to 30 mph and dive at over 100 mph."],
+    }).json()
+    assert run["accepted"] is True and run["org"] == "research"
+    gate_names = [g["gate"] for g in run["gates"]]
+    assert "quotes-verbatim" in gate_names and "validation" in gate_names
+    assert (tmp_path / "memory" / "research" / "institutional").exists()
 
 
 def test_software_run_uses_isolated_memory_namespace(tmp_path):

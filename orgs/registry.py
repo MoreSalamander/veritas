@@ -18,6 +18,8 @@ from typing import Any
 from engine.memory import MemoryStore
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome
+from orgs.research_studio.pipeline import build_report
+from orgs.research_studio.roster import roster as research_roster
 from orgs.software_studio.builder import build
 from orgs.software_studio.roster import roster as software_roster
 from orgs.web_studio.pipeline import build_page
@@ -37,7 +39,9 @@ class OrgRun:
     activity: list[ActivityEntry]
 
 
-BuildFn = Callable[[str, ModelProvider, MemoryStore], OrgRun]
+# Most orgs build from just a goal; some (Research) also take a pinned source corpus. `sources`
+# is optional and ignored by orgs that don't need it — the dispatch stays uniform.
+BuildFn = Callable[..., OrgRun]
 
 
 @dataclass(frozen=True)
@@ -51,9 +55,12 @@ class OrgType:
     goal_hint: str
     build: BuildFn
     roster: Callable[[], dict[str, Any]] | None = None  # cast + gates, for the Org view
+    needs_sources: bool = False  # the UI shows a sources box for these orgs
 
 
-def _run_software(goal: str, provider: ModelProvider, memory: MemoryStore) -> OrgRun:
+def _run_software(
+    goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
+) -> OrgRun:
     result = build(goal, provider, memory)  # routes to a function or a module build
     return OrgRun(
         org="software",
@@ -66,7 +73,9 @@ def _run_software(goal: str, provider: ModelProvider, memory: MemoryStore) -> Or
     )
 
 
-def _run_web(goal: str, provider: ModelProvider, memory: MemoryStore) -> OrgRun:
+def _run_web(
+    goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
+) -> OrgRun:
     result = build_page(goal, provider, memory)
     outcomes = [result.spec_outcome]
     if result.page_outcome is not None:
@@ -76,6 +85,23 @@ def _run_web(goal: str, provider: ModelProvider, memory: MemoryStore) -> OrgRun:
         goal=goal,
         accepted=result.accepted,
         outcomes=outcomes,
+        informed_by=result.informed_by,
+        run_id=result.run_id,
+        activity=result.activity,
+    )
+
+
+def _run_research(
+    goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
+) -> OrgRun:
+    # The pasted sources become a pinned corpus (src1, src2, ...); the report cites into it.
+    corpus = {f"src{i + 1}": s for i, s in enumerate(sources or []) if s.strip()}
+    result = build_report(goal, corpus, provider, memory)
+    return OrgRun(
+        org="research",
+        goal=goal,
+        accepted=result.accepted,
+        outcomes=[result.report_outcome],
         informed_by=result.informed_by,
         run_id=result.run_id,
         activity=result.activity,
@@ -108,6 +134,22 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a landing page for a coffee shop",
         build=_run_web,
         roster=web_roster,
+    ),
+    "research": OrgType(
+        name="research",
+        title="Research Studio",
+        description="Turns a question + sources into a grounded report — a set of claims, each "
+        "cited to and quoted verbatim from the sources you provide. Verified by grounding, not "
+        "by good writing.",
+        input_noun="a question and a set of sources",
+        produces="a grounded report (every claim cited, every quote verbatim)",
+        verified_by="every claim is attributed, every citation resolves to a provided source, "
+        "every quoted span appears verbatim in it; whether the source supports the claim is "
+        "judged (soft)",
+        goal_hint="how fast can bald eagles fly, and how big are their nests?",
+        build=_run_research,
+        roster=research_roster,
+        needs_sources=True,
     ),
 }
 

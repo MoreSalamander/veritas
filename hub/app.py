@@ -75,6 +75,7 @@ class RunRequest(BaseModel):
     goal: str
     org: str = "software"
     model: str = DEFAULT_MODEL
+    sources: list[str] = []  # pinned corpus for orgs that need it (Research); ignored otherwise
 
 
 def create_app(
@@ -109,7 +110,7 @@ def create_app(
     app = FastAPI(title="Veritas Hub")
 
     @app.get("/api/orgs")
-    def list_orgs() -> list[dict[str, str]]:
+    def list_orgs() -> list[dict[str, Any]]:
         return [
             {
                 "name": org.name,
@@ -119,6 +120,7 @@ def create_app(
                 "produces": org.produces,
                 "verified_by": org.verified_by,
                 "goal_hint": org.goal_hint,
+                "needs_sources": org.needs_sources,
             }
             for org in REGISTRY.values()
         ]
@@ -188,7 +190,7 @@ def create_app(
             try:
                 org = get_org(req.org)
                 prov = injected_provider or _provider_for(req.model)
-                result = org.build(req.goal, prov, org_memory(org.name))
+                result = org.build(req.goal, prov, org_memory(org.name), sources=req.sources)
                 summary = summarize(result, datetime.now(timezone.utc).isoformat(), model=req.model)
                 runs.save(summary)
                 progress[token]["run"] = runs.get(summary.id)
@@ -213,7 +215,7 @@ def create_app(
         org = get_org(req.org)  # KeyError -> 500 is acceptable locally; UI only offers known orgs
         try:
             prov = injected_provider or _provider_for(req.model)
-            result = org.build(req.goal, prov, org_memory(org.name))
+            result = org.build(req.goal, prov, org_memory(org.name), sources=req.sources)
         except Exception as exc:  # missing API key, unknown model, model API error
             return {"error": f"{type(exc).__name__}: {exc}"}
         summary = summarize(result, datetime.now(timezone.utc).isoformat(), model=req.model)
