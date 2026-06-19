@@ -12,6 +12,7 @@ from typing import Any
 
 from engine.artifact import Artifact
 from engine.model import ModelProvider
+from orgs.software_studio.languages import Language
 from orgs.software_studio.spec import SpecData
 
 SPEC_SYSTEM = (
@@ -130,7 +131,8 @@ class DeveloperAgent:
         self.provider = provider
 
     def propose(
-        self, spec: SpecData, parent_id: str, lessons: str | None = None, feedback: str | None = None
+        self, spec: SpecData, parent_id: str, lessons: str | None = None,
+        feedback: str | None = None, language: Language | None = None,
     ) -> Artifact:
         prompt = f"Spec:\n{_spec_to_json(spec)}"
         if feedback:
@@ -140,12 +142,16 @@ class DeveloperAgent:
             )
         if lessons:
             prompt = f"{lessons}\n\n{prompt}"
-        raw = self.provider.propose(role=self.role, prompt=prompt, system=DEV_SYSTEM)
+        # The spec is language-agnostic; the Language only changes what code we ask for and
+        # how it's verified. Default (no language) keeps the original Python behavior.
+        system = language.dev_system if language is not None else DEV_SYSTEM
+        raw = self.provider.propose(role=self.role, prompt=prompt, system=system)
         return Artifact.propose(
             type="code",
             owner="developer-agent",
             payload=_strip_code_fences(raw),
-            rationale=f"implements {spec.function_name}()",
+            rationale=f"implements {spec.function_name}()"
+            + (f" in {language.name}" if language is not None else ""),
             parent_id=parent_id,
         )
 

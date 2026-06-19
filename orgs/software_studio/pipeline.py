@@ -26,6 +26,12 @@ from orgs.software_studio.gates import (
     SpecScorerGate,
     SyntaxGate,
 )
+from orgs.software_studio.languages import (
+    Language,
+    LangAcceptanceGate,
+    LangPropertyGate,
+    LangSyntaxGate,
+)
 from orgs.software_studio.oracle import VotingOracle
 from orgs.software_studio.spec import parse_spec
 
@@ -59,6 +65,42 @@ def build_function(goal: str, provider: ModelProvider, memory: MemoryStore) -> S
             SyntaxGate(spec.function_name),
             PropertyGate(spec.function_name, spec.properties),  # HARD: oracle-free
             AcceptanceGate(spec),  # SOFT: model-authored cases, advisory
+        ],
+    )
+    return StudioResult(
+        spec_outcome, code_outcome, code_outcome.accepted, [], run.id, list(run.log)
+    )
+
+
+def build_function_in(
+    language: Language, goal: str, provider: ModelProvider, memory: MemoryStore
+) -> StudioResult:
+    """P15 — build a function in any language. The spec is language-agnostic (name, cases,
+    oracle-free properties); only the developer's prompt and the gate harnesses change with
+    the Language. Same spine as build_function — proof the org's verification model is one
+    model, many languages."""
+    run = Run(goal=goal, memory=memory)
+
+    spec_outcome = run.attempt(
+        lambda fb: SpecAgent(provider).propose(goal, feedback=fb), [SpecScorerGate()]
+    )
+    if not spec_outcome.accepted:
+        return StudioResult(spec_outcome, None, False, [], run.id, list(run.log))
+    spec = parse_spec(spec_outcome.artifact.payload)
+    cases = [{"args": c.args, "expected": c.expected} for c in spec.cases]
+
+    def propose_code(feedback: str | None) -> Artifact:
+        return DeveloperAgent(provider).propose(
+            spec, parent_id=spec_outcome.artifact.id, feedback=feedback, language=language
+        )
+
+    code_outcome = run.attempt(
+        propose_code,
+        [
+            LangSyntaxGate(language, spec.function_name),
+            LangPropertyGate(language, spec.function_name, spec.properties),  # HARD authority
+            LangAcceptanceGate(language, spec.function_name, cases),  # SOFT — model oracle
+            ValidationGate(),
         ],
     )
     return StudioResult(

@@ -20,7 +20,9 @@ import sys
 from abc import ABC, abstractmethod
 from typing import Any
 
-from engine.executor import Executor
+from engine.artifact import Artifact, Determinism, GateResult
+from engine.executor import Executor, LocalSubprocessExecutor
+from engine.gate import Gate
 from orgs.software_studio.properties import PROPERTY_HARNESS, Property, serialize
 
 
@@ -220,3 +222,73 @@ LANGUAGES: dict[str, Language] = {
     "python": PythonLanguage(),
     "javascript": JavaScriptLanguage(),
 }
+
+
+# --- language-generic gates: delegate the language-specific check to the Language ----------
+
+_EXEC = LocalSubprocessExecutor()
+
+
+class LangSyntaxGate(Gate):
+    """HARD: the code parses and defines the function, in the target language."""
+
+    name = "syntax"
+    determinism = Determinism.HARD
+
+    def __init__(self, language: Language, function_name: str,
+                 executor: Executor | None = None, timeout: float = 10.0) -> None:
+        self.language = language
+        self.function_name = function_name
+        self.executor = executor or _EXEC
+        self.timeout = timeout
+
+    def check(self, artifact: Artifact) -> GateResult:
+        ok, evidence = self.language.syntax_ok(self.executor, artifact.payload, self.function_name, self.timeout)
+        return self._result(ok, evidence)
+
+
+class LangPropertyGate(Gate):
+    """HARD: the oracle-free properties hold, checked in the target language. The behavioral
+    authority — no model-authored value is the oracle, in any language."""
+
+    name = "properties"
+    determinism = Determinism.HARD
+
+    def __init__(self, language: Language, function_name: str, properties: list[Property],
+                 executor: Executor | None = None, timeout: float = 10.0) -> None:
+        self.language = language
+        self.function_name = function_name
+        self.properties = properties
+        self.executor = executor or _EXEC
+        self.timeout = timeout
+
+    def check(self, artifact: Artifact) -> GateResult:
+        ok, evidence = self.language.run_properties(
+            self.executor, artifact.payload, self.function_name, self.properties, self.timeout
+        )
+        return self._result(ok, evidence)
+
+
+class LangAcceptanceGate(Gate):
+    """SOFT: exact-value cases — a model-authored oracle, advisory only, in any language."""
+
+    name = "acceptance-tests"
+    determinism = Determinism.SOFT
+
+    def __init__(self, language: Language, function_name: str, cases: list[dict[str, Any]],
+                 executor: Executor | None = None, timeout: float = 10.0) -> None:
+        self.language = language
+        self.function_name = function_name
+        self.cases = cases
+        self.executor = executor or _EXEC
+        self.timeout = timeout
+
+    def check(self, artifact: Artifact) -> GateResult:
+        if not self.cases:
+            return self._result(True, "no exact-value cases offered")
+        ok, evidence = self.language.run_cases(
+            self.executor, artifact.payload, self.function_name, self.cases, self.timeout
+        )
+        if ok:
+            return self._result(True, evidence)
+        return self._result(False, f"case discrepancy (advisory, model-authored oracle): {evidence}")
