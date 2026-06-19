@@ -38,7 +38,8 @@ class Determinism(str, Enum):
     """
 
     HARD = "hard"  # tests, types, schema, scans — no opinion involved
-    SOFT = "soft"  # human or judge-LLM — recorded, but never disguised as proof
+    SOFT = "soft"  # a judge-LLM's opinion — recorded, but never disguised as proof
+    HUMAN = "human"  # a person signed off — the proper verifier for feel/taste (create mode)
 
 
 @dataclass(frozen=True)
