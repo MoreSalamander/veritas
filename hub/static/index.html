@@ -126,6 +126,24 @@
   .tlactor { font-weight: 700; min-width: 110px; flex-shrink: 0; }
   .tlmsg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tldur { margin-left: auto; flex-shrink: 0; }
+
+  /* --- P17: run browsing, telemetry, memory audit --- */
+  .runrow { display: flex; gap: 10px; align-items: center; padding: 9px 12px; border: 1px solid var(--line);
+            border-radius: 8px; margin-bottom: 6px; cursor: pointer; font-size: 13px; }
+  .runrow:hover { background: var(--panel); border-color: var(--cyan); }
+  .runmk { font-weight: 700; }
+  .rg2 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .runtel { font-family: var(--mono); font-size: 11px; white-space: nowrap; color: var(--dim); }
+  .telemetry { font-family: var(--mono); font-size: 11.5px; color: var(--dim); margin: 0 0 12px;
+               padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .subh { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; margin: 16px 0 8px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line);
+          color: var(--dim); cursor: pointer; background: transparent; font-family: inherit; }
+  .chip:hover { color: var(--ink); }
+  .chip.active { background: var(--panel); color: var(--ink); border-color: var(--cyan); }
+  .recentrow { cursor: pointer; }
+  .recentrow:hover .rg { color: var(--cyan); }
 </style>
 </head>
 <body>
@@ -165,8 +183,8 @@
   </section>
 
   <section id="orgview" class="hidden"><h1>The Organization</h1><div id="orgbody"></div></section>
-  <section id="runs" class="hidden"><h1>Runs</h1><div id="runlist"></div></section>
-  <section id="memory" class="hidden"><h1>Institutional Memory</h1><div id="memlist" class="grid2"></div></section>
+  <section id="runs" class="hidden"><h1>Runs</h1><div id="rundetail"></div><div id="runlist"></div></section>
+  <section id="memory" class="hidden"><h1>Institutional Memory</h1><div id="memfilters" class="filters"></div><div id="memlist" class="grid2"></div></section>
 </main>
 
 <script>
@@ -274,9 +292,15 @@ async function loadDash() {
   $('#recent').innerHTML = (d.recent || []).length
     ? d.recent.map(r => {
         const cls = r.accepted ? 'pass' : 'fail', mk = r.accepted ? '✓' : '✗';
-        return `<div class="recentrow"><span class="${cls}">${mk}</span><span class="muted">${esc(r.org || '')}</span><span class="rg">${esc(r.goal)}</span></div>`;
+        return `<div class="recentrow" onclick="openRun('${esc(r.id)}')"><span class="${cls}">${mk}</span><span class="muted">${esc(r.org || '')}</span><span class="rg">${esc(r.goal)}</span></div>`;
       }).join('')
     : '<div class="muted">No runs yet.</div>';
+}
+
+// Jump to a run's detail from anywhere (recent strip, etc.).
+function openRun(id) {
+  document.querySelector('nav a[data-view="runs"]').click();
+  showRunDetail(id);
 }
 // A gate row in the Org view: same hard/soft vocabulary as the run ledger, but describing
 // what each gate is FOR rather than a verdict it returned.
@@ -327,22 +351,91 @@ async function loadOrg(name) {
   if (pick) pick.onchange = () => loadOrg(pick.value);
 }
 
+// Telemetry derived from the persisted activity log: retries, gate count, and time spent in
+// the gates (the deterministic-verification cost — proposer/LLM time isn't gate-timed).
+function runTelemetry(r) {
+  const act = r.activity || [];
+  return {
+    retries: act.filter(e => e.actor === 'retry').length,
+    gateMs: Math.round(act.reduce((s, e) => s + (e.duration_ms || 0), 0)),
+    gates: (r.gates || []).length,
+  };
+}
+
 async function loadRuns() {
   const runs = await api('/api/runs');
-  $('#runlist').innerHTML = runs.length ? runs.map(runCard).join('') : '<div class="muted">No runs yet.</div>';
+  $('#rundetail').innerHTML = '';
+  $('#runlist').innerHTML = runs.length ? runs.map(runRow).join('')
+    : '<div class="muted">No runs yet.</div>';
 }
+
+function runRow(r) {
+  const t = runTelemetry(r), cls = r.accepted ? 'pass' : 'fail', mk = r.accepted ? '✓' : '✗';
+  const when = (r.created_at || '').slice(0, 16).replace('T', ' ');
+  return `<div class="runrow" onclick="showRunDetail('${esc(r.id)}')">
+      <span class="runmk ${cls}">${mk}</span>
+      <span class="pill org">${esc(r.org)}</span><span class="pill">${esc(r.model || '')}</span>
+      <span class="rg2">${esc(r.goal)}</span>
+      <span class="runtel">${t.retries ? '↻' + t.retries + ' · ' : ''}${t.gates} gates · ${t.gateMs}ms · ${esc(when)}</span>
+    </div>`;
+}
+
+async function showRunDetail(id) {
+  const r = await api('/api/runs/' + id);
+  if (r.error) { $('#rundetail').innerHTML = `<div class="muted">${esc(r.error)}</div>`; return; }
+  const t = runTelemetry(r);
+  const when = (r.created_at || '').slice(0, 19).replace('T', ' ');
+  const tel = `<div class="telemetry">⏱ ${t.gates} gate verdicts · ↻ ${t.retries} retries · ${t.gateMs}ms in gates · model ${esc(r.model || '?')} · ${esc(when)}</div>`;
+  const timeline = (r.activity || []).length
+    ? `<div class="subh">Timeline (Explain → Synthesize → Verify → Persist)</div><div class="gates">${r.activity.map(timelineRow).join('')}</div>`
+    : '';
+  $('#rundetail').innerHTML = `<h2>Run detail</h2><div class="panel">
+      <div class="runhead"><span><span class="pill org">${esc(r.org)}</span> <strong>${esc(r.goal)}</strong></span></div>
+      ${verdictBanner(r)}${tel}
+      <div class="subh">Gate ledger</div><div class="gates">${r.gates.map(gateLine).join('')}</div>
+      ${timeline}
+      ${r.artifacts.map(a => artifactBlock(r.org, a)).join('')}</div>`;
+  $('#rundetail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+let MEM = [], MEM_CAT = 'all', MEM_ORG = 'all';
 async function loadMemory() {
-  const mem = await api('/api/memory');
-  $('#memlist').innerHTML = mem.length ? mem.map(m => {
+  MEM = await api('/api/memory');
+  renderMemFilters();
+  renderMem();
+}
+
+function renderMemFilters() {
+  const cats = ['all', ...new Set(MEM.map(m => m.category))];
+  const orgs = ['all', ...new Set(MEM.map(m => m.org).filter(Boolean))];
+  const chip = (val, cur, kind) =>
+    `<button class="chip ${val === cur ? 'active' : ''}" onclick="setMemFilter('${kind}','${esc(val)}')">${esc(val)}</button>`;
+  $('#memfilters').innerHTML =
+    cats.map(c => chip(c, MEM_CAT, 'cat')).join('') +
+    (orgs.length > 2 ? '<span style="width:12px"></span>' + orgs.map(o => chip(o, MEM_ORG, 'org')).join('') : '');
+}
+
+function setMemFilter(kind, val) {
+  if (kind === 'cat') MEM_CAT = val; else MEM_ORG = val;
+  renderMemFilters();
+  renderMem();
+}
+
+function renderMem() {
+  const shown = MEM.filter(m =>
+    (MEM_CAT === 'all' || m.category === MEM_CAT) && (MEM_ORG === 'all' || m.org === MEM_ORG));
+  $('#memlist').innerHTML = shown.length ? shown.map(m => {
     const reason = m.rejected_because || m.accepted_because || '';
     const org = m.org ? `<span class="pill org">${esc(m.org)}</span> ` : '';
+    const informed = (m.informed_by && m.informed_by.length)
+      ? `<div class="muted" style="margin-top:6px">informed by: ${m.informed_by.map(esc).join(', ')}</div>` : '';
     const loc = m.file ? `<div class="loc">${esc(m.file)}</div>` : '';
     const body = m.body ? `<pre class="code">${esc(m.body)}</pre>` : '';
     return `<div class="panel"><div class="row" style="justify-content:space-between">
       <span>${org}<strong>${esc(m.title)}</strong></span><span class="pill">${esc(m.category)}</span></div>
       <div class="muted mono" style="margin:8px 0">${esc(reason)}</div>
-      ${loc}${body}</div>`;
-  }).join('') : '<div class="muted">Memory is empty.</div>';
+      ${loc}${body}${informed}</div>`;
+  }).join('') : '<div class="muted">No memory matches this filter.</div>';
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
