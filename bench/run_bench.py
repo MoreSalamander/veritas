@@ -51,6 +51,7 @@ from orgs.software_studio.builder import build  # noqa: E402
 # model_key -> factory. Each cell builds a fresh provider (clean state).
 MODELS = {
     "qwen-9b": lambda: OllamaProvider(model="qwen3.5:9b", think=False, timeout=300),
+    "gemma-12b": lambda: OllamaProvider(model="gemma4:12b", think=False, timeout=300),
     "llama-8b": lambda: OllamaProvider(model="llama3.1:8b", think=False, timeout=300),
     "qwen-64k-think": lambda: OllamaProvider(model="qwen3.5-64k:latest", think=True, timeout=900),
     "sonnet": lambda: ClaudeProvider(model="claude-sonnet-4-6"),  # cloud — costs a few cents/build

@@ -41,6 +41,7 @@ class ModelSpec(TypedDict):
 
 MODELS: dict[str, ModelSpec] = {
     "qwen": {"label": "Qwen3.5 9B · local ★", "cost": "free", "kind": "ollama", "id": "qwen3.5:9b", "think": False},
+    "gemma-12b": {"label": "Gemma 12B · local", "cost": "free", "kind": "ollama", "id": "gemma4:12b", "think": False},
     "qwen-64k": {"label": "Qwen3.5 64k · local · thinking", "cost": "free", "kind": "ollama", "id": "qwen3.5-64k:latest", "think": True},
     "llama": {"label": "Llama3.1 8B · local", "cost": "free", "kind": "ollama", "id": "llama3.1:8b", "think": False},
     "haiku": {"label": "Claude Haiku", "cost": "~1–3¢/build", "kind": "claude", "id": "claude-haiku-4-5", "think": False},

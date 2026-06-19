@@ -24,8 +24,10 @@ RESEARCHER_SYSTEM = (
 
 
 def corpus_prompt(topic: str, corpus: Corpus) -> str:
-    sources = "\n\n".join(f"[{sid}]\n{text}" for sid, text in corpus.items())
-    return f"Topic: {topic}\n\nSOURCES:\n{sources}"
+    # Present the id plainly (no brackets/punctuation the model might copy into the citation —
+    # a citation must equal the id exactly to resolve).
+    sources = "\n\n".join(f"source id: {sid}\ntext: {text}" for sid, text in corpus.items())
+    return f"Topic: {topic}\n\nSOURCES (cite the source id exactly as written):\n{sources}"
 
 
 class ResearcherAgent:
