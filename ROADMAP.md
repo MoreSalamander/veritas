@@ -214,3 +214,55 @@ The build chunk proved the thesis *works*; the next rungs make it **robust** and
   component (a new gate or role) under its own gates. The strange loop, earned — and only
   after it reliably builds ordinary apps. *Done: a Veritas part ships that the org built and
   its own gates accepted.*
+
+---
+
+## Reality reshaped the plan — where we actually are (updated 2026-06-19)
+
+The phases above were the original sketch; the build took its own order. What actually shipped
+(all pushed, 144 tests, mypy strict clean):
+
+- **P14 ✅ Web Studio** — second org, verified by a real headless browser (render/layout/
+  structure/a11y). The reusability proof.
+- **P15 ✅ Languages** — the Language seam; Python + JavaScript verified end to end; more are config.
+- **P16 ✅ Research Studio** — third org, verified by *grounding* (citations resolve, quotes verbatim).
+- **P17 ✅ Hub maturation** — browsable run history, per-run telemetry, memory audit, live timeline.
+- **P18 ✅ Bootstrap** — the org built a real Veritas component (`estimate_tokens`) under its own
+  gates; it now powers hub telemetry. The strange loop, closed.
+
+Three genuinely different verification models (execute / render / ground) run side by side on one
+unchanged engine, in a matured hub. The original thesis is demonstrated.
+
+## The road ahead — Create Mode (P19→P24)
+
+The next arc unifies the generative suite + the interview tools + Veritas under one thesis: a
+**create mode** alongside verify mode. Verify mode = the machine is the gate. Create mode = *you*
+are the gate for feel, the **interview manufactures checkable criteria** so as much as possible is
+hard-gated, and the system **learns your taste** from your sign-offs. Not a new org — a mode + a new
+verification tier (human/profile), first home = Web Studio. Invariant across both: every artifact is
+tagged by *who verified what* (`machine-proven` / `model-judged` / `human-approved`) — nothing is
+ever shown as more verified than it is.
+
+- **P19 · Measurable-aesthetic gates** — extend the browser executor to read computed styles; HARD
+  gates check a render against *explicit* criteria (palette ⊆ set, contrast ≥ X, dark/light, fonts,
+  spacing). No LLM. *Done: a page is hard-passed/failed on explicit aesthetic criteria; mutants caught.*
+- **P20 · Interview → checkable spec** — an interview engine that asks until it can emit a spec
+  specific enough for P19's gates to check it (the scene/beats "interview-until-it-scores" pattern).
+  *Done: a vague goal becomes a gate-checkable spec; a too-vague spec is refused.*
+- **P21 · Human-approval gate + human-approved memory** — build→review→approve-or-feedback
+  (conversation-as-retry); approval persists as a `human-approved` record; trust ledger gains the
+  third tier. *Done: an approved artifact ships labeled human-approved and lands in memory.*
+- **P22 · Aesthetic profile** — consolidate `human-approved` records into a structured profile; feed
+  it as interview defaults + standing gate checks. *Done: a related build asks fewer questions and
+  pre-applies codified preferences.*
+- **P23 · Semantic recall (embeddings)** — upgrade `recall()` to local embeddings; benchmark token
+  vs. embeddings (accept-rate / retries). *Done: the benchmark shows recall measurably helps.*
+- **P24 · The toggle + create mode in the hub** — verify=gate / create=annotate; the create-mode
+  artifact (output + three-tier trust map); hub UI (interview chat, trust report, Approve, profile).
+  *Done: a full create-mode build runs in the hub end to end and is remembered.*
+
+## Parallel / later tracks (not blocking create mode)
+
+- **Hosting** — sandboxed Executor + DB-backed memory (local → shippable).
+- **More languages** — Rust / Ruby / C are a `Language` each.
+- **More bootstrap targets** — let the org build more of itself.
