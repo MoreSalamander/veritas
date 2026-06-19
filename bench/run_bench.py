@@ -33,8 +33,19 @@ from datetime import datetime, timezone
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import os  # noqa: E402
+
+# load the gitignored .env so the cloud models have their API key
+_env = ROOT / ".env"
+if _env.exists():
+    for _line in _env.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
+
 from engine.memory import MemoryStore  # noqa: E402
-from engine.model import OllamaProvider  # noqa: E402
+from engine.model import ClaudeProvider, OllamaProvider  # noqa: E402
 from orgs.software_studio.builder import build  # noqa: E402
 
 # model_key -> factory. Each cell builds a fresh provider (clean state).
@@ -42,6 +53,7 @@ MODELS = {
     "qwen-9b": lambda: OllamaProvider(model="qwen3.5:9b", think=False, timeout=300),
     "llama-8b": lambda: OllamaProvider(model="llama3.1:8b", think=False, timeout=300),
     "qwen-64k-think": lambda: OllamaProvider(model="qwen3.5-64k:latest", think=True, timeout=900),
+    "sonnet": lambda: ClaudeProvider(model="claude-sonnet-4-6"),  # cloud — costs a few cents/build
 }
 
 # (label, goal, forced shape) — shape is forced so every model builds the SAME thing (fair).

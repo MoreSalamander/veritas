@@ -7,13 +7,15 @@
 cross-run learning, so this measures raw model+scaffold capability). Each cell is
 `accepted-rate · mean wall-clock`. Run: 2026-06-19.
 
-| goal | shape | qwen-9B (no-think) | llama-8B (no-think) | qwen-64K (thinking) |
-|---|---|---|---|---|
-| double | function | **3/3** · 9s | **3/3** · 8s | **3/3** · 381s |
-| reverse | function | 0/3 · 15s | **3/3** · 8s | **3/3** · 297s |
-| clamp | function | **3/3** · 11s | **3/3** · 10s | **3/3** · 462s |
-| temp | module | 0/3 · 67s | 0/3 · 13s | 1/3 · 493s |
-| codec | module | 0/3 · 64s | 0/3 · 20s | 0/3 · 639s |
+| goal | shape | qwen-9B (no-think) | llama-8B (no-think) | qwen-64K (thinking) | sonnet (cloud) |
+|---|---|---|---|---|---|
+| double | function | **3/3** · 9s | **3/3** · 8s | **3/3** · 381s | **2/2** · 12s |
+| reverse | function | 0/3 · 15s | **3/3** · 8s | **3/3** · 297s | 1/2 · 16s |
+| clamp | function | **3/3** · 11s | **3/3** · 10s | **3/3** · 462s | **2/2** · 13s |
+| temp | module | 0/3 · 67s | 0/3 · 13s | 1/3 · 493s | **2/2** · 15s |
+| codec | module | 0/3 · 64s | 0/3 · 20s | 0/3 · 639s | **2/2** · 12s |
+
+_(local cells 3 repeats; sonnet 2 repeats)_
 
 ## Findings
 
@@ -30,9 +32,17 @@ cross-run learning, so this measures raw model+scaffold capability). Each cell i
    system never manufactures capability the model lacks. **You never get a false green.** A
    too-weak model + Veritas yields *nothing*, loudly — not bad software.
 
-4. **A caught defect:** qwen-9B is 0/3 on `reverse` (llama 3/3) — likely a property mismatch
-   (tagging reverse `idempotent` when it is an *involution*: `reverse(reverse(x))==x`). Next
-   prompt-refinement candidate.
+4. **The gates are not the bottleneck — capability is.** `codec` was 0/3 for *all three* local
+   models; Sonnet passes it 2/2 in 12s through the *same gates*. So the local failures were
+   genuine capability limits and the gates are correctly calibrated — strict but not impossible.
+   (Had Sonnet also gone 0/3, that would have meant the gates were broken. It didn't.) This
+   turns the local-dev / cloud-product split from a guess into a measurement.
+
+5. **A model-independent defect:** `reverse` tripped qwen-9B (0/3) *and* Sonnet (1/2) — not
+   model weakness but a bad oracle-free property class (tagging the involution
+   `reverse(reverse(x))==x` as `idempotent`). Worth fixing in the prompt for all models. Note
+   too that even Sonnet uses the retry loop (`double` r2.0) — the scaffold helps the strong
+   model, not only the weak ones.
 
 ## Takeaway
 
