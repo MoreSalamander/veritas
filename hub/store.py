@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from engine.run import Phase
+from engine.tokens import estimate_tokens  # built by the org itself (bootstrap); now powers telemetry
 from orgs.registry import OrgRun
 
 
@@ -56,6 +57,7 @@ class RunSummary:
     artifacts: list[ArtifactView]
     gates: list[GateView]
     activity: list[ActivityView]
+    tokens_estimate: int = 0  # rough output size, via the org-built estimate_tokens
 
 
 def summarize(result: OrgRun, created_at: str, model: str = "local") -> RunSummary:
@@ -102,6 +104,7 @@ def summarize(result: OrgRun, created_at: str, model: str = "local") -> RunSumma
         artifacts=artifacts,
         gates=gates,
         activity=activity,
+        tokens_estimate=sum(estimate_tokens(a.payload) for a in artifacts),
     )
 
 

@@ -359,6 +359,7 @@ function runTelemetry(r) {
     retries: act.filter(e => e.actor === 'retry').length,
     gateMs: Math.round(act.reduce((s, e) => s + (e.duration_ms || 0), 0)),
     gates: (r.gates || []).length,
+    tokens: r.tokens_estimate || 0,  // via the org-built estimate_tokens
   };
 }
 
@@ -376,7 +377,7 @@ function runRow(r) {
       <span class="runmk ${cls}">${mk}</span>
       <span class="pill org">${esc(r.org)}</span><span class="pill">${esc(r.model || '')}</span>
       <span class="rg2">${esc(r.goal)}</span>
-      <span class="runtel">${t.retries ? '↻' + t.retries + ' · ' : ''}${t.gates} gates · ${t.gateMs}ms · ${esc(when)}</span>
+      <span class="runtel">${t.retries ? '↻' + t.retries + ' · ' : ''}${t.gates} gates · ~${t.tokens}t · ${esc(when)}</span>
     </div>`;
 }
 
@@ -385,7 +386,7 @@ async function showRunDetail(id) {
   if (r.error) { $('#rundetail').innerHTML = `<div class="muted">${esc(r.error)}</div>`; return; }
   const t = runTelemetry(r);
   const when = (r.created_at || '').slice(0, 19).replace('T', ' ');
-  const tel = `<div class="telemetry">⏱ ${t.gates} gate verdicts · ↻ ${t.retries} retries · ${t.gateMs}ms in gates · model ${esc(r.model || '?')} · ${esc(when)}</div>`;
+  const tel = `<div class="telemetry">⏱ ${t.gates} gate verdicts · ↻ ${t.retries} retries · ${t.gateMs}ms in gates · ~${t.tokens} tokens out · model ${esc(r.model || '?')} · ${esc(when)}</div>`;
   const timeline = (r.activity || []).length
     ? `<div class="subh">Timeline (Explain → Synthesize → Verify → Persist)</div><div class="gates">${r.activity.map(timelineRow).join('')}</div>`
     : '';
