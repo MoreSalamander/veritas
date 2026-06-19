@@ -25,6 +25,8 @@ FIX = {
         "codec_bad": "def enc(x):\n    return x + 100\n\ndef dec(y):\n    return y - 99\n",
         "mysort": "def mysort(xs):\n    return sorted(xs)\n",
         "mysort_drop": "def mysort(xs):\n    return sorted(xs)[1:]\n",
+        "rev": "def rev(s):\n    return s[::-1]\n",
+        "rev_bad": "def rev(s):\n    return s + '!'\n",
         "no_fn": "def other(x):\n    return x\n",
     },
     "javascript": {
@@ -35,6 +37,8 @@ FIX = {
         "codec_bad": "function enc(x){ return x + 100; }\nfunction dec(y){ return y - 99; }\n",
         "mysort": "function mysort(xs){ return [...xs].sort((a,b)=>a-b); }\n",
         "mysort_drop": "function mysort(xs){ return [...xs].sort((a,b)=>a-b).slice(1); }\n",
+        "rev": "function rev(s){ return s.split('').reverse().join(''); }\n",
+        "rev_bad": "function rev(s){ return s + '!'; }\n",
         "no_fn": "function other(x){ return x; }\n",
     },
 }
@@ -75,6 +79,15 @@ def test_round_trip_property_bites(lang):
     assert L.run_properties(EXEC, f["codec"], "enc", props)[0]
     ok, ev = L.run_properties(EXEC, f["codec_bad"], "enc", props)
     assert not ok and "round_trip" in ev
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_involution_property_bites(lang):
+    L, f = LANGUAGES[lang], FIX[lang]
+    props = parse_properties([{"kind": "involution", "inputs": [["abc"], ["xy"]]}])
+    assert L.run_properties(EXEC, f["rev"], "rev", props)[0]
+    ok, ev = L.run_properties(EXEC, f["rev_bad"], "rev", props)
+    assert not ok and "involution" in ev
 
 
 @pytest.mark.parametrize("lang", LANGS)

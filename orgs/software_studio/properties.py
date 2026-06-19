@@ -33,7 +33,8 @@ class PropertyParseError(ValueError):
 
 class PropertyKind(str, Enum):
     ROUND_TRIP = "round_trip"   # inverse(f(x)) ~= x  — needs an inverse function in scope
-    IDEMPOTENT = "idempotent"   # f(f(x)) == f(x)     — unary
+    IDEMPOTENT = "idempotent"   # f(f(x)) == f(x)     — unary (clamp, abs, normalize, dedupe)
+    INVOLUTION = "involution"   # f(f(x)) == x        — unary, self-inverse (reverse, negate, transpose)
     MONOTONIC = "monotonic"     # ordered inputs -> ordered outputs
     INVARIANT = "invariant"     # a named structural invariant holds on f(x)
 
@@ -86,6 +87,8 @@ class Property:
             return f"{strict}monotonic ({self.direction}) over {n} input(s)"
         if self.kind is PropertyKind.INVARIANT:
             return f"invariant:{self.invariant} over {n} input(s)"
+        if self.kind is PropertyKind.INVOLUTION:
+            return f"involution (self-inverse) over {n} input(s)"
         return f"idempotent over {n} input(s)"
 
 
@@ -131,11 +134,11 @@ def parse_property(obj: Any, index: int) -> Property:
                 )
         return Property(kind=kind, inputs=inputs, inverse=inverse)
 
-    if kind is PropertyKind.IDEMPOTENT:
+    if kind in (PropertyKind.IDEMPOTENT, PropertyKind.INVOLUTION):
         for j, args in enumerate(inputs):
             if len(args) != 1:
                 raise PropertyParseError(
-                    f"property {index}: idempotent input {j} must have exactly one arg"
+                    f"property {index}: {kind.value} input {j} must have exactly one arg"
                 )
         return Property(kind=kind, inputs=inputs)
 
@@ -237,6 +240,13 @@ for _pi, _p in enumerate(_props):
                 raise AssertionError(
                     "property %d idempotent: f(f(%r))=%r != f(%r)=%r"
                     % (_pi, _a[0], _twice, _a[0], _once))
+    elif _kind == "involution":
+        for _a in _inputs:
+            _twice = _call(_fn, [_call(_fn, _a)])
+            if not _close(_twice, _a[0]):
+                raise AssertionError(
+                    "property %d involution: f(f(%r))=%r != %r"
+                    % (_pi, _a[0], _twice, _a[0]))
     elif _kind == "monotonic":
         _outs = [_call(_fn, _a) for _a in _inputs]
         for _i in range(len(_outs) - 1):

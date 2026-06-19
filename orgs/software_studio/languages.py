@@ -165,6 +165,9 @@ for (let pi = 0; pi < _props.length; pi++) {
   } else if (p.kind === "idempotent") {
     for (const a of inputs) { const once = _call(_fnname, a), twice = _call(_fnname, [once]);
       if (!_close(twice, once)) { console.error(`property ${pi} idempotent failed`); process.exit(1); } }
+  } else if (p.kind === "involution") {
+    for (const a of inputs) { const twice = _call(_fnname, [_call(_fnname, a)]);
+      if (!_close(twice, a[0])) { console.error(`property ${pi} involution failed`); process.exit(1); } }
   } else if (p.kind === "monotonic") {
     const outs = inputs.map(a => _call(_fnname, a));
     for (let i = 0; i < outs.length - 1; i++)

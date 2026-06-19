@@ -146,6 +146,21 @@ def test_idempotent_passes_and_a_mutant_fails():
     assert not ok2 and "idempotent" in last
 
 
+def test_involution_passes_self_inverse_and_fails_a_mutant():
+    # reverse is an INVOLUTION (f(f(x))==x), NOT idempotent — this is the distinction the
+    # vocabulary was missing, which made models mislabel reverse and reject correct code.
+    props = parse_properties([{"kind": "involution", "inputs": [["abc"], ["xy"]]}])
+    ok, _ = _run("def rev(s):\n    return s[::-1]\n", "rev", props)
+    assert ok
+    ok2, last = _run("def rev(s):\n    return s + '!'\n", "rev", props)  # not self-inverse
+    assert not ok2 and "involution" in last
+
+
+def test_involution_must_be_unary():
+    with pytest.raises(PropertyParseError, match="one arg"):
+        parse_properties([{"kind": "involution", "inputs": [[1, 2]]}])
+
+
 def test_missing_function_is_a_clean_assertion():
     props = parse_properties([{"kind": "idempotent", "inputs": [[1]]}])
     ok, last = _run("def other(x):\n    return x\n", "absval", props)

@@ -30,7 +30,9 @@ SPEC_SYSTEM = (
     '{"kind":"invariant","invariant":<one of '
     "sorted_ascending|sorted_descending|is_permutation_of_input|length_preserved|"
     'elements_unique|non_negative>,"inputs":[[<arg>],...]}; '
-    '{"kind":"idempotent","inputs":[[x],...]} (f(f(x))==f(x)); '
+    '{"kind":"idempotent","inputs":[[x],...]} (f(f(x))==f(x): clamp, abs, normalize); '
+    '{"kind":"involution","inputs":[[x],...]} (f(f(x))==x, i.e. SELF-INVERSE: reverse, negate, '
+    "transpose — this is NOT idempotent, do not confuse the two); "
     '{"kind":"round_trip","inverse":<other function name>,"inputs":[[x],...]} '
     "(only if an inverse function exists in the same build). "
     "MATCH THE PROPERTY TO THE OUTPUT TYPE: the list invariants "
