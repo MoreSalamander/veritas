@@ -74,6 +74,23 @@ def _provider_for(model: str) -> ModelProvider:
 # same runs no matter where it's started from. (Relative "./hub_data" silently moved the
 # data when the server was launched from a different cwd.) VERITAS_DATA overrides it.
 _ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_dotenv(path: Path) -> None:
+    """Load KEY=VALUE lines from .env into the environment (without overriding anything already
+    set). Without this the Claude models are in the toggle but unusable when the hub is launched
+    plainly — the SDK can't find ANTHROPIC_API_KEY. Stdlib only; no python-dotenv dependency."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
+_load_dotenv(_ROOT / ".env")
 _DATA = Path(os.environ.get("VERITAS_DATA", str(_ROOT / "hub_data")))
 _STATIC = Path(__file__).parent / "static"
 

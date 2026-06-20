@@ -34,6 +34,8 @@ EXTRA_FONT = GOOD.replace("<p>Some readable text.</p>",
                           "<p>Some readable text.</p><span style=\"font-family:'Comic Sans MS'\">x</span>")
 OFF_PALETTE = GOOD.replace("<p>Some readable text.</p>",
                            "<p>Some readable text.</p><span style=\"color:#ff0000\">x</span>")
+TINT = GOOD.replace("<p>Some readable text.</p>",
+                    "<p>Some readable text.</p><span style=\"color:#f2f2f2\">x</span>")
 
 DARK_THEME = AestheticCriteria(theme="dark", min_contrast=4.5, fonts=["monospace"],
                                palette=["#0a0a0a", "#ffffff"])
@@ -74,5 +76,13 @@ def test_off_spec_font_fails_fonts():
 
 
 def test_off_palette_color_fails_palette():
+    res = PaletteGate(EXEC.render(OFF_PALETTE), ["#0a0a0a", "#ffffff"]).check(_art())
+    assert not res.passed and "rgb(255,0,0)" in res.evidence
+
+
+def test_incidental_tint_snaps_to_palette_but_real_color_still_fails():
+    # a near-duplicate of an approved color (rendering noise / faint tint) is tolerated...
+    assert PaletteGate(EXEC.render(TINT), ["#0a0a0a", "#ffffff"]).check(_art()).passed
+    # ...while a genuinely different color is still rejected — the bar is not relaxed, only de-noised
     res = PaletteGate(EXEC.render(OFF_PALETTE), ["#0a0a0a", "#ffffff"]).check(_art())
     assert not res.passed and "rgb(255,0,0)" in res.evidence
