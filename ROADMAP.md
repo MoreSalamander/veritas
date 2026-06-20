@@ -327,10 +327,14 @@ then the real engine is swapped behind the seam — the pattern that worked ever
   (the literal "ensembles vs frontier" run) behind the ExperimentRunner.*
 
 - **P27 · Presets** — not new engine; each is *cast + pipeline on an existing verification model*,
-  proving the substrate generalizes. **Newsroom** = Research + fact-checker role. **Education** =
-  Research grounding + a pedagogical-structure gate (bridges to myAIstro). **Startup Factory** =
-  orchestration Research → Web → Software ("profitable?" stays a human bet). **Game Studio** =
-  Production + Software composed.
+  proving the substrate generalizes. *DONE: orgs/presets.py shows both mechanisms. REUSE — Newsroom
+  (`build_article`) and Education (`build_lesson`) run the Research org's grounding pipeline unchanged,
+  same gates, different product framing. COMPOSE — Startup (`build_startup`) chains the Web org (a
+  landing page) + the Software org (an MVP function); Game (`build_game`) chains the Production org +
+  the Software org; the pure `_combine` accepts only if every part shipped, and "profitable?"/"fun?"
+  stay honest human bets. All four registered (9 orgs total: 5 models + 4 presets); 3 tests (article
+  + lesson ship on grounding; the combiner's all-parts-shipped logic). The verification thesis is
+  fully demonstrated — five models, and products built by reusing and composing them.*
 
 **Not Veritas** (a different machine — emergent simulation, "script incentives not outcomes," no
 artifact + no gate): Civilization Simulator, AI Dungeon Master, Company Simulator. These belong to

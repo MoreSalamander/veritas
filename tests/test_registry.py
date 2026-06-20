@@ -37,7 +37,9 @@ PROVIDER = ScriptedProvider(
 
 
 def test_registry_lists_orgs():
-    assert set(REGISTRY) == {"software", "web", "research", "production", "empirical"}  # five verification models
+    # five verification models + four presets (products on those models)
+    assert set(REGISTRY) == {"software", "web", "research", "production", "empirical",
+                             "newsroom", "education", "startup", "game"}
     for org in REGISTRY.values():
         assert org.title and org.description and org.goal_hint
         assert org.input_noun and org.produces and org.verified_by

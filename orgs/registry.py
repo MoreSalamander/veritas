@@ -22,6 +22,12 @@ from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome
 from orgs.empirical_lab.pipeline import build_experiment
 from orgs.empirical_lab.roster import roster as empirical_roster
+from orgs.presets import (
+    build_article,
+    build_game,
+    build_lesson,
+    build_startup,
+)
 from orgs.production_studio.assets import StubGenerator
 from orgs.production_studio.pipeline import build_production
 from orgs.production_studio.publishing import FfmpegPublisher, Publisher
@@ -157,6 +163,25 @@ def _run_empirical(
     )
 
 
+def _run_grounded_preset(
+    build_fn: Callable[..., Any], name: str, goal: str, provider: ModelProvider,
+    memory: MemoryStore, sources: list[str] | None,
+) -> OrgRun:
+    corpus = {f"src{i + 1}": s for i, s in enumerate(sources or []) if s.strip()}
+    result = build_fn(goal, corpus, provider, memory)
+    return OrgRun(name, goal, result.accepted, [result.report_outcome],
+                  result.informed_by, result.run_id, result.activity)
+
+
+def _run_composition(
+    build_fn: Callable[..., Any], name: str, goal: str, provider: ModelProvider,
+    memory: MemoryStore, sources: list[str] | None = None,
+) -> OrgRun:
+    result = build_fn(goal, provider, memory)
+    return OrgRun(name, goal, result.accepted, result.outcomes,
+                  result.informed_by, result.run_id, result.activity)
+
+
 REGISTRY: dict[str, OrgType] = {
     "software": OrgType(
         name="software",
@@ -226,6 +251,57 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="do small-model ensembles beat a single larger model on accuracy?",
         build=_run_empirical,
         roster=empirical_roster,
+    ),
+    # --- Presets: products on the existing verification models, not new orgs. ---
+    "newsroom": OrgType(
+        name="newsroom",
+        title="Newsroom (preset)",
+        description="A grounded news article — a preset of the Research org. Same verification "
+        "(every claim cited, resolves, quoted verbatim); journalism is the framing, not a new model.",
+        input_noun="a story topic and its sources",
+        produces="a grounded article (every claim traceable to a source)",
+        verified_by="grounding — the Research org's gates, unchanged",
+        goal_hint="what the new city budget changes for local schools",
+        build=lambda g, p, m, sources=None: _run_grounded_preset(build_article, "newsroom", g, p, m, sources),
+        roster=research_roster,
+        needs_sources=True,
+    ),
+    "education": OrgType(
+        name="education",
+        title="Education (preset)",
+        description="A grounded teaching lesson — a preset of the Research org. The lesson stays "
+        "anchored to its sources; same grounding gates, framed for learners.",
+        input_noun="a lesson topic and its sources",
+        produces="a grounded lesson (every claim traceable to a source)",
+        verified_by="grounding — the Research org's gates, unchanged",
+        goal_hint="how a bill becomes a law",
+        build=lambda g, p, m, sources=None: _run_grounded_preset(build_lesson, "education", g, p, m, sources),
+        roster=research_roster,
+        needs_sources=True,
+    ),
+    "startup": OrgType(
+        name="startup",
+        title="Startup Factory (preset)",
+        description="Composes the Web org (a landing page) and the Software org (an MVP function). "
+        "Each part keeps its own gates; 'is it profitable?' is the market's verdict, not verified here.",
+        input_noun="a startup idea",
+        produces="a verified landing page + a verified MVP function",
+        verified_by="the Web org's render gates AND the Software org's execution gates — composed",
+        goal_hint="a tool that finds profitable opportunities in poker",
+        build=lambda g, p, m, sources=None: _run_composition(build_startup, "startup", g, p, m),
+        roster=None,
+    ),
+    "game": OrgType(
+        name="game",
+        title="Game Studio (preset)",
+        description="Composes the Production org (a concept trailer — consistency) and the Software "
+        "org (a gameplay function — execution). 'Is it fun?' stays the human tier.",
+        input_noun="a game idea",
+        produces="a verified production chain + a verified gameplay function",
+        verified_by="the Production org's consistency gates AND the Software org's execution gates",
+        goal_hint="a roguelike about pirates",
+        build=lambda g, p, m, sources=None: _run_composition(build_game, "game", g, p, m),
+        roster=None,
     ),
 }
 
