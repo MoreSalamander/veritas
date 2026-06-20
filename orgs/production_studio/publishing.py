@@ -20,6 +20,7 @@ from typing import Any
 
 from engine.artifact import Artifact, Determinism, GateResult
 from engine.gate import Gate
+from engine.run import Phase, emit_activity
 from orgs.production_studio.assets import AssetSet
 from orgs.production_studio.editing import Timeline
 from orgs.production_studio.production import ProductionParseError
@@ -130,6 +131,7 @@ class PublisherAgent:
         self.profile = profile
 
     def propose(self, timeline: Timeline, assets: AssetSet, out_path: Path) -> Artifact:
+        emit_activity(Phase.SYNTHESIZE, self.role, "rendering the final video…")
         self.publisher.render(timeline, assets, self.profile, out_path)
         manifest = json.dumps({"output": str(out_path), "profile": asdict(self.profile),
                                "expected_duration": timeline.total})

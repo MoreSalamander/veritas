@@ -54,6 +54,18 @@ def set_activity_listener(listener: Callable[[ActivityEntry], None] | None) -> N
     _activity_listener.set(listener)
 
 
+def emit_activity(phase: Phase, actor: str, message: str, duration_ms: float = 0.0) -> None:
+    """Emit a one-off event to the live listener (if any), without a Run — lets a proposer announce
+    it's working so the Hub can light that actor's box. Purely observational; a watcher error is
+    swallowed and can never disturb the run."""
+    listener = _activity_listener.get()
+    if listener is not None:
+        try:
+            listener(ActivityEntry(phase=phase, actor=actor, message=message, duration_ms=duration_ms))
+        except Exception:
+            pass
+
+
 @dataclass
 class Outcome:
     artifact: Artifact

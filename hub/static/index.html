@@ -46,6 +46,23 @@
   .artifact { margin-top: 12px; }
   .artifact .loc { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-bottom: 4px; }
   .prodvid { width: 100%; max-width: 480px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; background: #000; }
+
+  /* --- live trace: the cast + gate boxes light up as the run flows --- */
+  .tstage { border-left: 2px solid #1a2230; padding: 0 0 11px 12px; margin-bottom: 2px; }
+  .tstage.on { border-color: var(--cyan); }
+  .tlabel { font-size: 9.5px; letter-spacing: .5px; text-transform: uppercase; color: var(--dim); margin-bottom: 6px; }
+  .tstage.on .tlabel { color: var(--cyan); }
+  .tboxes { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+  .tbox { border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; font-size: 11px; font-family: var(--mono); color: var(--dim); white-space: nowrap; }
+  .tbox.agent { font-family: system-ui, sans-serif; font-size: 11.5px; color: var(--ink); }
+  .tbox.idle { opacity: .45; }
+  .tbox.active { border-color: var(--cyan); background: rgba(34,211,238,.08); color: var(--cyan); animation: pulse 1.1s ease-in-out infinite; }
+  .tbox.pass { border-color: rgba(52,211,153,.3); background: rgba(52,211,153,.05); }
+  .tbox.fail { border-color: rgba(248,113,113,.4); background: rgba(248,113,113,.07); color: #f4b3b3; }
+  .tbox.soft { border-color: rgba(251,191,36,.3); background: rgba(251,191,36,.06); }
+  .tbox .tdot.pass { color: var(--green); } .tbox .tdot.fail { color: var(--red); }
+  .tbox .tdot.soft { color: var(--amber); } .tbox .tdot.active { color: var(--cyan); } .tbox .tdot.idle { color: #3a4a5a; }
+  .tarrow { color: #3a4a5a; }
   pre.code { background: #0c1119; border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px;
              overflow-x: auto; font-family: var(--mono); font-size: 12px; color: var(--ink);
              white-space: pre; margin: 0; line-height: 1.5; }
@@ -616,6 +633,7 @@ async function initCreate() {
   loadProfile();
   loadProdProfile();
   loadVoices();
+  if (!PROD_ROSTER) api('/api/orgs/production/roster').then(r => { PROD_ROSTER = r; });
   // Resume an in-progress session after a page reload — the token lives only in JS, so without
   // this a reload would orphan the session and the UI would just sit idle ("frozen").
   const savedWeb = sessionStorage.getItem('veritas_create');
@@ -805,6 +823,61 @@ function setCreateOrg(org) {
 }
 
 let PRODUCE = { token: null, polling: false, sig: null };
+let PROD_ROSTER = null;
+
+// the six production stages: [scope, label, agent-role] — the roster's gates carry the same scope,
+// and each agent's role matches the event-stream actor, so the boxes light from the live feed.
+const TRACE_STAGES = [
+  ['concept', 'Concept', 'concept'],
+  ['script', 'Script', 'scriptwriter'],
+  ['storyboard', 'Storyboard', 'storyboard-artist'],
+  ['assets', 'Assets', 'asset-generator'],
+  ['timeline', 'Editing', 'editor'],
+  ['output', 'Publish', 'publisher'],
+];
+
+function renderProduceTrace(events, roster) {
+  const real = (events || []).filter(e => e.actor !== 'memory' && e.actor !== 'run');
+  const latest = real.length ? real[real.length - 1].actor : null;
+  const lastBy = {};
+  real.forEach(e => { lastBy[e.actor] = e; });
+  const byScope = {};
+  (roster.gates || []).forEach(g => { (byScope[g.scope] = byScope[g.scope] || []).push(g); });
+  const castName = role => ((roster.cast || []).find(c => c.role === role) || {}).name || role;
+
+  const agentBox = role => {
+    const worked = !!lastBy[role], active = latest === role;
+    const cls = active ? 'active' : (worked ? '' : 'idle');
+    return `<span class="tbox agent ${cls}">${esc(castName(role))}${worked && !active ? ' ✓' : ''}</span>`;
+  };
+  const gateBox = (g, sib) => {
+    let st = 'idle', mark = '●', tail = '';
+    if (g.name === 'validation') {
+      if (sib === 'fail') { st = 'fail'; tail = ' WITHHELD'; }
+      else if (sib === 'pass') { st = 'pass'; tail = ' APPROVED'; }
+    } else {
+      const ev = lastBy[g.name];
+      if (ev) {
+        if ((ev.message || '').startsWith('PASS')) st = 'pass';
+        else { st = g.determinism === 'soft' ? 'soft' : 'fail'; mark = g.determinism === 'soft' ? '○' : '●'; }
+      }
+    }
+    return `<span class="tbox ${st}"><span class="tdot ${st}">${mark}</span> ${esc(g.name)}${tail}</span>`;
+  };
+
+  return TRACE_STAGES.map(([scope, label, role]) => {
+    const gates = byScope[scope] || [];
+    const nonVal = gates.filter(g => g.name !== 'validation');
+    const seen = nonVal.filter(g => lastBy[g.name]);
+    let sib = null;
+    if (nonVal.length && seen.length === nonVal.length) {
+      sib = seen.some(g => !(lastBy[g.name].message || '').startsWith('PASS') && g.determinism !== 'soft') ? 'fail' : 'pass';
+    }
+    const on = latest === role || gates.some(g => latest === g.name);
+    const boxes = [agentBox(role), '<span class="tarrow">→</span>', ...gates.map(g => gateBox(g, sib))].join('');
+    return `<div class="tstage ${on ? 'on' : ''}"><div class="tlabel">${esc(label)}</div><div class="tboxes">${boxes}</div></div>`;
+  }).join('');
+}
 
 async function loadVoices() {
   const voices = await api('/api/voices');
@@ -849,8 +922,9 @@ function prodTrust(rows) {
 
 function renderProduce(s) {
   if (s.phase === 'producing') {
-    const tl = (s.events && s.events.length) ? `<div class="gates" style="margin-top:10px">${s.events.slice(-14).map(timelineRow).join('')}</div>` : '';
-    $('#pstatus').innerHTML = `<div class="panel"><div class="verdict running"><span class="livedot"></span> PRODUCING…</div>${tl}</div>`;
+    const trace = (PROD_ROSTER && PROD_ROSTER.gates)
+      ? `<div style="margin-top:12px">${renderProduceTrace(s.events, PROD_ROSTER)}</div>` : '';
+    $('#pstatus').innerHTML = `<div class="panel"><div class="verdict running"><span class="livedot"></span> PRODUCING…</div>${trace}</div>`;
   } else if (s.phase === 'reviewing') {
     const vid = s.video_url ? `<video class="prodvid" controls preload="metadata" src="${esc(s.video_url)}"></video>`
       : `<div class="muted" style="margin-bottom:8px">No render (ffmpeg unavailable) — reviewing the verified cut.</div>`;
@@ -909,6 +983,7 @@ async function submitProdReview(approved, feedback) {
 $('#pgo').onclick = async () => {
   const brief = $('#pbrief').value.trim();
   if (!brief) return;
+  if (!PROD_ROSTER) PROD_ROSTER = await api('/api/orgs/production/roster');  // boxes to light
   $('#pgo').disabled = true; $('#phint').textContent = 'Producing…'; $('#pstatus').innerHTML = '';
   const voice = ($('#pvoicewrap').classList.contains('hidden') ? null : $('#pvoice').value) || null;
   const start = await api('/api/produce/start', {

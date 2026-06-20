@@ -20,6 +20,7 @@ from typing import Any
 
 from engine.artifact import Artifact, Determinism, GateResult
 from engine.gate import Gate
+from engine.run import Phase, emit_activity
 from orgs.production_studio.media import (
     read_png_size,
     read_wav_duration,
@@ -180,6 +181,7 @@ class AssetGeneratorAgent:
         self.generator = generator
 
     def propose(self, script: Script, storyboard: Storyboard, out_dir: Path) -> Artifact:
+        emit_activity(Phase.SYNTHESIZE, self.role, "rendering images + narration…")
         manifest = self.generator.generate(script, storyboard, out_dir)
         return Artifact.propose(type="assets", owner="asset-generator", payload=manifest,
                                 rationale=f"assets for {len(storyboard.shots)} shot(s)")

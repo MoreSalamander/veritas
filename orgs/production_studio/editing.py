@@ -16,6 +16,7 @@ from typing import Any
 
 from engine.artifact import Artifact, Determinism, GateResult
 from engine.gate import Gate
+from engine.run import Phase, emit_activity
 from orgs.production_studio.assets import AssetSet
 from orgs.production_studio.production import ProductionParseError, Storyboard
 
@@ -85,6 +86,7 @@ class EditorAgent:
     role = "editor"
 
     def propose(self, storyboard: Storyboard, assets: AssetSet) -> Artifact:
+        emit_activity(Phase.SYNTHESIZE, self.role, "assembling the cut…")
         payload = Editor().assemble(storyboard, assets)
         return Artifact.propose(type="timeline", owner="editor",
                                 payload=payload, rationale="assembled cut")

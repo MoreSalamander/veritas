@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from engine.artifact import Artifact
 from engine.model import ModelProvider
+from engine.run import Phase, emit_activity
 from orgs.production_studio.production import Concept, Script, script_beats
 from orgs.software_studio.agents import _strip_code_fences
 
@@ -65,6 +66,7 @@ class ConceptAgent:
         self.provider = provider
 
     def propose(self, brief: str, lessons: str = "", feedback: str | None = None) -> Artifact:
+        emit_activity(Phase.SYNTHESIZE, self.role, "developing the concept…")
         prompt = _with_feedback(f"{lessons}Brief: {brief}" if lessons else f"Brief: {brief}", feedback)
         raw = self.provider.propose(role=self.role, prompt=prompt, system=CONCEPT_SYSTEM)
         return Artifact.propose(type="concept", owner="concept-agent",
@@ -78,6 +80,8 @@ class ScriptwriterAgent:
         self.provider = provider
 
     def propose(self, concept: Concept, lessons: str = "", feedback: str | None = None) -> Artifact:
+        emit_activity(Phase.SYNTHESIZE, self.role,
+                      "rewriting the script…" if feedback else "writing the script…")
         body = f"{lessons}{_concept_brief(concept)}" if lessons else _concept_brief(concept)
         raw = self.provider.propose(role=self.role, prompt=_with_feedback(body, feedback),
                                     system=SCRIPT_SYSTEM)
@@ -92,6 +96,7 @@ class StoryboardArtistAgent:
         self.provider = provider
 
     def propose(self, concept: Concept, script: Script, feedback: str | None = None) -> Artifact:
+        emit_activity(Phase.SYNTHESIZE, self.role, "drawing the storyboard…")
         body = (f"Concept tone: {concept.tone}\n\nScript beats (reference these ids):\n"
                 f"{_script_brief(script)}")
         raw = self.provider.propose(role=self.role, prompt=_with_feedback(body, feedback),
