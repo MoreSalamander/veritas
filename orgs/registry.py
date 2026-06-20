@@ -20,6 +20,8 @@ from uuid import uuid4
 from engine.memory import MemoryStore
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome
+from orgs.empirical_lab.pipeline import build_experiment
+from orgs.empirical_lab.roster import roster as empirical_roster
 from orgs.production_studio.assets import StubGenerator
 from orgs.production_studio.pipeline import build_production
 from orgs.production_studio.publishing import FfmpegPublisher, Publisher
@@ -140,6 +142,21 @@ def _run_production(
     )
 
 
+def _run_empirical(
+    goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
+) -> OrgRun:
+    result = build_experiment(goal, provider, memory)
+    return OrgRun(
+        org="empirical",
+        goal=goal,
+        accepted=result.accepted,
+        outcomes=result.outcomes,
+        informed_by=result.informed_by,
+        run_id=result.run_id,
+        activity=result.activity,
+    )
+
+
 REGISTRY: dict[str, OrgType] = {
     "software": OrgType(
         name="software",
@@ -196,6 +213,19 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a 60-second explainer on why the sky is blue, for curious kids",
         build=_run_production,
         roster=production_roster,
+    ),
+    "empirical": OrgType(
+        name="empirical",
+        title="Empirical Lab",
+        description="Turns a research question into a hypothesis tested by a reproducible "
+        "experiment. A claim ships only if running the experiment supports it — twice.",
+        input_noun="a research question",
+        produces="a hypothesis backed by a reproducible experiment (or an honest refutation)",
+        verified_by="the experiment is security-scanned, then run repeatedly; it must reproduce "
+        "and the measured data — not the model's claim — must satisfy the prediction",
+        goal_hint="do small-model ensembles beat a single larger model on accuracy?",
+        build=_run_empirical,
+        roster=empirical_roster,
     ),
 }
 

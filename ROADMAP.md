@@ -314,11 +314,17 @@ then the real engine is swapped behind the seam — the pattern that worked ever
 
 - **P26 · Empirical / Research Lab org** — *verification model: **reproducibility** — a hypothesis
   is accepted only if a re-runnable experiment supports it.* Seeded by the existing `bench/`.
-  **P26a** Experiment artifact + `ExperimentRunner` seam + ReproducibilityGate (re-run, results
-  match within tolerance) + ResultSupportsHypothesisGate. **P26b** cast (Director/LitReview/
-  Hypothesis/Experiment/Writer as proposers; Critic & Validation = gates) + grounding gate for the
-  lit review (reuses Research). **P26c** register in hub; the demo is the project's own question —
-  "do local LLM ensembles beat frontier models?"
+  *DONE (core): orgs/empirical_lab — Hypothesis (statement + machine-checkable prediction: compare or
+  threshold on a metric) → Experiment code (SECURITY-SCANNED before it is ever run, reusing the
+  software org's scan) → run it repeatedly → the result is judged by ExperimentRuns + Reproducibility
+  (independent runs match) + SupportsHypothesis (the measured DATA, not the model, satisfies the
+  prediction; a refuted claim is rejected and remembered). Cast = Scientist + Experimentalist +
+  Experiment Runner (a tool); Critic/Validation are gates. Registered as the 5th org. 6 tests: a
+  supported+reproducible claim ships; a refuted one, a non-reproducible one, and a dangerous
+  experiment are each refused by the owning gate. Live qwen: hypothesis + safe experiment shipped,
+  but the experiment errored at runtime → result REFUSED (no false green). FOLLOW-UPS: a grounded
+  lit-review role (reuse Research grounding) + a report Writer; wire real model-vs-model experiments
+  (the literal "ensembles vs frontier" run) behind the ExperimentRunner.*
 
 - **P27 · Presets** — not new engine; each is *cast + pipeline on an existing verification model*,
   proving the substrate generalizes. **Newsroom** = Research + fact-checker role. **Education** =
