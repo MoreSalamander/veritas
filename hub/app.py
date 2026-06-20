@@ -26,7 +26,7 @@ from engine.memory import MemoryStore
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
 from engine.run import ActivityEntry, set_activity_listener
 from hub.store import RunStore, summarize
-from orgs.production_studio.assets import StubGenerator
+from orgs.production_studio.assets import SayGenerator, StubGenerator
 from orgs.production_studio.pipeline import ProductionResult
 from orgs.production_studio.publishing import (
     FfmpegPublisher,
@@ -383,9 +383,10 @@ class ProductionCreateSession:
     def _run(self) -> None:
         set_activity_listener(lambda e: self.state["events"].append(_event(e)))
         try:
+            generator = SayGenerator() if shutil.which("say") else StubGenerator()  # real narration on macOS
             res = build_create_production(
                 self.brief, self.provider, self.memory, review=self._review_fn,
-                asset_generator=StubGenerator(), publisher=self.publisher,
+                asset_generator=generator, publisher=self.publisher,
                 profile=PublishProfile(), asset_dir=self.work,
                 profile_store=self.profile_store, max_attempts=3,
             )
