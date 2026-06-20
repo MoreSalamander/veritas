@@ -9,14 +9,16 @@ seam. Static UI is served at /.
 from __future__ import annotations
 
 import os
+import re
 import shutil
+import subprocess
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TypedDict
 from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -133,6 +135,31 @@ class ReviewBody(BaseModel):
 class ProduceRequest(BaseModel):
     brief: str
     model: str = DEFAULT_MODEL
+    voice: str | None = None  # macOS `say` voice for the narration; None = default voice
+
+
+_VOICES_CACHE: list[dict[str, str]] | None = None
+
+
+def available_voices() -> list[dict[str, str]]:
+    """English macOS `say` voices as [{name, locale}]. Empty off macOS. Cached (the listing is slow)."""
+    global _VOICES_CACHE
+    if _VOICES_CACHE is not None:
+        return _VOICES_CACHE
+    voices: list[dict[str, str]] = []
+    if shutil.which("say"):
+        try:
+            out = subprocess.run(["say", "-v", "?"], capture_output=True, text=True, timeout=10).stdout
+            for line in out.splitlines():
+                if "#" not in line:
+                    continue
+                toks = line.split("#")[0].split()
+                if len(toks) >= 2 and toks[-1].startswith("en"):
+                    voices.append({"name": " ".join(toks[:-1]), "locale": toks[-1]})
+        except (OSError, subprocess.SubprocessError):
+            voices = []
+    _VOICES_CACHE = voices
+    return voices
 
 
 def _event(entry: ActivityEntry) -> dict[str, Any]:
@@ -338,7 +365,7 @@ class ProductionCreateSession:
 
     def __init__(self, token: str, brief: str, model: str, provider: ModelProvider,
                  memory: MemoryStore, productions_root: Path, profile_store: ProductionProfileStore,
-                 publisher: Publisher | None) -> None:
+                 publisher: Publisher | None, voice: str | None = None) -> None:
         self.token = token
         self.brief = brief
         self.provider = provider
@@ -346,6 +373,7 @@ class ProductionCreateSession:
         self.work = productions_root / uuid4().hex
         self.profile_store = profile_store
         self.publisher = publisher
+        self.voice = voice
         self.lock = threading.Lock()
         self.state: dict[str, Any] = {
             "phase": "producing", "brief": brief, "model": model, "events": [],
@@ -383,7 +411,7 @@ class ProductionCreateSession:
     def _run(self) -> None:
         set_activity_listener(lambda e: self.state["events"].append(_event(e)))
         try:
-            generator = SayGenerator() if shutil.which("say") else StubGenerator()  # real narration on macOS
+            generator = SayGenerator(voice=self.voice) if shutil.which("say") else StubGenerator()  # real narration on macOS
             res = build_create_production(
                 self.brief, self.provider, self.memory, review=self._review_fn,
                 asset_generator=generator, publisher=self.publisher,
@@ -609,11 +637,31 @@ def create_app(
         )
         sess = ProductionCreateSession(
             token, req.brief, req.model, prov, org_memory("production"),
-            base / "productions", production_profile_store(), publisher,
+            base / "productions", production_profile_store(), publisher, voice=req.voice,
         )
         produce_sessions[token] = sess
         sess.start()
         return {"token": token}
+
+    @app.get("/api/voices")
+    def list_voices() -> list[dict[str, str]]:
+        return available_voices()
+
+    @app.get("/api/voices/{voice}/sample.wav")
+    def voice_sample(voice: str) -> FileResponse:
+        # validate against the real voice list (the name also goes to `say` as an argv arg, never a shell)
+        if voice not in {v["name"] for v in available_voices()}:
+            raise HTTPException(status_code=404, detail="unknown voice")
+        samples = base / "voice_samples"
+        samples.mkdir(parents=True, exist_ok=True)
+        path = samples / f"{re.sub(r'[^A-Za-z0-9_-]', '_', voice)}.wav"
+        if not path.exists():
+            subprocess.run(
+                ["say", "-v", voice, "-o", str(path), "--data-format=LEI16@22050",
+                 f"Hi, I'm {voice}. Here's how your narration will sound."],
+                check=True, capture_output=True, timeout=30,
+            )
+        return FileResponse(path, media_type="audio/wav", headers={"Cache-Control": "max-age=86400"})
 
     @app.get("/api/produce/{token}")
     def produce_state(token: str) -> dict[str, Any]:

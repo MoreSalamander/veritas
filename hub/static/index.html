@@ -258,6 +258,12 @@
           <input type="text" id="pbrief" placeholder="e.g. a 30-second explainer on why the sky is blue, for kids" />
           <button id="pgo">Produce</button>
         </div>
+        <div class="row hidden" id="pvoicewrap" style="margin-top:10px">
+          <span class="muted" style="white-space:nowrap">Narration voice</span>
+          <select id="pvoice" title="the voice that speaks the narration"></select>
+          <button id="pvoicebtn" class="ghost" type="button">Hear voice</button>
+          <audio id="pvoicesample" preload="none"></audio>
+        </div>
         <div class="muted" id="phint" style="margin-top:10px">The whole chain runs (concept → script → storyboard → assets → timeline → video) on the machine floor; then you approve the cut.</div>
       </div>
       <div id="pstatus"></div>
@@ -609,6 +615,7 @@ async function initCreate() {
   }
   loadProfile();
   loadProdProfile();
+  loadVoices();
   // Resume an in-progress session after a page reload — the token lives only in JS, so without
   // this a reload would orphan the session and the UI would just sit idle ("frozen").
   const savedWeb = sessionStorage.getItem('veritas_create');
@@ -799,6 +806,22 @@ function setCreateOrg(org) {
 
 let PRODUCE = { token: null, polling: false, sig: null };
 
+async function loadVoices() {
+  const voices = await api('/api/voices');
+  if (!voices || !voices.length) { $('#pvoicewrap').classList.add('hidden'); return; }  // non-macOS
+  $('#pvoice').innerHTML = voices.map(v => `<option value="${esc(v.name)}">${esc(v.name)} · ${esc(v.locale)}</option>`).join('');
+  $('#pvoicewrap').classList.remove('hidden');
+}
+
+function previewVoice() {
+  const v = $('#pvoice').value;
+  if (!v) return;
+  const a = $('#pvoicesample');
+  a.src = '/api/voices/' + encodeURIComponent(v) + '/sample.wav';
+  $('#pvoicebtn').textContent = 'Loading…';
+  a.play().finally(() => { $('#pvoicebtn').textContent = 'Hear voice'; });
+}
+
 async function loadProdProfile() {
   const p = await api('/api/profile/production');
   if (!p || !p.approvals) {
@@ -887,14 +910,17 @@ $('#pgo').onclick = async () => {
   const brief = $('#pbrief').value.trim();
   if (!brief) return;
   $('#pgo').disabled = true; $('#phint').textContent = 'Producing…'; $('#pstatus').innerHTML = '';
+  const voice = ($('#pvoicewrap').classList.contains('hidden') ? null : $('#pvoice').value) || null;
   const start = await api('/api/produce/start', {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({brief, model: $('#pmodel').value}) });
+    body: JSON.stringify({brief, model: $('#pmodel').value, voice}) });
   if (!start.token) { $('#pstatus').innerHTML = `<div class="panel"><span class="fail">${esc(start.error || 'could not start')}</span></div>`; $('#pgo').disabled = false; return; }
   PRODUCE.token = start.token; PRODUCE.sig = null;
   sessionStorage.setItem('veritas_produce', start.token);
   pollProduce();
 };
+
+$('#pvoicebtn').onclick = previewVoice;
 
 loadOrgs();
 loadModels();
