@@ -13,6 +13,7 @@ from engine.artifact import Artifact
 from engine.memory import MemoryStore
 from engine.model import ScriptedProvider
 from orgs.production_studio.assets import (
+    AssetConsistencyGate,
     AssetCoverageGate,
     AssetIntegrityGate,
     StubGenerator,
@@ -98,6 +99,33 @@ def test_missing_file_fails_integrity(tmp_path):
     os.remove(manifest["audio"][0]["path"])
     res = AssetIntegrityGate().check(_art(json.dumps(manifest)))
     assert not res.passed and "missing audio" in res.evidence
+
+
+# --- P25c: visual consistency -------------------------------------------------------------
+
+_RECUR_SCRIPT = json.dumps({"scenes": [{"heading": "A", "beats": [
+    {"narration": "Mia waves hello to the whole sleepy town below.", "entities": ["Mia"]},
+    {"narration": "Mia walks down the sunny street past the shops.", "entities": ["Mia"]}]}]})
+_RECUR_BOARD = json.dumps({"shots": [
+    {"beat_id": "s1b1", "description": "Mia waving", "entities": ["Mia"]},
+    {"beat_id": "s1b2", "description": "Mia walking", "entities": ["Mia"]}]})
+
+
+def test_recurring_entity_is_drawn_consistently(tmp_path):
+    script, board = parse_script(_RECUR_SCRIPT), parse_storyboard(_RECUR_BOARD)
+    manifest = StubGenerator(64, 48).generate(script, board, tmp_path)
+    assert AssetConsistencyGate().check(_art(manifest)).passed
+    # consistency by construction: the same entity set renders byte-identical pixels
+    paths = [im["path"] for im in json.loads(manifest)["images"]]
+    assert open(paths[0], "rb").read() == open(paths[1], "rb").read()
+
+
+def test_drifting_reference_fails_consistency(tmp_path):
+    script, board = parse_script(_RECUR_SCRIPT), parse_storyboard(_RECUR_BOARD)
+    manifest = json.loads(StubGenerator(64, 48).generate(script, board, tmp_path))
+    manifest["images"][1]["entity_refs"]["Mia"] = "ref:someone-else"  # the character changes look
+    res = AssetConsistencyGate().check(_art(json.dumps(manifest)))
+    assert not res.passed and "Mia" in res.evidence
 
 
 # --- the whole chain, with assets ---------------------------------------------------------

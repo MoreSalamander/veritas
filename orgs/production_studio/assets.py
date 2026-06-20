@@ -10,9 +10,10 @@ manifest claims). "Does it look good" is not asked here — that is the human ti
 
 from __future__ import annotations
 
+import hashlib
 import json
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -29,12 +30,26 @@ from orgs.production_studio.production import (
     Script,
     Storyboard,
     WORDS_PER_SECOND,
+    _norm,
     script_beats,
 )
 
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 720
 _DURATION_TOLERANCE = 0.2  # seconds: the on-disk audio must match its manifest duration this closely
+
+
+def reference_id(entity: str) -> str:
+    """The pinned visual identity for an entity — decided once, reused everywhere it appears, so the
+    character looks the same shot to shot. A real engine would map this to a seed / LoRA / reference
+    image; the stub maps it to a stable color. Either way, the gate checks it never drifts."""
+    return f"ref:{_norm(entity)}"
+
+
+def reference_color(entity: str) -> tuple[int, int, int]:
+    """A stable color for an entity's reference (hashlib, not hash(), so it's reproducible)."""
+    d = hashlib.md5(_norm(entity).encode()).digest()
+    return (d[0], d[1], d[2])
 
 
 # --- the manifest (the asset-stage artifact) ---------------------------------------------
@@ -46,6 +61,7 @@ class ImageRef:
     path: str
     width: int
     height: int
+    entity_refs: dict[str, str] = field(default_factory=dict)  # entity -> the reference it was drawn with
 
 
 @dataclass
@@ -70,7 +86,9 @@ def parse_assets(payload: str) -> AssetSet:
         raise ProductionParseError("asset manifest must be a JSON object")
     try:
         images = [ImageRef(int(i["shot_index"]), str(i["beat_id"]), str(i["path"]),
-                           int(i["width"]), int(i["height"])) for i in obj.get("images", [])]
+                           int(i["width"]), int(i["height"]),
+                           {str(k): str(v) for k, v in dict(i.get("entity_refs", {})).items()})
+                  for i in obj.get("images", [])]
         audio = [AudioRef(str(a["beat_id"]), str(a["path"]), float(a["duration"]))
                  for a in obj.get("audio", [])]
     except (KeyError, TypeError, ValueError) as exc:
@@ -99,18 +117,23 @@ class StubGenerator(AssetGenerator):
         self.height = height
 
     @staticmethod
-    def _color(seed: str) -> tuple[int, int, int]:
-        h = abs(hash(seed))
-        return (h & 0xFF, (h >> 8) & 0xFF, (h >> 16) & 0xFF)
+    def _shot_color(entities: list[str]) -> tuple[int, int, int]:
+        # blend the entities' reference colors — the image is a pure function of WHO is in it, so a
+        # character contributes the same color in every shot (consistency by construction).
+        if not entities:
+            return (120, 120, 120)
+        cols = [reference_color(e) for e in entities]
+        return tuple(sum(c[k] for c in cols) // len(cols) for k in range(3))  # type: ignore[return-value]
 
     def generate(self, script: Script, storyboard: Storyboard, out_dir: Path) -> str:
         out_dir.mkdir(parents=True, exist_ok=True)
         images = []
         for i, shot in enumerate(storyboard.shots):
             p = out_dir / f"img_{i:03d}.png"
-            write_png(p, self.width, self.height, self._color(shot.beat_id))
+            write_png(p, self.width, self.height, self._shot_color(shot.entities))
             images.append({"shot_index": i, "beat_id": shot.beat_id, "path": str(p),
-                           "width": self.width, "height": self.height})
+                           "width": self.width, "height": self.height,
+                           "entity_refs": {e: reference_id(e) for e in shot.entities}})
         audio = []
         for b in script_beats(script):
             seconds = max(0.5, len(b.narration.split()) / WORDS_PER_SECOND)
@@ -166,6 +189,34 @@ class AssetCoverageGate(Gate):
             return self._result(False, "; ".join(problems))
         return self._result(
             True, f"{self.shot_count} shot image(s) + {len(self.beat_ids)} beat audio clip(s), all present"
+        )
+
+
+class AssetConsistencyGate(Gate):
+    """HARD: each entity is drawn with ONE pinned reference across every shot it appears in — a
+    character can't look different scene to scene. This is the visual side of the org's referential
+    integrity. (Whether the reference itself is a *good* likeness is the human tier, not here.)"""
+
+    name = "asset-consistency"
+    determinism = Determinism.HARD
+
+    def check(self, artifact: Artifact) -> GateResult:
+        try:
+            assets = parse_assets(artifact.payload)
+        except ProductionParseError as exc:
+            return self._result(False, f"assets not usable: {exc}")
+        refs: dict[str, set[str]] = {}  # entity (normalized) -> the distinct references it was drawn with
+        names: dict[str, str] = {}  # normalized -> name as written, for the message
+        for im in assets.images:
+            for ent, ref in im.entity_refs.items():
+                refs.setdefault(_norm(ent), set()).add(ref)
+                names.setdefault(_norm(ent), ent)
+        drifted = {ent: sorted(rs) for ent, rs in refs.items() if len(rs) > 1}
+        if drifted:
+            shown = "; ".join(f"{names[ent]} drawn as {' vs '.join(rs)}" for ent, rs in drifted.items())
+            return self._result(False, f"inconsistent entit{'y' if len(drifted) == 1 else 'ies'}: {shown}")
+        return self._result(
+            True, f"all {len(refs)} recurring entit{'y' if len(refs) == 1 else 'ies'} drawn with a stable reference"
         )
 
 

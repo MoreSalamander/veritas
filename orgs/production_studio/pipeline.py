@@ -24,6 +24,7 @@ from orgs.production_studio.agents import (
     StoryboardArtistAgent,
 )
 from orgs.production_studio.assets import (
+    AssetConsistencyGate,
     AssetCoverageGate,
     AssetGenerator,
     AssetGeneratorAgent,
@@ -99,7 +100,8 @@ def build_production(
     asset_art = _stamp(AssetGeneratorAgent(asset_generator).propose(script, storyboard, out_dir))
     asset_out = run.submit(
         asset_art,
-        [AssetCoverageGate(script, storyboard), AssetIntegrityGate(), ValidationGate()],
+        [AssetCoverageGate(script, storyboard), AssetIntegrityGate(),
+         AssetConsistencyGate(), ValidationGate()],
     )
     outcomes.append(asset_out)
     return ProductionResult(outcomes, asset_out.accepted, informed_by, run.id, list(run.log))

@@ -287,7 +287,10 @@ then the real engine is swapped behind the seam — the pattern that worked ever
 - **P25c · Visual consistency** — *verification: consistency via measurable signal.* Each entity
   gets a pinned reference (seed/reference image); the gate checks each shot image against it
   (perceptual/embedding similarity within tolerance). The "maintain consistency" guarantee made
-  checkable.
+  checkable. *Done: the manifest records the reference each entity was drawn with per shot;
+  AssetConsistencyGate (HARD) proves an entity's reference never drifts across the shots it appears
+  in; the stub draws each entity from its pinned reference so a recurring character renders
+  byte-identical; a tampered reference is caught.*
 - **P25d · Editing / assembly** — *verification: conformance + temporal integrity.* Assemble shots
   + narration into a timeline. HARD gates: SequenceCoverage (every shot, in storyboard order),
   TimelineIntegrity (shot duration = its audio's, total within target, no gaps/overlaps).
