@@ -17,6 +17,15 @@ import urllib.request
 from abc import ABC, abstractmethod
 from typing import Any
 
+from engine.run import Phase, emit_activity
+
+
+def _announce(role: str) -> None:
+    """Light this proposer's box in the live trace — every LLM call announces who's working, so the
+    Hub lights the right cast box regardless of org. Purely observational (a no-op if nobody's
+    watching)."""
+    emit_activity(Phase.SYNTHESIZE, role, "working…")
+
 
 class ModelProvider(ABC):
     """The one seam. A proposer asks; the provider answers with text."""
@@ -58,6 +67,7 @@ class OllamaProvider(ModelProvider):
         self.num_predict = num_predict if num_predict is not None else (8192 if think else None)
 
     def propose(self, *, role: str, prompt: str, system: str | None = None) -> str:
+        _announce(role)
         # When think=False (the structured-proposal default) a reasoning model answers directly,
         # which is what we want — the artifact, not the chain-of-thought — and faster. When ON,
         # we keep only `response`; `thinking` is the proposer's private process the gates ignore.
@@ -99,6 +109,7 @@ class ClaudeProvider(ModelProvider):
         self.max_tokens = max_tokens
 
     def propose(self, *, role: str, prompt: str, system: str | None = None) -> str:
+        _announce(role)
         message = self._client.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
@@ -117,6 +128,7 @@ class ScriptedProvider(ModelProvider):
         self._by_role = by_role
 
     def propose(self, *, role: str, prompt: str, system: str | None = None) -> str:
+        _announce(role)
         if role not in self._by_role:
             raise KeyError(f"ScriptedProvider has no response for role {role!r}")
         return self._by_role[role]
@@ -131,6 +143,7 @@ class SequencedProvider(ModelProvider):
         self._queues = {role: list(responses) for role, responses in by_role.items()}
 
     def propose(self, *, role: str, prompt: str, system: str | None = None) -> str:
+        _announce(role)
         queue = self._queues.get(role)
         if not queue:
             raise KeyError(f"SequencedProvider exhausted or missing for role {role!r}")
