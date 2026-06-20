@@ -131,8 +131,12 @@ class InterviewerAgent:
     def __init__(self, provider: ModelProvider) -> None:
         self.provider = provider
 
-    def next(self, goal: str, transcript: list[tuple[str, str]], nudge: str | None = None) -> dict[str, Any]:
-        lines = [f"Goal: {goal}", ""]
+    def next(self, goal: str, transcript: list[tuple[str, str]], nudge: str | None = None,
+             known: str | None = None) -> dict[str, Any]:
+        lines = [f"Goal: {goal}"]
+        if known:
+            lines += [f"Known user preferences (do NOT re-ask these): {known}"]
+        lines += [""]
         for q, a in transcript:
             lines += [f"Q: {q}", f"A: {a}"]
         if nudge:
@@ -142,17 +146,20 @@ class InterviewerAgent:
 
 
 def interview(
-    goal: str, provider: ModelProvider, answer: Callable[[str], str], max_rounds: int = 8
+    goal: str, provider: ModelProvider, answer: Callable[[str], str],
+    known: str | None = None, max_rounds: int = 8,
 ) -> InterviewResult:
     """Run the interview to a gateable spec. `answer` supplies the human's reply to a question
-    (a real person in the hub; a scripted fn in tests). The loop only ends when
-    `spec_completeness` says the spec is gateable — or the round budget runs out."""
+    (a real person in the hub; a scripted fn in tests). `known` is a summary of the user's
+    learned preferences (from the aesthetic profile) so the interview doesn't re-ask them — it
+    shortens over time. The loop only ends when `spec_completeness` says the spec is gateable,
+    or the round budget runs out."""
     transcript: list[tuple[str, str]] = []
     agent = InterviewerAgent(provider)
     nudge: str | None = None
     for rnd in range(1, max_rounds + 1):
         try:
-            parsed = agent.next(goal, transcript, nudge)
+            parsed = agent.next(goal, transcript, nudge, known)
         except CreateSpecParseError:
             nudge = "Your last reply was not valid JSON. Respond with ONLY the JSON object."
             continue

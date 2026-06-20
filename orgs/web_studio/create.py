@@ -26,6 +26,7 @@ from orgs.web_studio.aesthetics import aesthetic_gates
 from orgs.web_studio.browser import BrowserExecutor, RenderResult
 from orgs.web_studio.gates import RenderGate, StructureGate
 from orgs.web_studio.interview import CreateSpec
+from orgs.web_studio.profile import ProfileStore, apply_profile
 
 CREATE_DEV_SYSTEM = (
     "You are a front-end developer. Given a spec (required elements + an aesthetic), respond "
@@ -101,11 +102,15 @@ def _hard_feedback(results: list[GateResult]) -> str:
 
 def build_create_page(
     spec: CreateSpec, provider: ModelProvider, memory: MemoryStore, review: ReviewFn,
-    max_attempts: int = 4,
+    profile_store: ProfileStore | None = None, max_attempts: int = 4,
 ) -> CreatePageResult:
     """One loop, two kinds of feedback: a measurable miss re-proposes automatically (hard
     gate evidence); a human 'request changes' re-proposes with the person's words. Only a human
-    approval ships the page (and persists it human-approved)."""
+    approval ships the page (and persists it human-approved). When a profile_store is given, the
+    learned profile fills the spec's aesthetic gaps first, and a human approval updates it — the
+    loop compounds (it learns your taste)."""
+    if profile_store is not None:  # fill gaps from learned taste before building
+        spec = apply_profile(profile_store.load(), spec)
     run = Run(goal=spec.title, memory=memory)
     executor = BrowserExecutor()
     required = spec.required_elements
@@ -130,6 +135,10 @@ def build_create_page(
                                passed=True, evidence="approved by the human")
             page.record_gate(human)
             outcome = run.persist(page, results + [human])  # ships, tagged human-approved
+            if profile_store is not None:  # the approval teaches the profile (the loop compounds)
+                prof = profile_store.load()
+                prof.update(spec.aesthetics)
+                profile_store.save(prof)
             return CreatePageResult(True, True, outcome, attempt, run.id, list(run.log))
         feedback = verdict.feedback  # human-driven refinement
 
