@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +27,7 @@ from orgs.production_studio.media import (
     write_wav,
 )
 from orgs.production_studio.production import (
+    Beat,
     ProductionParseError,
     Script,
     Storyboard,
@@ -125,6 +127,13 @@ class StubGenerator(AssetGenerator):
         cols = [reference_color(e) for e in entities]
         return tuple(sum(c[k] for c in cols) // len(cols) for k in range(3))  # type: ignore[return-value]
 
+    def _write_audio(self, beat: Beat, path: Path) -> float:
+        """Silent placeholder sized to the narration's estimated runtime. Subclasses override to
+        produce real speech; the returned duration is what the manifest records."""
+        seconds = max(0.5, len(beat.narration.split()) / WORDS_PER_SECOND)
+        write_wav(path, seconds)
+        return round(seconds, 3)
+
     def generate(self, script: Script, storyboard: Storyboard, out_dir: Path) -> str:
         out_dir.mkdir(parents=True, exist_ok=True)
         images = []
@@ -136,11 +145,29 @@ class StubGenerator(AssetGenerator):
                            "entity_refs": {e: reference_id(e) for e in shot.entities}})
         audio = []
         for b in script_beats(script):
-            seconds = max(0.5, len(b.narration.split()) / WORDS_PER_SECOND)
             p = out_dir / f"aud_{b.id}.wav"
-            write_wav(p, seconds)
-            audio.append({"beat_id": b.id, "path": str(p), "duration": round(seconds, 3)})
+            duration = self._write_audio(b, p)
+            audio.append({"beat_id": b.id, "path": str(p), "duration": duration})
         return json.dumps({"images": images, "audio": audio})
+
+
+class SayGenerator(StubGenerator):
+    """Real spoken narration via macOS `say` (zero dependencies); visuals stay placeholder until an
+    image engine is wired behind the seam. The audio is genuine speech of each beat's narration, and
+    the manifest records its actual measured duration so the timeline stays in sync."""
+
+    def __init__(self, width: int = DEFAULT_WIDTH, height: int = DEFAULT_HEIGHT,
+                 voice: str | None = None) -> None:
+        super().__init__(width, height)
+        self.voice = voice
+
+    def _write_audio(self, beat: Beat, path: Path) -> float:
+        argv = ["say", "-o", str(path), "--data-format=LEI16@22050"]
+        if self.voice:
+            argv += ["-v", self.voice]
+        argv.append(beat.narration.strip() or " ")
+        subprocess.run(argv, check=True, capture_output=True, timeout=120)
+        return round(read_wav_duration(path), 3)
 
 
 class AssetGeneratorAgent:

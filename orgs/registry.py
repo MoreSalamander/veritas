@@ -28,7 +28,7 @@ from orgs.presets import (
     build_lesson,
     build_startup,
 )
-from orgs.production_studio.assets import StubGenerator
+from orgs.production_studio.assets import AssetGenerator, SayGenerator, StubGenerator
 from orgs.production_studio.pipeline import build_production
 from orgs.production_studio.publishing import FfmpegPublisher, Publisher
 from orgs.production_studio.roster import roster as production_roster
@@ -133,9 +133,12 @@ def _run_production(
     publisher: Publisher | None = (
         FfmpegPublisher() if shutil.which("ffmpeg") and shutil.which("ffprobe") else None
     )
+    # Real spoken narration via macOS `say` when available; silent placeholder otherwise. (Visuals
+    # stay placeholder until an image engine is wired behind the same seam.)
+    generator: AssetGenerator = SayGenerator() if shutil.which("say") else StubGenerator()
     result = build_production(
         goal, provider, memory,
-        asset_generator=StubGenerator(), asset_dir=work, publisher=publisher,
+        asset_generator=generator, asset_dir=work, publisher=publisher,
     )
     return OrgRun(
         org="production",

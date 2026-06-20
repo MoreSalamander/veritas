@@ -12,10 +12,15 @@ import json
 from engine.artifact import Artifact
 from engine.memory import MemoryStore
 from engine.model import ScriptedProvider
+import shutil
+
+import pytest
+
 from orgs.production_studio.assets import (
     AssetConsistencyGate,
     AssetCoverageGate,
     AssetIntegrityGate,
+    SayGenerator,
     StubGenerator,
 )
 from orgs.production_studio.media import (
@@ -126,6 +131,15 @@ def test_drifting_reference_fails_consistency(tmp_path):
     manifest["images"][1]["entity_refs"]["Mia"] = "ref:someone-else"  # the character changes look
     res = AssetConsistencyGate().check(_art(json.dumps(manifest)))
     assert not res.passed and "Mia" in res.evidence
+
+
+@pytest.mark.skipif(not shutil.which("say"), reason="needs macOS `say`")
+def test_say_generator_produces_real_narration(tmp_path):
+    script, board = parse_script(SCRIPT), parse_storyboard(STORYBOARD)
+    manifest = json.loads(SayGenerator(64, 48).generate(script, board, tmp_path))
+    # the spoken WAVs decode and match their measured durations (integrity), all non-trivial
+    assert AssetIntegrityGate().check(_art(json.dumps(manifest))).passed
+    assert all(a["duration"] > 0 for a in manifest["audio"])
 
 
 # --- the whole chain, with assets ---------------------------------------------------------
