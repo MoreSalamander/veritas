@@ -13,6 +13,7 @@ from orgs.production_studio.assets import (
     AssetIntegrityGate,
 )
 from orgs.production_studio.editing import SequenceCoverageGate, TimelineIntegrityGate
+from orgs.production_studio.publishing import OutputIntegrityGate, PublishFormatGate
 from orgs.production_studio.gates import (
     ConceptScorerGate,
     DurationGate,
@@ -28,6 +29,7 @@ _CAST: list[tuple[str, str, str]] = [
     ("Storyboard Artist", "storyboard-artist", "Turns each script beat into shots, covering every beat and showing only the entities present in it; re-draws on rejection (e.g. \"uncovered beat: s1b3\")."),
     ("Asset Generator", "asset-generator", "Renders an image per shot and narration audio per beat, drawing each entity with its pinned reference (a tool call, not a model proposal — the gates are still the authority)."),
     ("Editor", "editor", "Lays the shots out in storyboard order and gives each its beat's narration time, producing a contiguous, in-sync timeline (a deterministic assembly the gates then verify)."),
+    ("Publisher", "publisher", "Renders the timeline to a real file with ffmpeg (image sequence + narration), to the target platform profile; the gates read the output back with ffprobe."),
 ]
 
 _GATES: list[tuple[type[Gate], str, str]] = [
@@ -42,7 +44,9 @@ _GATES: list[tuple[type[Gate], str, str]] = [
     (AssetConsistencyGate, "assets", "each entity is drawn with one pinned reference across every shot — a character can't look different scene to scene"),
     (SequenceCoverageGate, "timeline", "the cut contains every shot, exactly once, in storyboard order — nothing dropped or reordered"),
     (TimelineIntegrityGate, "timeline", "the cut is contiguous from zero (no gaps/overlaps) and each beat's screen time matches its narration audio — audio/visual in sync"),
-    (ValidationGate, "timeline", "final authority: every hard gate passed, provenance complete"),
+    (PublishFormatGate, "output", "the rendered file matches the target profile — right container, codecs, and resolution (read back with ffprobe)"),
+    (OutputIntegrityGate, "output", "the file decodes and its duration matches the timeline — not truncated or corrupt"),
+    (ValidationGate, "output", "final authority: every hard gate passed, provenance complete"),
 ]
 
 

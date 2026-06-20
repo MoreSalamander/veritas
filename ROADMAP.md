@@ -300,7 +300,9 @@ then the real engine is swapped behind the seam — the pattern that worked ever
 - **P25e · Publishing** — *verification: format/codec compliance + file integrity* (my-AI-scene's
   model). Render the timeline to MP4 (ffmpeg) or a web bundle. HARD gates: PublishFormat (codec/
   resolution/aspect/duration meets the platform profile), OutputIntegrity (decodes/plays, duration
-  matches the timeline).
+  matches the timeline). *Done: FfmpegPublisher renders a real MP4 (image sequence + per-beat
+  narration, muxed); gates read the output back with ffprobe (trust the file, not the renderer);
+  full chain ships 6 stages and produced a real h264/aac 640x360 8.0s file matching the timeline.*
 - **P25f · Taste tier (create-mode for production)** — *verification: human-approved + profile
   learns style.* The residue the gates can't touch ("is it good?"). Reuses the create-mode tier:
   a human approves the final cut, the interview front-loads checkable style criteria. This is where

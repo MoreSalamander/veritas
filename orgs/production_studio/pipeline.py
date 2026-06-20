@@ -35,6 +35,14 @@ from orgs.production_studio.editing import (
     EditorAgent,
     SequenceCoverageGate,
     TimelineIntegrityGate,
+    parse_timeline,
+)
+from orgs.production_studio.publishing import (
+    OutputIntegrityGate,
+    PublishFormatGate,
+    Publisher,
+    PublisherAgent,
+    PublishProfile,
 )
 from orgs.production_studio.gates import (
     ConceptScorerGate,
@@ -59,6 +67,7 @@ class ProductionResult:
 def build_production(
     brief: str, provider: ModelProvider, memory: MemoryStore,
     asset_generator: AssetGenerator | None = None, asset_dir: Path | None = None,
+    publisher: Publisher | None = None, profile: PublishProfile | None = None,
 ) -> ProductionResult:
     run = Run(goal=brief, memory=memory)
     recalled = memory.recall(brief, categories=["failure", "lesson", "decision"], limit=3)
@@ -121,4 +130,17 @@ def build_production(
         [SequenceCoverageGate(storyboard), TimelineIntegrityGate(assets), ValidationGate()],
     )
     outcomes.append(edit_out)
-    return ProductionResult(outcomes, edit_out.accepted, informed_by, run.id, list(run.log))
+    if not edit_out.accepted or publisher is None:
+        return ProductionResult(outcomes, edit_out.accepted, informed_by, run.id, list(run.log))
+    timeline = parse_timeline(edit_out.artifact.payload)
+
+    # Stage 6 (P25e) — publishing: render the timeline to a real file, verified by ffprobe.
+    prof = profile or PublishProfile()
+    out_dir = asset_dir or Path(tempfile.mkdtemp(prefix="veritas_assets_"))
+    pub_art = _stamp(PublisherAgent(publisher, prof).propose(timeline, assets, out_dir / "output.mp4"))
+    pub_out = run.submit(
+        pub_art,
+        [PublishFormatGate(prof), OutputIntegrityGate(timeline.total), ValidationGate()],
+    )
+    outcomes.append(pub_out)
+    return ProductionResult(outcomes, pub_out.accepted, informed_by, run.id, list(run.log))
