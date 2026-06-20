@@ -8,6 +8,7 @@ seam. Static UI is served at /.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -136,6 +137,33 @@ class ProduceRequest(BaseModel):
     brief: str
     model: str = DEFAULT_MODEL
     voice: str | None = None  # macOS `say` voice for the narration; None = default voice
+
+
+class RouteRequest(BaseModel):
+    request: str
+    model: str = DEFAULT_MODEL
+
+
+# Deterministic fallback if the model-routed pick fails: first keyword group that matches wins.
+_ROUTE_KEYWORDS: list[tuple[tuple[str, ...], str]] = [
+    (("video", "film", "animation", "movie", "trailer", "narrat", "explainer"), "production"),
+    (("lesson", "teach", "course", "curriculum", "学"), "education"),
+    (("article", "news", "newsroom", "story about"), "newsroom"),
+    (("report", "grounded", "cite", "sources", "summari"), "research"),
+    (("experiment", "hypothesis", "benchmark", "reproduc", "outperform", "whether", " beat "), "empirical"),
+    (("startup", "mvp", "business", "profitable"), "startup"),
+    (("roguelike", "game ", "rpg", "platformer"), "game"),
+    (("page", "website", "landing", "site", "html", "dashboard", "ui "), "web"),
+    (("function", "code", "module", "algorithm", "program", "script", "app "), "software"),
+]
+
+
+def _keyword_route(request: str) -> str:
+    r = f" {request.lower()} "
+    for kws, org in _ROUTE_KEYWORDS:
+        if any(k in r for k in kws):
+            return org
+    return "software"
 
 
 _VOICES_CACHE: list[dict[str, str]] | None = None
@@ -489,6 +517,36 @@ def create_app(
         if org is None or org.roster is None:
             return {"error": "no roster for this org"}
         return org.roster()
+
+    @app.post("/api/route")
+    def route(req: RouteRequest) -> dict[str, Any]:
+        """The front door: a model proposes which studio a request belongs to (and a concise goal);
+        a deterministic keyword pass is the fallback. The UI shows the proposal for the human to
+        confirm before anything runs — routing is a proposal, the gates are still the authority."""
+        studios = "; ".join(f"{o.name} = {o.description}" for o in REGISTRY.values())
+        system = (
+            "You route a user's request to exactly one studio, and extract a concise goal for it. "
+            f"Studios: {studios}. Reply with ONLY JSON: "
+            "{\"org\": \"<studio name>\", \"goal\": \"<a concise goal/brief for that studio>\"}."
+        )
+        org: str | None = None
+        goal = req.request.strip()
+        try:
+            prov = injected_provider or _provider_for(req.model)
+            raw = prov.propose(role="router", prompt=req.request, system=system)
+            start, end = raw.find("{"), raw.rfind("}")
+            obj = json.loads(raw[start:end + 1]) if 0 <= start < end else {}
+            cand = str(obj.get("org", "")).strip()
+            if cand in REGISTRY:
+                org = cand
+                goal = str(obj.get("goal") or req.request).strip()
+        except Exception:  # model down/parse fail -> deterministic fallback
+            org = None
+        if org is None:
+            org = _keyword_route(req.request)
+        o = REGISTRY[org]
+        return {"org": org, "title": o.title, "goal": goal,
+                "produces": o.produces, "needs_sources": o.needs_sources}
 
     @app.get("/api/dashboard")
     def dashboard() -> dict[str, Any]:

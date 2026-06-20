@@ -63,6 +63,8 @@
   .tbox .tdot.pass { color: var(--green); } .tbox .tdot.fail { color: var(--red); }
   .tbox .tdot.soft { color: var(--amber); } .tbox .tdot.active { color: var(--cyan); } .tbox .tdot.idle { color: #3a4a5a; }
   .tarrow { color: #3a4a5a; }
+  .orgcard { transition: border-color .12s; }
+  .orgcard:hover { border-color: var(--cyan); }
   pre.code { background: #0c1119; border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px;
              overflow-x: auto; font-family: var(--mono); font-size: 12px; color: var(--ink);
              white-space: pre; margin: 0; line-height: 1.5; }
@@ -199,7 +201,8 @@
   <div class="logo">VERI<b>TAS</b></div>
   <div class="tagline">The model proposes. The gates decide.</div>
   <nav>
-    <a data-view="dashboard" class="active">Mission Control</a>
+    <a data-view="home" class="active">Home</a>
+    <a data-view="dashboard">Mission Control</a>
     <a data-view="orgview">Organization</a>
     <a data-view="runs">Runs</a>
     <a data-view="create">Create</a>
@@ -207,7 +210,22 @@
   </nav>
 </aside>
 <main>
-  <section id="dashboard">
+  <section id="home">
+    <h1>What do you want to make?</h1>
+    <div class="muted" style="margin:-12px 0 14px; max-width:680px">Describe it — the router proposes a studio and a goal, you confirm. The model proposes the route; the gates are still the authority.</div>
+    <div class="row">
+      <input type="text" id="askbox" placeholder="e.g. a 30-second video on why the sky is blue, for kids" />
+      <button id="askgo">Go</button>
+    </div>
+    <div id="askresult"></div>
+
+    <h2>The engines — five ways to know it's true</h2>
+    <div id="enginedir" class="grid2"></div>
+    <h2>Labs — products built on the engines</h2>
+    <div id="labsdir" class="grid2"></div>
+  </section>
+
+  <section id="dashboard" class="hidden">
     <h1>Mission Control</h1>
     <div class="cards" id="stats"></div>
 
@@ -301,7 +319,8 @@ const isHard = g => g.determinism !== 'soft';
 document.querySelectorAll('nav a').forEach(a => a.onclick = () => {
   document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
   a.classList.add('active');
-  ['dashboard','orgview','runs','create','memory'].forEach(v => $('#'+v).classList.toggle('hidden', v !== a.dataset.view));
+  ['home','dashboard','orgview','runs','create','memory'].forEach(v => $('#'+v).classList.toggle('hidden', v !== a.dataset.view));
+  if (a.dataset.view === 'home') loadHome();
   if (a.dataset.view === 'runs') loadRuns();
   if (a.dataset.view === 'memory') loadMemory();
   if (a.dataset.view === 'dashboard') loadDash();
@@ -1047,8 +1066,63 @@ $('#pgo').onclick = async () => {
 
 $('#pvoicebtn').onclick = previewVoice;
 
+// --- Home: the org directory + the routing chat box (milestone 3) ---
+const HOME_ENGINES = ['software', 'web', 'research', 'production', 'empirical'];
+const VERIFY_TAG = {
+  software: 'executing it', web: 'rendering it', research: 'grounding', production: 'consistency',
+  empirical: 'reproducibility', newsroom: 'grounding (Research)', education: 'grounding (Research)',
+  startup: 'Web + Software', game: 'Production + Software',
+};
+let LAST_ROUTE = null;
+
+async function loadHome() {
+  if (!ORGS.length) ORGS = await api('/api/orgs');
+  const card = o => `<div class="panel orgcard" onclick="goToOrg('${esc(o.name)}')" style="cursor:pointer;margin:0">
+      <div style="font-weight:600;font-size:14px;margin-bottom:3px">${esc(o.title.replace(' (preset)', ''))}</div>
+      <div class="muted" style="font-size:12px;line-height:1.5">${esc(o.produces)}</div>
+      <div style="margin-top:8px"><span class="proftag" style="color:var(--green);border-color:rgba(52,211,153,.3)">verified by ${esc(VERIFY_TAG[o.name] || 'gates')}</span></div>
+    </div>`;
+  $('#enginedir').innerHTML = HOME_ENGINES.map(n => ORGS.find(o => o.name === n)).filter(Boolean).map(card).join('');
+  $('#labsdir').innerHTML = ORGS.filter(o => !HOME_ENGINES.includes(o.name)).map(card).join('');
+}
+
+function goToOrg(org, goal) {
+  if ([...$('#org').options].some(o => o.value === org)) $('#org').value = org;
+  if (goal !== undefined) $('#goal').value = goal || '';
+  syncHint();
+  document.querySelector('nav a[data-view="dashboard"]').click();
+  $('#goal').focus();
+}
+
+async function askRoute() {
+  const request = $('#askbox').value.trim();
+  if (!request) return;
+  $('#askgo').disabled = true;
+  $('#askresult').innerHTML = `<div class="panel muted" style="margin-top:12px"><span class="livedot"></span> routing…</div>`;
+  let r;
+  try {
+    r = await api('/api/route', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({request}) });
+  } catch (e) {
+    $('#askresult').innerHTML = `<div class="panel" style="margin-top:12px"><span class="fail">couldn't reach the hub</span></div>`;
+    $('#askgo').disabled = false; return;
+  }
+  LAST_ROUTE = r;
+  $('#askresult').innerHTML = `<div class="panel" style="margin-top:12px">
+      <div style="font-size:12px;color:var(--dim);margin-bottom:8px"><span style="color:var(--cyan)">→</span> I read this as a route — the model proposes, you confirm:</div>
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px"><span class="pill org">${esc(r.title)}</span><span class="muted" style="font-size:12px">${esc(r.produces || '')}</span></div>
+      <div class="mono muted" style="border-left:2px solid var(--line);padding-left:10px;margin-bottom:12px">goal: ${esc(r.goal)}</div>
+      <div class="row"><button onclick="goToOrg(LAST_ROUTE.org, LAST_ROUTE.goal)">Take me there</button>
+        <span class="muted" style="font-size:11px">…or pick a studio below</span></div>
+    </div>`;
+  $('#askgo').disabled = false;
+}
+
+$('#askgo').onclick = askRoute;
+$('#askbox').onkeydown = e => { if (e.key === 'Enter') askRoute(); };
+
 loadOrgs();
 loadModels();
+loadHome();
 loadDash();
 </script>
 </body>
