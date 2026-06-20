@@ -144,6 +144,36 @@
   .chip.active { background: var(--panel); color: var(--ink); border-color: var(--cyan); }
   .recentrow { cursor: pointer; }
   .recentrow:hover .rg { color: var(--cyan); }
+
+  /* --- P24: create mode (interview, trust report, approve, profile) --- */
+  .modeline { display: flex; gap: 10px; flex-wrap: wrap; margin: -8px 0 14px; }
+  .modepill { font-size: 12px; padding: 5px 11px; border-radius: 7px; border: 1px solid var(--line); }
+  .modepill.verify { color: var(--dim); }
+  .modepill.create { color: var(--cyan); border-color: rgba(34, 211, 238, .4); background: rgba(34, 211, 238, .05); }
+  .qa { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .qa:last-child { border-bottom: 0; }
+  .qa .q { font-size: 14px; color: var(--ink); }
+  .qa .q::before { content: 'Q'; font-family: var(--mono); font-size: 10px; color: var(--cyan);
+                   border: 1px solid rgba(34,211,238,.3); border-radius: 4px; padding: 1px 5px; margin-right: 8px; }
+  .qa .a { font-size: 13px; color: var(--dim); margin-top: 6px; padding-left: 4px; }
+  .qa .a::before { content: 'A'; font-family: var(--mono); font-size: 10px; color: var(--dim);
+                   border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; margin-right: 8px; }
+  .specbox { font-family: var(--mono); font-size: 12px; }
+  .specbox .skey { color: var(--dim); }
+  .specbox .sval { color: var(--cyan); }
+  .preview { width: 100%; height: 320px; border: 1px solid var(--line); border-radius: 10px;
+             background: #fff; margin-bottom: 14px; }
+  .trust { display: grid; gap: 12px; }
+  .tier3 .tlabel { font-size: 10.5px; letter-spacing: .5px; text-transform: uppercase; color: var(--dim);
+                   display: block; margin-bottom: 6px; }
+  .gate.hard .tier.machine, .tier.machine { color: var(--cyan); }
+  .reviewbar { display: flex; gap: 10px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+  .reviewbar input { flex: 1; min-width: 160px; }
+  button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--line); font-weight: 600; }
+  button.ghost:hover { color: var(--ink); border-color: var(--cyan); }
+  .verdict.human { color: var(--cyan); }
+  .proftag { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px;
+             border-radius: 5px; border: 1px solid var(--line); margin: 0 6px 6px 0; color: var(--ink); }
 </style>
 </head>
 <body>
@@ -154,6 +184,7 @@
     <a data-view="dashboard" class="active">Mission Control</a>
     <a data-view="orgview">Organization</a>
     <a data-view="runs">Runs</a>
+    <a data-view="create">Create</a>
     <a data-view="memory">Memory</a>
   </nav>
 </aside>
@@ -184,6 +215,37 @@
 
   <section id="orgview" class="hidden"><h1>The Organization</h1><div id="orgbody"></div></section>
   <section id="runs" class="hidden"><h1>Runs</h1><div id="rundetail"></div><div id="runlist"></div></section>
+  <section id="create" class="hidden">
+    <h1>Create Mode</h1>
+    <div class="modeline">
+      <span class="modepill verify">Verify — the machine is the gate</span>
+      <span class="modepill create">Create — you are the gate for feel</span>
+    </div>
+    <p class="muted" style="max-width:700px;line-height:1.55">
+      The interview manufactures checkable criteria up front, the machine hard-proves what it can
+      (required structure + measurable aesthetics), and you approve the residue. Every artifact is
+      tagged by <em>who verified what</em> — machine-proven · model-judged · human-approved — so nothing
+      is ever shown as more verified than it is. The system learns your taste from every sign-off.
+      First home: Web Studio.
+    </p>
+
+    <div class="panel" id="cstart">
+      <div class="row">
+        <select id="cmodel" title="local is free; Claude models cost a few cents"></select>
+        <input type="text" id="cgoal" placeholder="e.g. a landing page for a coffee shop" />
+        <button id="cgo">Start interview</button>
+      </div>
+      <div class="muted" id="chint" style="margin-top:10px">The interview asks until it can write a gateable spec — then builds to it.</div>
+    </div>
+
+    <div id="cconvo"></div>
+    <div id="creview"></div>
+    <div id="cresult"></div>
+
+    <h2>Your Aesthetic Profile</h2>
+    <div class="panel" id="cprofile"></div>
+  </section>
+
   <section id="memory" class="hidden"><h1>Institutional Memory</h1><div id="memfilters" class="filters"></div><div id="memlist" class="grid2"></div></section>
 </main>
 
@@ -196,11 +258,12 @@ const isHard = g => g.determinism !== 'soft';
 document.querySelectorAll('nav a').forEach(a => a.onclick = () => {
   document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
   a.classList.add('active');
-  ['dashboard','orgview','runs','memory'].forEach(v => $('#'+v).classList.toggle('hidden', v !== a.dataset.view));
+  ['dashboard','orgview','runs','create','memory'].forEach(v => $('#'+v).classList.toggle('hidden', v !== a.dataset.view));
   if (a.dataset.view === 'runs') loadRuns();
   if (a.dataset.view === 'memory') loadMemory();
   if (a.dataset.view === 'dashboard') loadDash();
   if (a.dataset.view === 'orgview') loadOrg();
+  if (a.dataset.view === 'create') initCreate();
 });
 
 // A gate row that makes the hard/soft split visceral: HARD gates are filled and tinted
@@ -505,6 +568,163 @@ $('#go').onclick = async () => {
     $('#go').disabled = false;
     $('#runhint').textContent = 'The model proposes; the deterministic gates decide.';
   }
+};
+
+// --- P24: create mode ---
+let CREATE = { token: null, polling: false };
+
+async function initCreate() {
+  if (!$('#cmodel').options.length) {
+    const models = await api('/api/models');
+    $('#cmodel').innerHTML = models.map(m => `<option value="${esc(m.name)}">${esc(m.label)} · ${esc(m.cost)}</option>`).join('');
+  }
+  loadProfile();
+}
+
+async function loadProfile() {
+  const p = await api('/api/profile/web');
+  if (!p || p.approvals === 0) {
+    $('#cprofile').innerHTML = `<span class="muted">No approvals yet — sign off on a build and the system starts learning your taste. The interview shortens as it learns.</span>`;
+    return;
+  }
+  const tag = (k, v) => v ? `<span class="proftag">${k}: ${esc(v)}</span>` : '';
+  $('#cprofile').innerHTML =
+    `<div class="muted" style="margin-bottom:8px">Learned from <b>${p.approvals}</b> human-approved build${p.approvals===1?'':'s'} — fed back as interview defaults &amp; standing checks.</div>` +
+    tag('theme', p.theme) + tag('contrast ≥', p.min_contrast) +
+    (p.fonts||[]).map(f => `<span class="proftag">font: ${esc(f)}</span>`).join('') +
+    (p.palette||[]).map(c => `<span class="proftag">${esc(c)}</span>`).join('');
+}
+
+function specCard(s) {
+  const a = s.aesthetics || {};
+  const row = (k, v) => (v && (!Array.isArray(v) || v.length)) ? `<div><span class="skey">${k}:</span> <span class="sval">${esc(Array.isArray(v) ? v.join(', ') : v)}</span></div>` : '';
+  return `<h2>The Gateable Spec</h2><div class="panel specbox">
+    <div><span class="skey">title:</span> <span class="sval">${esc(s.title)}</span></div>
+    ${row('required elements', s.required_elements)}
+    ${row('theme', a.theme)}${row('min contrast', a.min_contrast)}${row('fonts', a.fonts)}${row('palette', a.palette)}
+    <div class="muted" style="margin-top:8px">The checkable parts of this spec became the hard gates.</div>
+  </div>`;
+}
+
+function trustMap(t) {
+  const rows = t.machine.map(g =>
+    `<div class="gate hard"><div class="grow">
+       <span class="gname"><span class="marker ${g.passed?'pass':'fail'}">●</span><span class="tier machine">MACHINE</span>${esc(g.name)}</span>
+       <span class="gverdict ${g.passed?'pass':'fail'}">${g.passed?'proven':'FAIL'}</span></div>
+       <div class="gev">${esc(g.evidence)}</div></div>`).join('');
+  return `<div class="trust">
+    <div class="tier3"><span class="tlabel">● machine-proven (facts)</span><div class="gates">${rows}</div></div>
+    <div class="tier3"><span class="tlabel">○ model-judged</span><div class="muted" style="padding:6px 2px">— none in create mode; feel is not a model's call</div></div>
+    <div class="tier3"><span class="tlabel">◆ human-approved (taste)</span><div class="muted" style="padding:6px 2px">awaiting your sign-off below</div></div>
+  </div>`;
+}
+
+function renderCreate(s) {
+  // --- the interview conversation ---
+  let convo = '';
+  if (s.transcript.length || s.question || (s.phase==='building' && !s.spec) || s.phase==='interviewing') {
+    convo = '<h2>Interview</h2><div class="panel">';
+    convo += s.transcript.map(qa => `<div class="qa"><div class="q">${esc(qa[0])}</div><div class="a">${esc(qa[1])}</div></div>`).join('');
+    if (s.phase==='interviewing' && s.question) {
+      convo += `<div class="qa"><div class="q">${esc(s.question)}</div>
+        <div class="row" style="margin-top:10px">
+          <input type="text" id="canswer" placeholder="your answer…" autofocus />
+          <button id="csend">Send</button></div></div>`;
+    } else if (s.phase==='building' && !s.spec) {
+      convo += `<div class="muted"><span class="livedot"></span> interviewing…</div>`;
+    }
+    convo += '</div>';
+  }
+  if (s.spec) convo += specCard(s.spec);
+  $('#cconvo').innerHTML = convo;
+  if ($('#csend')) {
+    const send = () => { const v = $('#canswer').value.trim(); if (v) sendAnswer(v); };
+    $('#csend').onclick = send;
+    $('#canswer').onkeydown = e => { if (e.key === 'Enter') send(); };
+    $('#canswer').focus();
+  }
+
+  // --- the candidate + trust report + your verdict ---
+  if (s.phase === 'reviewing' && s.page_html) {
+    $('#creview').innerHTML = `<h2>Candidate — iteration ${s.iteration}</h2><div class="panel">
+      <iframe class="preview" sandbox="allow-scripts" srcdoc="${esc(s.page_html)}"></iframe>
+      ${trustMap(s.trust)}
+      <div class="reviewbar">
+        <button id="capprove">Approve — ship it (human-approved)</button>
+        <input type="text" id="cfeedback" placeholder="…or request changes (re-proposes with your words)" />
+        <button id="creject" class="ghost">Request changes</button>
+      </div>
+      <div class="muted" style="margin-top:8px">The measurable floor already passed. You are the gate for feel — your approval is real, human-tier verification.</div>
+    </div>`;
+    $('#capprove').onclick = () => submitReview(true, '');
+    $('#creject').onclick = () => submitReview(false, $('#cfeedback').value.trim() || 'please revise');
+  } else if (s.phase !== 'reviewing') {
+    $('#creview').innerHTML = '';
+  }
+
+  // --- the outcome ---
+  if (s.phase === 'done') {
+    const r = s.result;
+    if (s.error) {
+      $('#cresult').innerHTML = `<div class="panel"><span class="fail">Stopped:</span> <span class="mono">${esc(s.error)}</span>
+        <div class="muted" style="margin-top:6px">Claude models need ANTHROPIC_API_KEY where the hub runs.</div></div>`;
+    } else if (r && r.accepted) {
+      $('#cresult').innerHTML = `<div class="panel">
+        <div class="verdict human">HUMAN-APPROVED <span class="earned">— shipped on the machine-proven floor + your sign-off, after ${r.iterations} iteration${r.iterations===1?'':'s'}</span></div>
+        ${s.page_html ? `<iframe class="preview" sandbox="allow-scripts" srcdoc="${esc(s.page_html)}"></iframe>` : ''}
+        <div class="muted mono">remembered → ${esc(r.memory_path || '')}</div>
+        <div class="muted" style="margin-top:6px">This approval taught your aesthetic profile. The next interview will be shorter.</div></div>`;
+      loadProfile();
+    } else if (r && r.machine_verified) {
+      $('#cresult').innerHTML = `<div class="panel"><div class="verdict rejected">NOT SHIPPED <span class="earned">— met the measurable bar but you never approved it (${r.iterations} iterations)</span></div></div>`;
+    } else if (r) {
+      $('#cresult').innerHTML = `<div class="panel"><div class="verdict rejected">NOT SHIPPED <span class="earned">— couldn't meet the measurable floor in ${r.iterations} attempts</span></div></div>`;
+    }
+    $('#cgo').disabled = false;
+    $('#chint').textContent = 'Start another — the system keeps learning your taste.';
+  }
+}
+
+async function pollCreate() {
+  if (CREATE.polling) return;
+  CREATE.polling = true;
+  try {
+    while (CREATE.token) {
+      let s;
+      try { s = await api('/api/create/' + CREATE.token); }
+      catch (e) { await sleep(600); continue; }
+      if (s.error) { $('#cresult').innerHTML = `<div class="panel"><span class="fail">${esc(s.error)}</span></div>`; break; }
+      renderCreate(s);
+      if (s.phase === 'done') { CREATE.token = null; break; }
+      await sleep(450);
+    }
+  } finally { CREATE.polling = false; }
+}
+
+async function sendAnswer(answer) {
+  const inp = $('#canswer'); if (inp) inp.disabled = true;
+  await api('/api/create/' + CREATE.token + '/answer', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({answer}) });
+}
+
+async function submitReview(approved, feedback) {
+  $('#creview').innerHTML = `<div class="panel muted"><span class="livedot"></span> ${approved ? 'approving…' : 're-proposing with your feedback…'}</div>`;
+  await api('/api/create/' + CREATE.token + '/review', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({approved, feedback}) });
+}
+
+$('#cgo').onclick = async () => {
+  const goal = $('#cgoal').value.trim();
+  if (!goal) return;
+  $('#cgo').disabled = true;
+  $('#chint').textContent = 'Interviewing…';
+  $('#cconvo').innerHTML = ''; $('#creview').innerHTML = ''; $('#cresult').innerHTML = '';
+  const start = await api('/api/create/start', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({goal, model: $('#cmodel').value}) });
+  if (!start.token) { $('#cresult').innerHTML = `<div class="panel"><span class="fail">${esc(start.error || 'could not start')}</span></div>`; $('#cgo').disabled = false; return; }
+  CREATE.token = start.token;
+  pollCreate();
 };
 
 loadOrgs();

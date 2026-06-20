@@ -259,7 +259,12 @@ ever shown as more verified than it is.
   vs. embeddings (accept-rate / retries). *Done: the benchmark shows recall measurably helps.*
 - **P24 · The toggle + create mode in the hub** — verify=gate / create=annotate; the create-mode
   artifact (output + three-tier trust map); hub UI (interview chat, trust report, Approve, profile).
-  *Done: a full create-mode build runs in the hub end to end and is remembered.*
+  *DONE: a Create view drives the unchanged `interview` → `build_create_page` engine from a
+  background thread whose answer/review callbacks block on the human over HTTP. Interview chat,
+  gateable-spec card, live candidate preview, three-tier trust map (machine-proven / model-judged
+  (none) / human-approved), Approve + Request-changes, and a learned aesthetic-profile panel.
+  Approval ships human-approved into web memory and compounds the profile. Verified end to end
+  through the HTTP control plane (offline scripted test). Create mode is now complete in the UI.*
 
 ## Parallel / later tracks (not blocking create mode)
 

@@ -20,11 +20,18 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from engine.artifact import Artifact
 from engine.memory import MemoryStore
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
 from engine.run import ActivityEntry, set_activity_listener
 from hub.store import RunStore, summarize
 from orgs.registry import REGISTRY, get_org
+from orgs.web_studio.aesthetics import aesthetic_gates
+from orgs.web_studio.browser import RenderResult
+from orgs.web_studio.create import Review, build_create_page
+from orgs.web_studio.gates import RenderGate, StructureGate
+from orgs.web_studio.interview import CreateSpec, interview
+from orgs.web_studio.profile import ProfileStore, apply_profile, profile_hint
 
 # The model toggle: local Ollama models (free) plus the three Claude tiers. Reliability comes
 # from the gates regardless of which model proposes — this just lets you discover which model a
@@ -78,6 +85,151 @@ class RunRequest(BaseModel):
     sources: list[str] = []  # pinned corpus for orgs that need it (Research); ignored otherwise
 
 
+class CreateStartRequest(BaseModel):
+    goal: str
+    model: str = DEFAULT_MODEL
+
+
+class AnswerBody(BaseModel):
+    answer: str
+
+
+class ReviewBody(BaseModel):
+    approved: bool
+    feedback: str = ""
+
+
+def _spec_dict(spec: CreateSpec) -> dict[str, Any]:
+    a = spec.aesthetics
+    return {
+        "title": spec.title,
+        "description": spec.description,
+        "required_elements": spec.required_elements,
+        "aesthetics": {
+            "theme": a.theme, "min_contrast": a.min_contrast,
+            "fonts": a.fonts, "palette": a.palette,
+        },
+    }
+
+
+def _create_trust(rendered: RenderResult, spec: CreateSpec) -> dict[str, Any]:
+    """The three-tier trust map for a create-mode candidate. The MACHINE tier re-derives the
+    declared hard gates over the (already-computed) render — pure functions, no re-render — so the
+    UI shows exactly which facts were machine-proven. Create mode has no model-judge gate (the
+    aesthetic residue is the human's call), so the MODEL tier is empty by design and the HUMAN tier
+    is the pending Approve. Nothing is shown as more verified than it is."""
+    throwaway = Artifact.propose(type="page", owner="hub", payload="", rationale="", parent_id="")
+    gates = [RenderGate(rendered), StructureGate(rendered, spec.required_elements),
+             *aesthetic_gates(rendered, spec.aesthetics)]
+    machine = []
+    for g in gates:
+        r = g.check(throwaway)
+        machine.append({"name": g.name, "passed": r.passed, "evidence": r.evidence})
+    return {"machine": machine, "model": [], "human": "pending"}
+
+
+class CreateSession:
+    """Drives the unchanged create-mode engine (interview -> build_create_page) from a background
+    thread. The engine's `answer` and `review` callbacks block on threading Events; the human
+    supplies them over HTTP, so a synchronous local loop becomes a turn-based web conversation
+    without forking any engine logic. Single-user/local: one daemon thread per session."""
+
+    def __init__(self, token: str, goal: str, model: str, provider: ModelProvider,
+                 memory: MemoryStore, profile_store: ProfileStore) -> None:
+        self.token = token
+        self.goal = goal
+        self.provider = provider
+        self.memory = memory
+        self.profile_store = profile_store
+        self.lock = threading.Lock()
+        self.state: dict[str, Any] = {
+            "phase": "interviewing", "goal": goal, "model": model,
+            "question": None, "transcript": [], "spec": None,
+            "page_html": None, "trust": None, "iteration": 0,
+            "result": None, "error": None,
+        }
+        self._answer = threading.Event()
+        self._answer_val = ""
+        self._review = threading.Event()
+        self._review_val = Review(False)
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            s = dict(self.state)
+            s["transcript"] = [list(qa) for qa in self.state["transcript"]]
+            return s
+
+    def provide_answer(self, answer: str) -> None:
+        self._answer_val = answer
+        self._answer.set()
+
+    def provide_review(self, approved: bool, feedback: str) -> None:
+        self._review_val = Review(approved, feedback)
+        self._review.set()
+
+    def _set(self, **fields: Any) -> None:
+        with self.lock:
+            self.state.update(fields)
+
+    def _answer_fn(self, question: str) -> str:
+        self._set(phase="interviewing", question=question)
+        self._answer.wait()
+        self._answer.clear()
+        ans = self._answer_val
+        with self.lock:
+            self.state["transcript"].append([question, ans])
+            self.state["question"] = None
+            self.state["phase"] = "building"
+        return ans
+
+    def _review_fn(self, html: str, rendered: RenderResult, spec: CreateSpec) -> Review:
+        trust = _create_trust(rendered, spec)
+        with self.lock:
+            self.state["iteration"] += 1
+            self.state["page_html"] = html
+            self.state["trust"] = trust
+            self.state["phase"] = "reviewing"
+        self._review.wait()
+        self._review.clear()
+        self._set(phase="building")
+        return self._review_val
+
+    def _run(self) -> None:
+        try:
+            known = profile_hint(self.profile_store.load())
+            result = interview(self.goal, self.provider, self._answer_fn, known=known)
+            if result.spec is None:
+                self._set(phase="done",
+                          error="couldn't reach a gateable spec within the interview budget")
+                return
+            # apply the learned profile here too, so the trust report reflects the same filled
+            # spec the engine gates against (apply_profile only fills UNSET fields — idempotent).
+            spec = apply_profile(self.profile_store.load(), result.spec)
+            self._set(spec=_spec_dict(spec), phase="building")
+            built = build_create_page(
+                spec, self.provider, self.memory,
+                review=lambda html, r: self._review_fn(html, r, spec),
+                profile_store=self.profile_store,
+            )
+            self._set(
+                phase="done",
+                page_html=built.page_outcome.artifact.payload if built.page_outcome else None,
+                result={
+                    "accepted": built.accepted,
+                    "machine_verified": built.machine_verified,
+                    "iterations": built.iterations,
+                    "run_id": built.run_id,
+                    "memory_path": (str(built.page_outcome.memory_path)
+                                    if built.page_outcome else None),
+                },
+            )
+        except Exception as exc:  # model error, render failure, missing key
+            self._set(phase="done", error=f"{type(exc).__name__}: {exc}")
+
+
 def create_app(
     data_dir: Path | None = None, provider: ModelProvider | None = None
 ) -> FastAPI:
@@ -97,6 +249,12 @@ def create_app(
     # Live run state, keyed by a one-shot token, so the UI can watch a run unfold
     # (Explain -> Synthesize -> Verify -> Persist) instead of only seeing the result.
     progress: dict[str, dict[str, Any]] = {}
+
+    # Create-mode sessions (the interview/build conversation), keyed by token.
+    create_sessions: dict[str, CreateSession] = {}
+
+    def web_profile_store() -> ProfileStore:
+        return ProfileStore(base / "profiles" / "web.json")
 
     def _event(entry: ActivityEntry) -> dict[str, Any]:
         return {
@@ -221,6 +379,52 @@ def create_app(
         summary = summarize(result, datetime.now(timezone.utc).isoformat(), model=req.model)
         runs.save(summary)
         return runs.get(summary.id) or {}
+
+    # --- Create mode: verify=gate, create=annotate. The interview manufactures the checkable
+    # criteria, the machine proves what it can, the human is the gate for feel. First home: Web. ---
+
+    @app.post("/api/create/start")
+    def create_start(req: CreateStartRequest) -> dict[str, str]:
+        token = uuid4().hex
+        prov = injected_provider or _provider_for(req.model)
+        sess = CreateSession(token, req.goal, req.model, prov,
+                             org_memory("web"), web_profile_store())
+        create_sessions[token] = sess
+        sess.start()
+        return {"token": token}
+
+    @app.get("/api/create/{token}")
+    def create_state(token: str) -> dict[str, Any]:
+        sess = create_sessions.get(token)
+        return sess.snapshot() if sess else {"error": "unknown create session"}
+
+    @app.post("/api/create/{token}/answer")
+    def create_answer(token: str, body: AnswerBody) -> dict[str, Any]:
+        sess = create_sessions.get(token)
+        if sess is None:
+            return {"error": "unknown create session"}
+        sess.provide_answer(body.answer)
+        return {"ok": True}
+
+    @app.post("/api/create/{token}/review")
+    def create_review(token: str, body: ReviewBody) -> dict[str, Any]:
+        sess = create_sessions.get(token)
+        if sess is None:
+            return {"error": "unknown create session"}
+        sess.provide_review(body.approved, body.feedback)
+        return {"ok": True}
+
+    @app.get("/api/profile/web")
+    def web_profile() -> dict[str, Any]:
+        p = web_profile_store().load()
+        return {
+            "approvals": p.approvals,
+            "theme": p.theme(),
+            "theme_votes": p.theme_votes,
+            "palette": p.palette,
+            "fonts": p.fonts,
+            "min_contrast": p.min_contrast,
+        }
 
     @app.get("/api/memory")
     def list_memory() -> list[dict[str, Any]]:
