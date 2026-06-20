@@ -571,7 +571,7 @@ $('#go').onclick = async () => {
 };
 
 // --- P24: create mode ---
-let CREATE = { token: null, polling: false };
+let CREATE = { token: null, polling: false, sig: null };
 
 async function initCreate() {
   if (!$('#cmodel').options.length) {
@@ -579,6 +579,10 @@ async function initCreate() {
     $('#cmodel').innerHTML = models.map(m => `<option value="${esc(m.name)}">${esc(m.label)} · ${esc(m.cost)}</option>`).join('');
   }
   loadProfile();
+  // Resume an in-progress interview after a page reload — the token lives only in JS, so
+  // without this a reload would orphan the session and the UI would just sit idle ("frozen").
+  const saved = sessionStorage.getItem('veritas_create');
+  if (saved && !CREATE.token) { CREATE.token = saved; CREATE.sig = null; pollCreate(); }
 }
 
 async function loadProfile() {
@@ -630,7 +634,8 @@ function renderCreate(s) {
         <div class="row" style="margin-top:10px">
           <input type="text" id="canswer" placeholder="your answer…" autofocus />
           <button id="csend">Send</button></div></div>`;
-    } else if (s.phase==='building' && !s.spec) {
+    } else if (!s.spec && s.phase !== 'done') {
+      // the model is thinking (first question, or working out the next one / the spec)
       convo += `<div class="muted"><span class="livedot"></span> interviewing…</div>`;
     }
     convo += '</div>';
@@ -693,9 +698,17 @@ async function pollCreate() {
       let s;
       try { s = await api('/api/create/' + CREATE.token); }
       catch (e) { await sleep(600); continue; }
-      if (s.error) { $('#cresult').innerHTML = `<div class="panel"><span class="fail">${esc(s.error)}</span></div>`; break; }
-      renderCreate(s);
-      if (s.phase === 'done') { CREATE.token = null; break; }
+      if (s.error) {
+        // a stale token (e.g. the hub restarted): drop it quietly and fall back to the start panel
+        CREATE.token = null; sessionStorage.removeItem('veritas_create');
+        if (s.error !== 'unknown create session') $('#cresult').innerHTML = `<div class="panel"><span class="fail">${esc(s.error)}</span></div>`;
+        break;
+      }
+      // Only touch the DOM when the state actually changed — otherwise each poll would
+      // rebuild the answer input mid-keystroke, wiping what you typed and stealing focus.
+      const sig = JSON.stringify(s);
+      if (sig !== CREATE.sig) { CREATE.sig = sig; renderCreate(s); }
+      if (s.phase === 'done') { CREATE.token = null; sessionStorage.removeItem('veritas_create'); break; }
       await sleep(450);
     }
   } finally { CREATE.polling = false; }
@@ -724,6 +737,8 @@ $('#cgo').onclick = async () => {
     body: JSON.stringify({goal, model: $('#cmodel').value}) });
   if (!start.token) { $('#cresult').innerHTML = `<div class="panel"><span class="fail">${esc(start.error || 'could not start')}</span></div>`; $('#cgo').disabled = false; return; }
   CREATE.token = start.token;
+  CREATE.sig = null;
+  sessionStorage.setItem('veritas_create', start.token);  // survive a page reload mid-interview
   pollCreate();
 };
 
