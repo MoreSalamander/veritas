@@ -9,6 +9,7 @@ seam. Static UI is served at /.
 from __future__ import annotations
 
 import os
+import shutil
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +26,19 @@ from engine.memory import MemoryStore
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
 from engine.run import ActivityEntry, set_activity_listener
 from hub.store import RunStore, summarize
+from orgs.production_studio.assets import StubGenerator
+from orgs.production_studio.pipeline import ProductionResult
+from orgs.production_studio.publishing import (
+    FfmpegPublisher,
+    Publisher,
+    PublishProfile,
+    parse_publish,
+)
+from orgs.production_studio.taste import (
+    ProductionProfileStore,
+    Review as ProdReview,
+    build_create_production,
+)
 from orgs.registry import REGISTRY, get_org
 from orgs.web_studio.aesthetics import aesthetic_gates
 from orgs.web_studio.browser import RenderResult
@@ -114,6 +128,62 @@ class AnswerBody(BaseModel):
 class ReviewBody(BaseModel):
     approved: bool
     feedback: str = ""
+
+
+class ProduceRequest(BaseModel):
+    brief: str
+    model: str = DEFAULT_MODEL
+
+
+def _event(entry: ActivityEntry) -> dict[str, Any]:
+    return {
+        "phase": entry.phase.value,
+        "actor": entry.actor,
+        "message": entry.message,
+        "duration_ms": round(entry.duration_ms, 1),
+        "at": entry.at,
+    }
+
+
+def _production_video_url(result: ProductionResult | None) -> str | None:
+    """Derive the served URL for a production's rendered output (last two path segments under
+    /productions), if it reached the publish stage."""
+    if result is None:
+        return None
+    for o in result.outcomes:
+        if o.artifact.type == "publish":
+            try:
+                parts = [p for p in parse_publish(o.artifact.payload).output.split("/") if p]
+            except Exception:
+                return None
+            if len(parts) >= 2:
+                return "/productions/" + "/".join(parts[-2:])
+    return None
+
+
+def _production_trust(result: ProductionResult | None) -> list[dict[str, Any]]:
+    """The machine floor as a flat trust list — every gate verdict across every stage."""
+    rows: list[dict[str, Any]] = []
+    if result is None:
+        return rows
+    for o in result.outcomes:
+        for g in o.artifact.provenance.gate_results:
+            rows.append({"stage": o.artifact.type, "gate": g.gate_name,
+                         "determinism": g.determinism.value, "passed": g.passed,
+                         "evidence": g.evidence})
+    return rows
+
+
+def _production_findings(result: ProductionResult | None) -> list[dict[str, str]]:
+    """When the chain is refused, the failing hard gates (last verdict per gate, minus validation)."""
+    if result is None:
+        return []
+    last: dict[str, str] = {}
+    for o in result.outcomes:
+        for g in o.artifact.provenance.gate_results:
+            if not g.passed and g.determinism.value == "hard" and g.gate_name != "validation":
+                last[g.gate_name] = g.evidence
+    return [{"gate": k, "evidence": v} for k, v in last.items()]
 
 
 def _spec_dict(spec: CreateSpec) -> dict[str, Any]:
@@ -261,6 +331,81 @@ class CreateSession:
             self._set(phase="done", error=f"{type(exc).__name__}: {exc}")
 
 
+class ProductionCreateSession:
+    """Create mode for a production. Runs the whole chain (the machine floor); when it ships, a human
+    judges the cut over HTTP (the review callback blocks on an Event). Approve → human-approved record
+    + the style profile compounds; request changes → the brief is amended and it re-runs."""
+
+    def __init__(self, token: str, brief: str, model: str, provider: ModelProvider,
+                 memory: MemoryStore, productions_root: Path, profile_store: ProductionProfileStore,
+                 publisher: Publisher | None) -> None:
+        self.token = token
+        self.brief = brief
+        self.provider = provider
+        self.memory = memory
+        self.work = productions_root / uuid4().hex
+        self.profile_store = profile_store
+        self.publisher = publisher
+        self.lock = threading.Lock()
+        self.state: dict[str, Any] = {
+            "phase": "producing", "brief": brief, "model": model, "events": [],
+            "video_url": None, "trust": None, "iteration": 0, "result": None, "error": None,
+        }
+        self._review = threading.Event()
+        self._review_val = ProdReview(False)
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            return dict(self.state)
+
+    def provide_review(self, approved: bool, feedback: str) -> None:
+        self._review_val = ProdReview(approved, feedback)
+        self._review.set()
+
+    def _set(self, **fields: Any) -> None:
+        with self.lock:
+            self.state.update(fields)
+
+    def _review_fn(self, result: ProductionResult) -> ProdReview:
+        with self.lock:
+            self.state["iteration"] += 1
+            self.state["video_url"] = _production_video_url(result)
+            self.state["trust"] = _production_trust(result)
+            self.state["phase"] = "reviewing"
+        self._review.wait()
+        self._review.clear()
+        self._set(phase="producing")
+        return self._review_val
+
+    def _run(self) -> None:
+        set_activity_listener(lambda e: self.state["events"].append(_event(e)))
+        try:
+            res = build_create_production(
+                self.brief, self.provider, self.memory, review=self._review_fn,
+                asset_generator=StubGenerator(), publisher=self.publisher,
+                profile=PublishProfile(), asset_dir=self.work,
+                profile_store=self.profile_store, max_attempts=3,
+            )
+            self._set(
+                phase="done",
+                video_url=_production_video_url(res.production) if res.accepted else None,
+                result={
+                    "accepted": res.accepted,
+                    "machine_verified": res.machine_verified,
+                    "iterations": res.iterations,
+                    "memory_path": res.memory_path,
+                    "findings": [] if res.machine_verified else _production_findings(res.production),
+                },
+            )
+        except Exception as exc:  # model error, ffmpeg failure, missing key
+            self._set(phase="done", error=f"{type(exc).__name__}: {exc}")
+        finally:
+            set_activity_listener(None)
+
+
 def create_app(
     data_dir: Path | None = None, provider: ModelProvider | None = None
 ) -> FastAPI:
@@ -283,18 +428,13 @@ def create_app(
 
     # Create-mode sessions (the interview/build conversation), keyed by token.
     create_sessions: dict[str, CreateSession] = {}
+    produce_sessions: dict[str, ProductionCreateSession] = {}
 
     def web_profile_store() -> ProfileStore:
         return ProfileStore(base / "profiles" / "web.json")
 
-    def _event(entry: ActivityEntry) -> dict[str, Any]:
-        return {
-            "phase": entry.phase.value,
-            "actor": entry.actor,
-            "message": entry.message,
-            "duration_ms": round(entry.duration_ms, 1),
-            "at": entry.at,
-        }
+    def production_profile_store() -> ProductionProfileStore:
+        return ProductionProfileStore(base / "profiles" / "production.json")
 
     app = FastAPI(title="Veritas Hub")
 
@@ -456,6 +596,42 @@ def create_app(
             "fonts": p.fonts,
             "min_contrast": p.min_contrast,
         }
+
+    # --- Production create mode: run the chain, the human approves the cut, the style profile learns.
+
+    @app.post("/api/produce/start")
+    def produce_start(req: ProduceRequest) -> dict[str, str]:
+        token = uuid4().hex
+        prov = injected_provider or _provider_for(req.model)
+        publisher: Publisher | None = (
+            FfmpegPublisher() if shutil.which("ffmpeg") and shutil.which("ffprobe") else None
+        )
+        sess = ProductionCreateSession(
+            token, req.brief, req.model, prov, org_memory("production"),
+            base / "productions", production_profile_store(), publisher,
+        )
+        produce_sessions[token] = sess
+        sess.start()
+        return {"token": token}
+
+    @app.get("/api/produce/{token}")
+    def produce_state(token: str) -> dict[str, Any]:
+        sess = produce_sessions.get(token)
+        return sess.snapshot() if sess else {"error": "unknown produce session"}
+
+    @app.post("/api/produce/{token}/review")
+    def produce_review(token: str, body: ReviewBody) -> dict[str, Any]:
+        sess = produce_sessions.get(token)
+        if sess is None:
+            return {"error": "unknown produce session"}
+        sess.provide_review(body.approved, body.feedback)
+        return {"ok": True}
+
+    @app.get("/api/profile/production")
+    def production_profile() -> dict[str, Any]:
+        p = production_profile_store().load()
+        return {"approvals": p.approvals, "tone": p._top(p.tone_votes),
+                "resolution": p._top(p.resolution_votes), "hint": p.hint()}
 
     @app.get("/api/memory")
     def list_memory() -> list[dict[str, Any]]:

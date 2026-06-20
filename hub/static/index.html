@@ -230,21 +230,40 @@
       First home: Web Studio.
     </p>
 
-    <div class="panel" id="cstart">
-      <div class="row">
-        <select id="cmodel" title="local is free; Claude models cost a few cents"></select>
-        <input type="text" id="cgoal" placeholder="e.g. a landing page for a coffee shop" />
-        <button id="cgo">Start interview</button>
-      </div>
-      <div class="muted" id="chint" style="margin-top:10px">The interview asks until it can write a gateable spec — then builds to it.</div>
+    <div class="filters" style="margin-bottom:14px">
+      <button class="chip active" id="tab-web" onclick="setCreateOrg('web')">Web — a page</button>
+      <button class="chip" id="tab-prod" onclick="setCreateOrg('production')">Production — a video</button>
     </div>
 
-    <div id="cconvo"></div>
-    <div id="creview"></div>
-    <div id="cresult"></div>
+    <div id="webcreate">
+      <div class="panel" id="cstart">
+        <div class="row">
+          <select id="cmodel" title="local is free; Claude models cost a few cents"></select>
+          <input type="text" id="cgoal" placeholder="e.g. a landing page for a coffee shop" />
+          <button id="cgo">Start interview</button>
+        </div>
+        <div class="muted" id="chint" style="margin-top:10px">The interview asks until it can write a gateable spec — then builds to it.</div>
+      </div>
+      <div id="cconvo"></div>
+      <div id="creview"></div>
+      <div id="cresult"></div>
+      <h2>Your Aesthetic Profile</h2>
+      <div class="panel" id="cprofile"></div>
+    </div>
 
-    <h2>Your Aesthetic Profile</h2>
-    <div class="panel" id="cprofile"></div>
+    <div id="prodcreate" class="hidden">
+      <div class="panel" id="pstart">
+        <div class="row">
+          <select id="pmodel" title="local is free; Claude models cost a few cents"></select>
+          <input type="text" id="pbrief" placeholder="e.g. a 30-second explainer on why the sky is blue, for kids" />
+          <button id="pgo">Produce</button>
+        </div>
+        <div class="muted" id="phint" style="margin-top:10px">The whole chain runs (concept → script → storyboard → assets → timeline → video) on the machine floor; then you approve the cut.</div>
+      </div>
+      <div id="pstatus"></div>
+      <h2>Your Production Style</h2>
+      <div class="panel" id="pprofile"></div>
+    </div>
   </section>
 
   <section id="memory" class="hidden"><h1>Institutional Memory</h1><div id="memfilters" class="filters"></div><div id="memlist" class="grid2"></div></section>
@@ -584,13 +603,18 @@ let CREATE = { token: null, polling: false, sig: null };
 async function initCreate() {
   if (!$('#cmodel').options.length) {
     const models = await api('/api/models');
-    $('#cmodel').innerHTML = models.map(m => `<option value="${esc(m.name)}">${esc(m.label)} · ${esc(m.cost)}</option>`).join('');
+    const opts = models.map(m => `<option value="${esc(m.name)}">${esc(m.label)} · ${esc(m.cost)}</option>`).join('');
+    $('#cmodel').innerHTML = opts;
+    $('#pmodel').innerHTML = opts;
   }
   loadProfile();
-  // Resume an in-progress interview after a page reload — the token lives only in JS, so
-  // without this a reload would orphan the session and the UI would just sit idle ("frozen").
-  const saved = sessionStorage.getItem('veritas_create');
-  if (saved && !CREATE.token) { CREATE.token = saved; CREATE.sig = null; pollCreate(); }
+  loadProdProfile();
+  // Resume an in-progress session after a page reload — the token lives only in JS, so without
+  // this a reload would orphan the session and the UI would just sit idle ("frozen").
+  const savedWeb = sessionStorage.getItem('veritas_create');
+  if (savedWeb && !CREATE.token) { CREATE.token = savedWeb; CREATE.sig = null; pollCreate(); }
+  const savedProd = sessionStorage.getItem('veritas_produce');
+  if (savedProd && !PRODUCE.token) { PRODUCE.token = savedProd; PRODUCE.sig = null; setCreateOrg('production'); pollProduce(); }
 }
 
 async function loadProfile() {
@@ -762,6 +786,114 @@ $('#cgo').onclick = async () => {
   CREATE.sig = null;
   sessionStorage.setItem('veritas_create', start.token);  // survive a page reload mid-interview
   pollCreate();
+};
+
+// --- P25f: production create mode ---
+function setCreateOrg(org) {
+  const web = org === 'web';
+  $('#tab-web').classList.toggle('active', web);
+  $('#tab-prod').classList.toggle('active', !web);
+  $('#webcreate').classList.toggle('hidden', !web);
+  $('#prodcreate').classList.toggle('hidden', web);
+}
+
+let PRODUCE = { token: null, polling: false, sig: null };
+
+async function loadProdProfile() {
+  const p = await api('/api/profile/production');
+  if (!p || !p.approvals) {
+    $('#pprofile').innerHTML = `<span class="muted">No approvals yet — sign off on a production and the system learns your style (tone, resolution, length) and seeds the next brief.</span>`;
+    return;
+  }
+  const tag = (k, v) => v ? `<span class="proftag">${k}: ${esc(v)}</span>` : '';
+  $('#pprofile').innerHTML =
+    `<div class="muted" style="margin-bottom:8px">Learned from <b>${p.approvals}</b> human-approved production${p.approvals===1?'':'s'} — seeds the next brief.</div>` +
+    tag('tone', p.tone) + tag('resolution', p.resolution);
+}
+
+function prodTrust(rows) {
+  const byStage = {};
+  rows.forEach(r => { (byStage[r.stage] = byStage[r.stage] || []).push(r); });
+  return Object.keys(byStage).map(stage =>
+    `<div class="scopelabel">${esc(stage)}</div><div class="gates">` +
+    byStage[stage].map(g => {
+      const hard = g.determinism !== 'soft', final = g.gate === 'validation';
+      const vcls = g.passed ? 'pass' : (hard ? 'fail' : 'soft');
+      const verdict = final ? (g.passed ? 'APPROVED' : 'WITHHELD') : (g.passed ? 'pass' : (hard ? 'FAIL' : 'flag'));
+      return `<div class="gate ${hard?'hard':'soft'}${final?' finalauth':''}"><div class="grow"><span class="gname"><span class="marker ${vcls}">${hard?'●':'○'}</span><span class="tier">${hard?'HARD':'soft'}</span>${esc(g.gate)}</span><span class="gverdict ${vcls}">${verdict}</span></div><div class="gev">${esc(g.evidence)}</div></div>`;
+    }).join('') + `</div>`).join('');
+}
+
+function renderProduce(s) {
+  if (s.phase === 'producing') {
+    const tl = (s.events && s.events.length) ? `<div class="gates" style="margin-top:10px">${s.events.slice(-14).map(timelineRow).join('')}</div>` : '';
+    $('#pstatus').innerHTML = `<div class="panel"><div class="verdict running"><span class="livedot"></span> PRODUCING…</div>${tl}</div>`;
+  } else if (s.phase === 'reviewing') {
+    const vid = s.video_url ? `<video class="prodvid" controls preload="metadata" src="${esc(s.video_url)}"></video>`
+      : `<div class="muted" style="margin-bottom:8px">No render (ffmpeg unavailable) — reviewing the verified cut.</div>`;
+    $('#pstatus').innerHTML = `<h2>The cut — iteration ${s.iteration}</h2><div class="panel">
+      ${vid}
+      <div class="subh">Machine-proven (the chain)</div>
+      ${prodTrust(s.trust || [])}
+      <div class="reviewbar" style="margin-top:14px">
+        <button id="papprove">Approve — ship it (human-approved)</button>
+        <input type="text" id="pfeedback" placeholder="…or request changes (re-runs the production)" />
+        <button id="preject" class="ghost">Request changes</button>
+      </div>
+      <div class="muted" style="margin-top:8px">The whole chain passed (consistent + intact). You are the gate for feel.</div></div>`;
+    $('#papprove').onclick = () => submitProdReview(true, '');
+    $('#preject').onclick = () => submitProdReview(false, $('#pfeedback').value.trim() || 'please revise');
+  } else if (s.phase === 'done') {
+    const r = s.result;
+    if (s.error) {
+      $('#pstatus').innerHTML = `<div class="panel"><span class="fail">Stopped:</span> <span class="mono">${esc(s.error)}</span></div>`;
+    } else if (r && r.accepted) {
+      $('#pstatus').innerHTML = `<div class="panel"><div class="verdict human">HUMAN-APPROVED <span class="earned">— shipped on the machine floor + your sign-off, after ${r.iterations} iteration${r.iterations===1?'':'s'}</span></div>${s.video_url?`<video class="prodvid" controls preload="metadata" src="${esc(s.video_url)}"></video>`:''}<div class="muted mono">remembered → ${esc(r.memory_path||'')}</div><div class="muted" style="margin-top:6px">This approval taught your production style.</div></div>`;
+      loadProdProfile();
+    } else if (r && r.machine_verified) {
+      $('#pstatus').innerHTML = `<div class="panel"><div class="verdict rejected">NOT SHIPPED <span class="earned">— passed the machine floor but you never approved it (${r.iterations} iterations)</span></div></div>`;
+    } else if (r) {
+      const f = (r.findings || []).map(x => `<div class="gate hard"><div class="grow"><span class="gname"><span class="marker fail">●</span><span class="tier">HARD</span>${esc(x.gate)}</span><span class="gverdict fail">FAIL</span></div><div class="gev">${esc(x.evidence)}</div></div>`).join('');
+      $('#pstatus').innerHTML = `<div class="panel"><div class="verdict rejected">NOT SHIPPED <span class="earned">— a machine gate refused the chain in ${r.iterations} attempt(s)</span></div>${f?`<div class="gates" style="margin-bottom:8px">${f}</div>`:''}<div class="muted">A capable model usually clears the chain; local models often drift at the script-grounding gate.</div></div>`;
+    }
+    $('#pgo').disabled = false; $('#phint').textContent = 'Start another — the system keeps learning your style.';
+  }
+}
+
+async function pollProduce() {
+  if (PRODUCE.polling) return;
+  PRODUCE.polling = true;
+  try {
+    while (PRODUCE.token) {
+      let s;
+      try { s = await api('/api/produce/' + PRODUCE.token); } catch (e) { await sleep(700); continue; }
+      if (s.error) { PRODUCE.token = null; sessionStorage.removeItem('veritas_produce'); break; }
+      const sig = JSON.stringify([s.phase, s.iteration, (s.events||[]).length, s.video_url, s.result]);
+      if (sig !== PRODUCE.sig) { PRODUCE.sig = sig; renderProduce(s); }
+      if (s.phase === 'done') { PRODUCE.token = null; sessionStorage.removeItem('veritas_produce'); break; }
+      await sleep(500);
+    }
+  } finally { PRODUCE.polling = false; }
+}
+
+async function submitProdReview(approved, feedback) {
+  $('#pstatus').innerHTML = `<div class="panel muted"><span class="livedot"></span> ${approved ? 'approving…' : 're-running the production with your feedback…'}</div>`;
+  PRODUCE.sig = null;
+  await api('/api/produce/' + PRODUCE.token + '/review', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({approved, feedback}) });
+}
+
+$('#pgo').onclick = async () => {
+  const brief = $('#pbrief').value.trim();
+  if (!brief) return;
+  $('#pgo').disabled = true; $('#phint').textContent = 'Producing…'; $('#pstatus').innerHTML = '';
+  const start = await api('/api/produce/start', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({brief, model: $('#pmodel').value}) });
+  if (!start.token) { $('#pstatus').innerHTML = `<div class="panel"><span class="fail">${esc(start.error || 'could not start')}</span></div>`; $('#pgo').disabled = false; return; }
+  PRODUCE.token = start.token; PRODUCE.sig = null;
+  sessionStorage.setItem('veritas_produce', start.token);
+  pollProduce();
 };
 
 loadOrgs();
