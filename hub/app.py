@@ -226,7 +226,10 @@ class CreateSession:
                 findings = [{"gate": g, "evidence": ev} for g, ev in last.items()]
             self._set(
                 phase="done",
-                page_html=built.page_outcome.artifact.payload if built.page_outcome else None,
+                # always show the page — the approved one if it shipped, else the last rejected
+                # candidate, so the gate findings are grounded in something you can actually see.
+                page_html=(built.page_outcome.artifact.payload if built.page_outcome
+                           else (built.last_page_html or None)),
                 result={
                     "accepted": built.accepted,
                     "machine_verified": built.machine_verified,

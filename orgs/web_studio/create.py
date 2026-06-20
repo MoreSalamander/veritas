@@ -95,6 +95,7 @@ class CreatePageResult:
     iterations: int
     run_id: str = ""
     activity: list[ActivityEntry] = field(default_factory=list)
+    last_page_html: str = ""  # the most recent candidate (approved or rejected) — always shown
 
 
 def _hard_feedback(results: list[GateResult]) -> str:
@@ -121,9 +122,11 @@ def build_create_page(
     required = spec.required_elements
     feedback: str | None = None
     machine_verified = False
+    last_html = ""  # the latest candidate, so a rejected build is still visible
 
     for attempt in range(1, max_attempts + 1):
         page = WebCreateDeveloperAgent(provider).propose(spec, feedback=feedback)
+        last_html = page.payload
         rendered = executor.render(page.payload, required)
         gates = [RenderGate(rendered), StructureGate(rendered, required),
                  *aesthetic_gates(rendered, spec.aesthetics), ValidationGate()]
@@ -144,7 +147,9 @@ def build_create_page(
                 prof = profile_store.load()
                 prof.update(spec.aesthetics)
                 profile_store.save(prof)
-            return CreatePageResult(True, True, outcome, attempt, run.id, list(run.log))
+            return CreatePageResult(True, True, outcome, attempt, run.id, list(run.log),
+                                    last_page_html=last_html)
         feedback = verdict.feedback  # human-driven refinement
 
-    return CreatePageResult(False, machine_verified, None, max_attempts, run.id, list(run.log))
+    return CreatePageResult(False, machine_verified, None, max_attempts, run.id, list(run.log),
+                            last_page_html=last_html)
