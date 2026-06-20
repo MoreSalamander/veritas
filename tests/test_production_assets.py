@@ -130,11 +130,12 @@ def test_drifting_reference_fails_consistency(tmp_path):
 
 # --- the whole chain, with assets ---------------------------------------------------------
 
-def test_production_with_assets_ships_four_stages(tmp_path):
+def test_production_with_assets_ships_full_chain(tmp_path):
     provider = ScriptedProvider(
         {"concept": CONCEPT, "scriptwriter": SCRIPT, "storyboard-artist": STORYBOARD})
     res = build_production("explain why the sky is blue", provider, MemoryStore(tmp_path),
                            asset_generator=StubGenerator(64, 48), asset_dir=tmp_path / "assets")
     assert res.accepted
-    assert [o.artifact.type for o in res.outcomes] == ["concept", "script", "storyboard", "assets"]
+    assert [o.artifact.type for o in res.outcomes] == \
+        ["concept", "script", "storyboard", "assets", "timeline"]
     assert all(o.accepted for o in res.outcomes)

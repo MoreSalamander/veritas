@@ -293,7 +293,10 @@ then the real engine is swapped behind the seam — the pattern that worked ever
   byte-identical; a tampered reference is caught.*
 - **P25d · Editing / assembly** — *verification: conformance + temporal integrity.* Assemble shots
   + narration into a timeline. HARD gates: SequenceCoverage (every shot, in storyboard order),
-  TimelineIntegrity (shot duration = its audio's, total within target, no gaps/overlaps).
+  TimelineIntegrity (shot duration = its audio's, total within target, no gaps/overlaps). *Done: a
+  deterministic Editor lays shots in order and splits a multi-shot beat's audio across its shots;
+  SequenceCoverage catches a reorder, TimelineIntegrity catches a gap and a sync drift; the full
+  chain ships 5 stages (concept→script→storyboard→assets→timeline).*
 - **P25e · Publishing** — *verification: format/codec compliance + file integrity* (my-AI-scene's
   model). Render the timeline to MP4 (ffmpeg) or a web bundle. HARD gates: PublishFormat (codec/
   resolution/aspect/duration meets the platform profile), OutputIntegrity (decodes/plays, duration

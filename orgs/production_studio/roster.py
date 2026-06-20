@@ -12,6 +12,7 @@ from orgs.production_studio.assets import (
     AssetCoverageGate,
     AssetIntegrityGate,
 )
+from orgs.production_studio.editing import SequenceCoverageGate, TimelineIntegrityGate
 from orgs.production_studio.gates import (
     ConceptScorerGate,
     DurationGate,
@@ -26,6 +27,7 @@ _CAST: list[tuple[str, str, str]] = [
     ("Scriptwriter", "scriptwriter", "Writes the script in scenes and beats, using only the concept's declared entities; re-writes on rejection (e.g. \"undeclared entity: Narrator (s2b1)\")."),
     ("Storyboard Artist", "storyboard-artist", "Turns each script beat into shots, covering every beat and showing only the entities present in it; re-draws on rejection (e.g. \"uncovered beat: s1b3\")."),
     ("Asset Generator", "asset-generator", "Renders an image per shot and narration audio per beat, drawing each entity with its pinned reference (a tool call, not a model proposal — the gates are still the authority)."),
+    ("Editor", "editor", "Lays the shots out in storyboard order and gives each its beat's narration time, producing a contiguous, in-sync timeline (a deterministic assembly the gates then verify)."),
 ]
 
 _GATES: list[tuple[type[Gate], str, str]] = [
@@ -38,7 +40,9 @@ _GATES: list[tuple[type[Gate], str, str]] = [
     (AssetCoverageGate, "assets", "every shot has an image and every beat has narration audio — nothing missing"),
     (AssetIntegrityGate, "assets", "every asset file is a real, decodable image/audio of the size/duration it claims"),
     (AssetConsistencyGate, "assets", "each entity is drawn with one pinned reference across every shot — a character can't look different scene to scene"),
-    (ValidationGate, "assets", "final authority: every hard gate passed, provenance complete"),
+    (SequenceCoverageGate, "timeline", "the cut contains every shot, exactly once, in storyboard order — nothing dropped or reordered"),
+    (TimelineIntegrityGate, "timeline", "the cut is contiguous from zero (no gaps/overlaps) and each beat's screen time matches its narration audio — audio/visual in sync"),
+    (ValidationGate, "timeline", "final authority: every hard gate passed, provenance complete"),
 ]
 
 

@@ -29,6 +29,12 @@ from orgs.production_studio.assets import (
     AssetGenerator,
     AssetGeneratorAgent,
     AssetIntegrityGate,
+    parse_assets,
+)
+from orgs.production_studio.editing import (
+    EditorAgent,
+    SequenceCoverageGate,
+    TimelineIntegrityGate,
 )
 from orgs.production_studio.gates import (
     ConceptScorerGate,
@@ -104,4 +110,15 @@ def build_production(
          AssetConsistencyGate(), ValidationGate()],
     )
     outcomes.append(asset_out)
-    return ProductionResult(outcomes, asset_out.accepted, informed_by, run.id, list(run.log))
+    if not asset_out.accepted:
+        return ProductionResult(outcomes, False, informed_by, run.id, list(run.log))
+    assets = parse_assets(asset_out.artifact.payload)
+
+    # Stage 5 (P25d) — editing: lay the shots + narration into a verified timeline.
+    edit_art = _stamp(EditorAgent().propose(storyboard, assets))
+    edit_out = run.submit(
+        edit_art,
+        [SequenceCoverageGate(storyboard), TimelineIntegrityGate(assets), ValidationGate()],
+    )
+    outcomes.append(edit_out)
+    return ProductionResult(outcomes, edit_out.accepted, informed_by, run.id, list(run.log))
