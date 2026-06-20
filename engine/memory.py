@@ -19,6 +19,7 @@ from typing import Any
 import yaml
 
 from engine.artifact import Artifact, _new_id, _now
+from engine.embed import Embedder, cosine
 
 # Deterministic retrieval: overlap of meaningful tokens. Explainable and testable.
 # An embedding-backed recall can slot in behind the same interface later.
@@ -154,13 +155,16 @@ class MemoryStore:
     index.md        — one human-readable line per record
     """
 
-    def __init__(self, base_path: Path | str) -> None:
+    def __init__(self, base_path: Path | str, embedder: Embedder | None = None) -> None:
         self.base = Path(base_path)
         self.institutional = self.base / "institutional"
         self.failures = self.base / "failures"
         self.index_path = self.base / "index.md"
         self.institutional.mkdir(parents=True, exist_ok=True)
         self.failures.mkdir(parents=True, exist_ok=True)
+        # When set, recall ranks by semantic similarity instead of token overlap (P23).
+        self.embedder = embedder
+        self._embed_cache: dict[str, list[float]] = {}
 
     def persist(self, record: MemoryRecord) -> Path:
         target_dir = self.failures if record.category == "failure" else self.institutional
@@ -219,31 +223,57 @@ class MemoryStore:
             created_at=frontmatter.get("created_at", ""),
         )
 
+    def _searchable(self, record: MemoryRecord) -> str:
+        prov = record.provenance
+        return " ".join([
+            record.title, " ".join(record.tags), record.body,
+            str(prov.get("rationale", "")), str(prov.get("rejected_because", "")),
+        ])
+
     def recall(
-        self, query: str, categories: list[str] | None = None, limit: int = 5
+        self, query: str, categories: list[str] | None = None, limit: int = 5,
+        min_similarity: float = 0.5,
     ) -> list[MemoryRecord]:
-        """Return past records relevant to `query`, ranked by token overlap. This is
-        how the organization stops repeating itself: it reads its own failures and
+        """Return past records relevant to `query`. With an embedder set, ranks by SEMANTIC
+        similarity (catches a lesson even when the wording differs); otherwise by token overlap.
+        Either way: how the organization stops repeating itself — it reads its own failures and
         lessons before it proposes anything new."""
+        candidates = [
+            r for r in self.load_all() if not categories or r.category in categories
+        ]
+        if not candidates:
+            return []
+
+        if self.embedder is not None:
+            try:
+                q = self.embedder.embed(query)
+            except Exception:
+                q = []
+            if q:
+                scored: list[tuple[float, MemoryRecord]] = []
+                for record in candidates:
+                    vec = self._embed_record(record)
+                    if vec:
+                        scored.append((cosine(q, vec), record))
+                scored.sort(key=lambda pair: (-pair[0], pair[1].created_at))
+                return [r for sim, r in scored[:limit] if sim >= min_similarity]
+            # embedding failed (e.g. Ollama down) — fall through to token overlap
+
         wanted = _tokens(query)
         if not wanted:
             return []
-        scored: list[tuple[int, MemoryRecord]] = []
-        for record in self.load_all():
-            if categories and record.category not in categories:
-                continue
-            prov = record.provenance
-            searchable = " ".join(
-                [
-                    record.title,
-                    " ".join(record.tags),
-                    record.body,
-                    str(prov.get("rationale", "")),
-                    str(prov.get("rejected_because", "")),
-                ]
-            )
-            overlap = wanted & _tokens(searchable)
+        overlapped: list[tuple[int, MemoryRecord]] = []
+        for record in candidates:
+            overlap = wanted & _tokens(self._searchable(record))
             if overlap:
-                scored.append((len(overlap), record))
-        scored.sort(key=lambda pair: (-pair[0], pair[1].created_at))
-        return [record for _, record in scored[:limit]]
+                overlapped.append((len(overlap), record))
+        overlapped.sort(key=lambda pair: (-pair[0], pair[1].created_at))
+        return [record for _, record in overlapped[:limit]]
+
+    def _embed_record(self, record: MemoryRecord) -> list[float]:
+        if record.id not in self._embed_cache and self.embedder is not None:
+            try:
+                self._embed_cache[record.id] = self.embedder.embed(self._searchable(record))
+            except Exception:
+                self._embed_cache[record.id] = []
+        return self._embed_cache.get(record.id, [])
