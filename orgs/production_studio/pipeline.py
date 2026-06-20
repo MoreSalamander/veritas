@@ -9,7 +9,9 @@ upstream artifact so consistency is checked across the boundary, not just within
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from engine.artifact import Artifact
 from engine.memory import MemoryStore, format_lessons
@@ -21,6 +23,12 @@ from orgs.production_studio.agents import (
     ScriptwriterAgent,
     StoryboardArtistAgent,
 )
+from orgs.production_studio.assets import (
+    AssetCoverageGate,
+    AssetGenerator,
+    AssetGeneratorAgent,
+    AssetIntegrityGate,
+)
 from orgs.production_studio.gates import (
     ConceptScorerGate,
     DurationGate,
@@ -29,7 +37,7 @@ from orgs.production_studio.gates import (
     StoryboardCoverageGate,
     StoryboardGroundingGate,
 )
-from orgs.production_studio.production import parse_concept, parse_script
+from orgs.production_studio.production import parse_concept, parse_script, parse_storyboard
 
 
 @dataclass
@@ -43,6 +51,7 @@ class ProductionResult:
 
 def build_production(
     brief: str, provider: ModelProvider, memory: MemoryStore,
+    asset_generator: AssetGenerator | None = None, asset_dir: Path | None = None,
 ) -> ProductionResult:
     run = Run(goal=brief, memory=memory)
     recalled = memory.recall(brief, categories=["failure", "lesson", "decision"], limit=3)
@@ -80,4 +89,17 @@ def build_production(
         [StoryboardCoverageGate(script), StoryboardGroundingGate(script), ValidationGate()],
     )
     outcomes.append(board_out)
-    return ProductionResult(outcomes, board_out.accepted, informed_by, run.id, list(run.log))
+    if not board_out.accepted or asset_generator is None:
+        return ProductionResult(outcomes, board_out.accepted, informed_by, run.id, list(run.log))
+    storyboard = parse_storyboard(board_out.artifact.payload)
+
+    # Stage 4 (P25b) — assets: real media per shot/beat, verified by coverage + integrity. This is
+    # a tool call, not a model proposal, so it runs once (run.submit) rather than self-correcting.
+    out_dir = asset_dir or Path(tempfile.mkdtemp(prefix="veritas_assets_"))
+    asset_art = _stamp(AssetGeneratorAgent(asset_generator).propose(script, storyboard, out_dir))
+    asset_out = run.submit(
+        asset_art,
+        [AssetCoverageGate(script, storyboard), AssetIntegrityGate(), ValidationGate()],
+    )
+    outcomes.append(asset_out)
+    return ProductionResult(outcomes, asset_out.accepted, informed_by, run.id, list(run.log))

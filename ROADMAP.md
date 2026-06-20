@@ -266,7 +266,59 @@ ever shown as more verified than it is.
   Approval ships human-approved into web memory and compounds the profile. Verified end to end
   through the HTTP control plane (offline scripted test). Create mode is now complete in the UI.*
 
-## Parallel / later tracks (not blocking create mode)
+## The road ahead — Production Studio + new orgs (P25→P27)
+
+A 4th org landed: **Production Studio**, verified by *consistency through the chain* (the concept
+declares the entities, the script may use only those, the storyboard covers only real beats and
+shows only a beat's entities — referential integrity a machine can prove; "compelling" is the
+human tier). Each phase below is built **stub-first** (deterministic placeholder, prove the gates)
+then the real engine is swapped behind the seam — the pattern that worked everywhere else.
+
+- **P25a · Structural spine** — concept → script → storyboard as typed artifacts; gates for
+  completeness, grounding (no undeclared entity), and coverage (no dropped beat). *Done: a coherent
+  production ships the whole chain; an undeclared character / dropped beat / orphan shot each trips
+  the owning gate; live qwen refused a script that invented characters.*
+- **P25b · Asset generation** — *verification: integrity + coverage.* Each shot → an image, each
+  beat's narration → TTS audio, behind an `AssetGenerator` seam (StubGenerator offline; real
+  image-gen + TTS later). HARD gates: AssetCoverage (an asset per shot/beat), AssetIntegrity (each
+  image decodes at expected size, each audio has duration > 0). *Done: StubGenerator writes real
+  png/wav (stdlib only, no PIL); coverage catches a missing frame, integrity catches a corrupt or
+  mislabeled file; the full chain ships 4 stages; ffprobe independently confirms the media is valid.*
+- **P25c · Visual consistency** — *verification: consistency via measurable signal.* Each entity
+  gets a pinned reference (seed/reference image); the gate checks each shot image against it
+  (perceptual/embedding similarity within tolerance). The "maintain consistency" guarantee made
+  checkable.
+- **P25d · Editing / assembly** — *verification: conformance + temporal integrity.* Assemble shots
+  + narration into a timeline. HARD gates: SequenceCoverage (every shot, in storyboard order),
+  TimelineIntegrity (shot duration = its audio's, total within target, no gaps/overlaps).
+- **P25e · Publishing** — *verification: format/codec compliance + file integrity* (my-AI-scene's
+  model). Render the timeline to MP4 (ffmpeg) or a web bundle. HARD gates: PublishFormat (codec/
+  resolution/aspect/duration meets the platform profile), OutputIntegrity (decodes/plays, duration
+  matches the timeline).
+- **P25f · Taste tier (create-mode for production)** — *verification: human-approved + profile
+  learns style.* The residue the gates can't touch ("is it good?"). Reuses the create-mode tier:
+  a human approves the final cut, the interview front-loads checkable style criteria. This is where
+  the "QA agent" actually lives — QA is the gate layer across P25, not a separate proposer.
+
+- **P26 · Empirical / Research Lab org** — *verification model: **reproducibility** — a hypothesis
+  is accepted only if a re-runnable experiment supports it.* Seeded by the existing `bench/`.
+  **P26a** Experiment artifact + `ExperimentRunner` seam + ReproducibilityGate (re-run, results
+  match within tolerance) + ResultSupportsHypothesisGate. **P26b** cast (Director/LitReview/
+  Hypothesis/Experiment/Writer as proposers; Critic & Validation = gates) + grounding gate for the
+  lit review (reuses Research). **P26c** register in hub; the demo is the project's own question —
+  "do local LLM ensembles beat frontier models?"
+
+- **P27 · Presets** — not new engine; each is *cast + pipeline on an existing verification model*,
+  proving the substrate generalizes. **Newsroom** = Research + fact-checker role. **Education** =
+  Research grounding + a pedagogical-structure gate (bridges to myAIstro). **Startup Factory** =
+  orchestration Research → Web → Software ("profitable?" stays a human bet). **Game Studio** =
+  Production + Software composed.
+
+**Not Veritas** (a different machine — emergent simulation, "script incentives not outcomes," no
+artifact + no gate): Civilization Simulator, AI Dungeon Master, Company Simulator. These belong to
+the the-house-always-wins / Memory Economy City thread, not here.
+
+## Parallel / later tracks
 
 - **Hosting** — sandboxed Executor + DB-backed memory (local → shippable).
 - **More languages** — Rust / Ruby / C are a `Language` each.
