@@ -683,7 +683,12 @@ function renderCreate(s) {
     } else if (r && r.machine_verified) {
       $('#cresult').innerHTML = `<div class="panel"><div class="verdict rejected">NOT SHIPPED <span class="earned">— met the measurable bar but you never approved it (${r.iterations} iterations)</span></div></div>`;
     } else if (r) {
-      $('#cresult').innerHTML = `<div class="panel"><div class="verdict rejected">NOT SHIPPED <span class="earned">— couldn't meet the measurable floor in ${r.iterations} attempts</span></div></div>`;
+      const findings = (r.findings || []).map(f =>
+        `<div class="gate hard"><div class="grow"><span class="gname"><span class="marker fail">●</span><span class="tier machine">MACHINE</span>${esc(f.gate)}</span><span class="gverdict fail">FAIL</span></div><div class="gev">${esc(f.evidence)}</div></div>`).join('');
+      $('#cresult').innerHTML = `<div class="panel">
+        <div class="verdict rejected">NOT SHIPPED <span class="earned">— couldn't meet the measurable floor in ${r.iterations} attempts</span></div>
+        ${findings ? `<div class="gates" style="margin-bottom:10px">${findings}</div>` : ''}
+        <div class="muted">The model couldn't satisfy these gate(s). If a gate looks impossible for your spec (e.g. a palette with no readable text color), the floor is correctly refusing — loosen that criterion in a new interview. Otherwise try again or switch to a stronger model.</div></div>`;
     }
     $('#cgo').disabled = false;
     $('#chint').textContent = 'Start another — the system keeps learning your taste.';

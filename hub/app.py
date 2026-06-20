@@ -214,6 +214,16 @@ class CreateSession:
                 review=lambda html, r: self._review_fn(html, r, spec),
                 profile_store=self.profile_store,
             )
+            # When the floor is never met, the user deserves to know WHICH gate refused and why
+            # (e.g. an unsatisfiable palette/contrast combo). The activity log carries every
+            # verdict; keep the last failing verdict per gate so the UI can show it.
+            findings: list[dict[str, str]] = []
+            if not built.machine_verified:
+                last: dict[str, str] = {}
+                for e in built.activity:
+                    if e.message.startswith("FAIL:") and e.actor != "validation":
+                        last[e.actor] = e.message[len("FAIL:"):].strip()
+                findings = [{"gate": g, "evidence": ev} for g, ev in last.items()]
             self._set(
                 phase="done",
                 page_html=built.page_outcome.artifact.payload if built.page_outcome else None,
@@ -224,6 +234,7 @@ class CreateSession:
                     "run_id": built.run_id,
                     "memory_path": (str(built.page_outcome.memory_path)
                                     if built.page_outcome else None),
+                    "findings": findings,
                 },
             )
         except Exception as exc:  # model error, render failure, missing key

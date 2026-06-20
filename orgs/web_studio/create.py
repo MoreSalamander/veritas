@@ -35,7 +35,12 @@ CREATE_DEV_SYSTEM = (
     "it on background and text/color); use ONLY the given font(s); honor the theme (dark = dark "
     "background); keep text contrast above the minimum; have exactly one <h1>; give every <img> "
     "alt text and every <button> a label; not overflow horizontally at 1280px; produce no console "
-    "errors. Output ONLY the HTML — no fences, no commentary."
+    "errors. CRITICAL — two traps that cause silent rejections: (1) browsers color unstyled "
+    "links/nav with a default BLUE that is not in your palette — explicitly set `a{color:...}` to "
+    "a palette color for EVERY link and nav item. (2) For body and link text pick the palette "
+    "color with the STRONGEST contrast against the background (usually your darkest color on a "
+    "light theme, lightest on a dark theme) — do not use a mid-tone accent color as text. "
+    "Output ONLY the HTML — no fences, no commentary."
 )
 
 
