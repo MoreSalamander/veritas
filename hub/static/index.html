@@ -207,6 +207,7 @@
     <a data-view="runs">Runs</a>
     <a data-view="create">Create</a>
     <a data-view="memory">Memory</a>
+    <a data-view="models">Models</a>
   </nav>
 </aside>
 <main>
@@ -308,6 +309,12 @@
   </section>
 
   <section id="memory" class="hidden"><h1>Institutional Memory</h1><div id="memfilters" class="filters"></div><div id="memlist" class="grid2"></div></section>
+
+  <section id="models" class="hidden">
+    <h1>Models</h1>
+    <div class="muted" style="margin:-12px 0 16px;max-width:700px">Which model proposes. Reliability comes from the gates regardless — so this is only about which model reliably <em>clears</em> which work. Notes are from the project's own benchmarks.</div>
+    <div id="modellist" style="display:grid;gap:10px"></div>
+  </section>
 </main>
 
 <script>
@@ -319,8 +326,9 @@ const isHard = g => g.determinism !== 'soft';
 document.querySelectorAll('nav a').forEach(a => a.onclick = () => {
   document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
   a.classList.add('active');
-  ['home','dashboard','orgview','runs','create','memory'].forEach(v => $('#'+v).classList.toggle('hidden', v !== a.dataset.view));
+  ['home','dashboard','orgview','runs','create','memory','models'].forEach(v => $('#'+v).classList.toggle('hidden', v !== a.dataset.view));
   if (a.dataset.view === 'home') loadHome();
+  if (a.dataset.view === 'models') loadModelsView();
   if (a.dataset.view === 'runs') loadRuns();
   if (a.dataset.view === 'memory') loadMemory();
   if (a.dataset.view === 'dashboard') loadDash();
@@ -391,6 +399,41 @@ async function loadOrgs() {
 async function loadModels() {
   const models = await api('/api/models');
   $('#model').innerHTML = models.map(m => `<option value="${esc(m.name)}">${esc(m.label)} · ${esc(m.cost)}</option>`).join('');
+  applyDefaultModel();
+}
+
+// the user's chosen default (localStorage) pre-selects in every model dropdown
+function applyDefaultModel() {
+  const d = localStorage.getItem('veritas_model');
+  if (!d) return;
+  ['#model', '#cmodel', '#pmodel'].forEach(sel => {
+    const el = $(sel);
+    if (el && [...el.options].some(o => o.value === d)) el.value = d;
+  });
+}
+
+function setDefaultModel(name) {
+  localStorage.setItem('veritas_model', name);
+  applyDefaultModel();
+  loadModelsView();
+}
+
+async function loadModelsView() {
+  const models = await api('/api/models');
+  const mine = localStorage.getItem('veritas_model') || (models.find(m => m.recommended) || {}).name;
+  $('#modellist').innerHTML = models.map(m => {
+    const isDefault = m.name === mine;
+    const tags = (m.recommended ? '<span class="pill" style="border-color:var(--cyan);color:var(--cyan)">★ recommended</span> ' : '')
+      + (isDefault ? '<span class="pill" style="border-color:var(--green);color:var(--green)">your default</span>' : '');
+    return `<div class="panel" style="margin:0">
+      <div class="row" style="justify-content:space-between;align-items:baseline">
+        <span><strong>${esc(m.label)}</strong> ${tags}</span>
+        <span class="pill">${esc(m.kind)} · ${esc(m.cost)}</span></div>
+      <div class="muted" style="margin:8px 0;font-size:13px;line-height:1.5">${esc(m.note)}</div>
+      ${isDefault ? '<span class="muted" style="font-size:11px">used by default in every studio</span>'
+        : `<button class="ghost" onclick="setDefaultModel('${esc(m.name)}')">Set as my default</button>`}
+    </div>`;
+  }).join('');
 }
 function syncHint() {
   const o = ORGS.find(x => x.name === $('#org').value);
@@ -698,6 +741,7 @@ async function initCreate() {
     const opts = models.map(m => `<option value="${esc(m.name)}">${esc(m.label)} · ${esc(m.cost)}</option>`).join('');
     $('#cmodel').innerHTML = opts;
     $('#pmodel').innerHTML = opts;
+    applyDefaultModel();
   }
   loadProfile();
   loadProdProfile();

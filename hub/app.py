@@ -75,6 +75,18 @@ MODELS: dict[str, ModelSpec] = {
 
 DEFAULT_MODEL = "gemma-12b"
 
+# Honest, measured capability notes — what each model reliably CLEARS, from the project's own
+# benchmark runs. (Milestone 5 wires these to live bench results; until then they're the findings.)
+MODEL_NOTES: dict[str, str] = {
+    "gemma-12b": "Clears function + production chains. The local star.",
+    "qwen": "Fast, but drifts on grounding — good for simple functions, not video.",
+    "qwen-64k": "Thinking model — better first-try on hard goals, ~7x slower.",
+    "llama": "Older 8B — basic functions only; weakest of the locals.",
+    "haiku": "Cloud, cheap — clears more than the locals.",
+    "sonnet": "Cloud — clears module/app scale where local models can't.",
+    "opus": "Cloud — strongest; for the hardest builds.",
+}
+
 
 def _provider_for(model: str) -> ModelProvider:
     spec = MODELS.get(model)
@@ -577,8 +589,12 @@ def create_app(
         return found or {"error": "not found"}
 
     @app.get("/api/models")
-    def list_models() -> list[dict[str, str]]:
-        return [{"name": k, "label": v["label"], "cost": v["cost"]} for k, v in MODELS.items()]
+    def list_models() -> list[dict[str, Any]]:
+        return [
+            {"name": k, "label": v["label"], "cost": v["cost"], "kind": v["kind"],
+             "note": MODEL_NOTES.get(k, ""), "recommended": k == DEFAULT_MODEL}
+            for k, v in MODELS.items()
+        ]
 
     @app.post("/api/runs/start")
     def start_run(req: RunRequest) -> dict[str, str]:
