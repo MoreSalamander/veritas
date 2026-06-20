@@ -45,6 +45,7 @@
   .orginfo .chk { font-family: var(--mono); font-size: 12px; color: var(--cyan); }
   .artifact { margin-top: 12px; }
   .artifact .loc { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+  .prodvid { width: 100%; max-width: 480px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; background: #000; }
   pre.code { background: #0c1119; border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px;
              overflow-x: auto; font-family: var(--mono); font-size: 12px; color: var(--ink);
              white-space: pre; margin: 0; line-height: 1.5; }
@@ -297,7 +298,14 @@ function verdictBanner(r) {
 
 function artifactBlock(org, a) {
   const loc = `hub_data/memory/${esc(org)}/${esc(a.store)}/${esc(a.file)}`;
-  const body = a.payload ? `<pre class="code">${esc(a.payload)}</pre>` : '';
+  let body = a.payload ? `<pre class="code">${esc(a.payload)}</pre>` : '';
+  // a published production carries a manifest pointing at the rendered file — play it inline.
+  if (a.type === 'publish') {
+    try {
+      const out = (JSON.parse(a.payload).output || '').split('/').filter(Boolean);
+      if (out.length >= 2) body = `<video class="prodvid" controls preload="metadata" src="/productions/${out.slice(-2).map(encodeURIComponent).join('/')}"></video>` + body;
+    } catch (e) {}
+  }
   return `<div class="artifact"><div class="loc">${esc(a.type)} → ${loc}</div>${body}</div>`;
 }
 function runCard(r) {

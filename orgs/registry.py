@@ -11,14 +11,18 @@ verified by source-grounding, a production org verified by format/integrity.
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
 from engine.memory import MemoryStore
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome
+from orgs.production_studio.assets import StubGenerator
 from orgs.production_studio.pipeline import build_production
+from orgs.production_studio.publishing import FfmpegPublisher, Publisher
 from orgs.production_studio.roster import roster as production_roster
 from orgs.research_studio.pipeline import build_report
 from orgs.research_studio.roster import roster as research_roster
@@ -113,7 +117,18 @@ def _run_research(
 def _run_production(
     goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
 ) -> OrgRun:
-    result = build_production(goal, provider, memory)
+    # Run the full chain: stub assets always, and a real ffmpeg publish when ffmpeg is available
+    # (else the chain stops at the timeline — still verified, just unrendered). Assets + the output
+    # land under <data>/productions/<id>/ so the Hub can serve and play the result.
+    data_root = memory.base.parent.parent  # <data>/memory/production -> <data>
+    work = data_root / "productions" / uuid4().hex
+    publisher: Publisher | None = (
+        FfmpegPublisher() if shutil.which("ffmpeg") and shutil.which("ffprobe") else None
+    )
+    result = build_production(
+        goal, provider, memory,
+        asset_generator=StubGenerator(), asset_dir=work, publisher=publisher,
+    )
     return OrgRun(
         org="production",
         goal=goal,

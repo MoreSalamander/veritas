@@ -488,6 +488,11 @@ def create_app(
     if _STATIC.exists():
         app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 
+    # Serve rendered productions (images + the published video) so the UI can play them.
+    productions = base / "productions"
+    productions.mkdir(parents=True, exist_ok=True)
+    app.mount("/productions", StaticFiles(directory=productions), name="productions")
+
     return app
 
 
