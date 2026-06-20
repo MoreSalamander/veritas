@@ -107,14 +107,26 @@ class CreateSpecScorerGate(Gate):
 
 INTERVIEWER_SYSTEM = (
     "You are interviewing a user to design a web page. Your job is to gather enough to write a "
-    "VERIFIABLE spec — so the result can be checked, not just admired. You need: a title, the "
+    "VERIFIABLE spec — so the result can be checked, not just admired. You need ONLY: a title, the "
     "page's required elements (as CSS selectors it must contain, e.g. \"header\",\"nav\",\"h1\","
     "\"#cta\",\"footer\"), and the measurable aesthetic: theme (\"dark\"|\"light\"), a small color "
     "palette (hex), allowed fonts, and a minimum text contrast. Ask ONE focused question at a time "
-    "for whatever you don't yet know. When — and only when — you have ALL of it, output the final "
-    "spec. Respond with ONLY JSON, no prose: either {\"question\": \"...\"} or {\"spec\": "
-    "{\"title\":..., \"description\":..., \"required_elements\":[...], \"aesthetics\": "
-    "{\"theme\":..., \"min_contrast\":..., \"fonts\":[...], \"palette\":[...]}}}."
+    "for whatever you don't yet know — and ONLY about those fields, nothing else (copy, imagery, "
+    "and feature details are NOT needed). As soon as you can fill those fields, output the spec; "
+    "do not keep asking once you have enough. Respond with ONLY JSON, no prose: either {\"question"
+    "\": \"...\"} or {\"spec\": {\"title\":..., \"description\":..., \"required_elements\":[...], "
+    "\"aesthetics\": {\"theme\":..., \"min_contrast\":..., \"fonts\":[...], \"palette\":[...]}}}."
+)
+
+# The deterministic terminator. The whole discipline is that a pure check — not the model — decides
+# when the interview is done; but the check only runs on a spec, and a chatty model can ask forever
+# and never volunteer one. So once the user has answered enough rounds, we stop letting it ask and
+# force it to synthesize the spec from what it has. The completeness check still rules on the result,
+# so a forced-but-incomplete spec doesn't slip through — it just redirects the next question.
+_FORCE_SPEC = (
+    "You now have enough. Output the final spec JSON now — no more questions. Use everything the "
+    "user has told you and infer reasonable values for any minor detail. Required fields: title, "
+    "required_elements (CSS selectors), and aesthetics (theme, palette, fonts, min_contrast)."
 )
 
 
@@ -147,38 +159,48 @@ class InterviewerAgent:
 
 def interview(
     goal: str, provider: ModelProvider, answer: Callable[[str], str],
-    known: str | None = None, max_rounds: int = 8,
+    known: str | None = None, max_rounds: int = 8, force_after: int = 2,
 ) -> InterviewResult:
     """Run the interview to a gateable spec. `answer` supplies the human's reply to a question
-    (a real person in the hub; a scripted fn in tests). `known` is a summary of the user's
-    learned preferences (from the aesthetic profile) so the interview doesn't re-ask them — it
-    shortens over time. The loop only ends when `spec_completeness` says the spec is gateable,
-    or the round budget runs out."""
+    (a real person in the hub; a scripted fn in tests). `known` is a summary of the user's learned
+    preferences (from the aesthetic profile) so the interview doesn't re-ask them — it shortens
+    over time. The loop ends when `spec_completeness` says the spec is gateable, or the budget runs
+    out. After `force_after` answered questions the model is forced to synthesize a spec instead of
+    being allowed to keep asking (so a chatty model converges); the completeness check still decides
+    whether that forced spec is acceptable."""
     transcript: list[tuple[str, str]] = []
     agent = InterviewerAgent(provider)
     nudge: str | None = None
+    questions_asked = 0
     for rnd in range(1, max_rounds + 1):
+        # past the budget, stop letting it ask — make it finalize (unless a more specific nudge,
+        # e.g. a missing-field redirect, is already pending).
+        if questions_asked >= force_after and nudge is None:
+            nudge = _FORCE_SPEC
         try:
             parsed = agent.next(goal, transcript, nudge, known)
         except CreateSpecParseError:
             nudge = "Your last reply was not valid JSON. Respond with ONLY the JSON object."
             continue
-        nudge = None
         if "question" in parsed and isinstance(parsed["question"], str):
             q = parsed["question"]
             transcript.append((q, answer(q)))
+            questions_asked += 1
+            # once we've hit the budget, the next turn forces a spec instead of another question
+            nudge = _FORCE_SPEC if questions_asked >= force_after else None
             continue
         if "spec" in parsed:
             try:
                 spec = parse_create_spec(json.dumps(parsed["spec"]))
             except CreateSpecParseError:
-                nudge = "That spec was malformed. Keep asking, then return a valid spec."
+                nudge = "That spec was malformed. Output a valid spec JSON now."
                 continue
             complete, missing = spec_completeness(spec)
             if complete:
                 return InterviewResult(spec=spec, transcript=transcript, rounds=rnd)
-            # the model thinks it's done; the deterministic check disagrees — keep going
-            nudge = f"The spec isn't gateable yet — still missing: {', '.join(missing)}. Ask the user about these."
+            # the model thinks it's done; the deterministic check disagrees — redirect to the gap
+            nudge = (f"The spec is missing: {', '.join(missing)}. Output a corrected spec JSON now, "
+                     "asking the user only if a value is genuinely unknowable.")
             continue
         nudge = "Reply with either {\"question\": ...} or {\"spec\": ...}."
     return InterviewResult(spec=None, transcript=transcript, rounds=max_rounds)

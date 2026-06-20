@@ -76,3 +76,20 @@ def test_interview_gives_up_if_never_gateable():
     provider = SequencedProvider({"interviewer": [Q1, Q2, Q1, Q2]})
     res = interview("x", provider, answer=lambda q: "dunno", max_rounds=4)
     assert res.spec is None  # never reached a gateable spec within the budget
+
+
+class _ChattyProvider:
+    """Models the real failure mode: a model that over-clarifies and never volunteers a spec on
+    its own — it keeps asking UNLESS explicitly forced to finalize, then it emits the spec."""
+
+    def propose(self, *, role: str, prompt: str, system: str | None = None) -> str:
+        forced = "no more questions" in prompt.lower() or "output the final spec" in prompt.lower()
+        return COMPLETE if forced else Q1
+
+
+def test_interview_forces_convergence_on_a_chatty_model():
+    # without forcing this model would ask Q1 forever and hit the budget (spec=None); the
+    # deterministic budget makes it finalize, and completeness accepts the forced spec.
+    res = interview("a landing page", _ChattyProvider(), answer=lambda q: "ok", force_after=2)
+    assert res.spec is not None and spec_completeness(res.spec)[0]
+    assert res.rounds <= 4  # converged quickly, did not exhaust the round budget
