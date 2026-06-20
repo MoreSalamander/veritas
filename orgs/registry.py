@@ -18,6 +18,8 @@ from typing import Any
 from engine.memory import MemoryStore
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome
+from orgs.production_studio.pipeline import build_production
+from orgs.production_studio.roster import roster as production_roster
 from orgs.research_studio.pipeline import build_report
 from orgs.research_studio.roster import roster as research_roster
 from orgs.software_studio.builder import build
@@ -108,6 +110,21 @@ def _run_research(
     )
 
 
+def _run_production(
+    goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
+) -> OrgRun:
+    result = build_production(goal, provider, memory)
+    return OrgRun(
+        org="production",
+        goal=goal,
+        accepted=result.accepted,
+        outcomes=result.outcomes,
+        informed_by=result.informed_by,
+        run_id=result.run_id,
+        activity=result.activity,
+    )
+
+
 REGISTRY: dict[str, OrgType] = {
     "software": OrgType(
         name="software",
@@ -150,6 +167,20 @@ REGISTRY: dict[str, OrgType] = {
         build=_run_research,
         roster=research_roster,
         needs_sources=True,
+    ),
+    "production": OrgType(
+        name="production",
+        title="Production Studio",
+        description="Turns a brief into a verified production chain — concept, then script, then "
+        "storyboard — for a short narrated video. Verified by consistency, not by good taste.",
+        input_noun="a production brief",
+        produces="a concept + script + storyboard whose every stage traces to the last",
+        verified_by="the concept declares the entities; the script may use only those; the "
+        "storyboard covers every beat and shows only what the beat contains — referential "
+        "integrity end to end (whether it's compelling is the human tier)",
+        goal_hint="a 60-second explainer on why the sky is blue, for curious kids",
+        build=_run_production,
+        roster=production_roster,
     ),
 }
 
