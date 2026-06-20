@@ -306,7 +306,11 @@ then the real engine is swapped behind the seam — the pattern that worked ever
 - **P25f · Taste tier (create-mode for production)** — *verification: human-approved + profile
   learns style.* The residue the gates can't touch ("is it good?"). Reuses the create-mode tier:
   a human approves the final cut, the interview front-loads checkable style criteria. This is where
-  the "QA agent" actually lives — QA is the gate layer across P25, not a separate proposer.
+  the "QA agent" actually lives — QA is the gate layer across P25, not a separate proposer. *Done:
+  build_create_production runs the whole chain (the machine floor) then a human judges the residue;
+  approve → a human-approved memory record + the production style profile compounds (tone/resolution/
+  length) and seeds the next brief; request-changes amends the brief and re-runs; a machine-floor
+  failure never reaches the human. **P25 — Production Studio — is COMPLETE.***
 
 - **P26 · Empirical / Research Lab org** — *verification model: **reproducibility** — a hypothesis
   is accepted only if a re-runnable experiment supports it.* Seeded by the existing `bench/`.
