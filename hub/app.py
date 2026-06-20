@@ -63,8 +63,8 @@ class ModelSpec(TypedDict):
 
 
 MODELS: dict[str, ModelSpec] = {
-    "qwen": {"label": "Qwen3.5 9B · local ★", "cost": "free", "kind": "ollama", "id": "qwen3.5:9b", "think": False},
-    "gemma-12b": {"label": "Gemma 12B · local", "cost": "free", "kind": "ollama", "id": "gemma4:12b", "think": False},
+    "gemma-12b": {"label": "Gemma 12B · local ★", "cost": "free", "kind": "ollama", "id": "gemma4:12b", "think": False},
+    "qwen": {"label": "Qwen3.5 9B · local", "cost": "free", "kind": "ollama", "id": "qwen3.5:9b", "think": False},
     "qwen-64k": {"label": "Qwen3.5 64k · local · thinking", "cost": "free", "kind": "ollama", "id": "qwen3.5-64k:latest", "think": True},
     "llama": {"label": "Llama3.1 8B · local", "cost": "free", "kind": "ollama", "id": "llama3.1:8b", "think": False},
     "haiku": {"label": "Claude Haiku", "cost": "~1–3¢/build", "kind": "claude", "id": "claude-haiku-4-5", "think": False},
@@ -72,7 +72,7 @@ MODELS: dict[str, ModelSpec] = {
     "opus": {"label": "Claude Opus", "cost": "~6–13¢/build", "kind": "claude", "id": "claude-opus-4-8", "think": False},
 }
 
-DEFAULT_MODEL = "qwen"
+DEFAULT_MODEL = "gemma-12b"
 
 
 def _provider_for(model: str) -> ModelProvider:
