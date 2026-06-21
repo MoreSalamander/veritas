@@ -208,10 +208,19 @@ class MemoryStore:
         frontmatter: dict[str, Any] = {}
         body = text
         if text.startswith("---"):
-            parts = text.split("---", 2)  # maxsplit=2 keeps any '---' inside the body
-            if len(parts) == 3:
-                frontmatter = yaml.safe_load(parts[1]) or {}
-                body = parts[2].strip()
+            # The frontmatter block ends at the first *line* that is exactly '---'. A naive
+            # text.split('---') broke whenever a value contained '---' (e.g. a model wrote
+            # "PROTOCOL --- a thriller"), cutting the YAML mid-value. Match the delimiter by line.
+            lines = text.split("\n")
+            end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+            if end is not None:
+                try:
+                    loaded = yaml.safe_load("\n".join(lines[1:end]))
+                except yaml.YAMLError:
+                    loaded = None  # a malformed record must never crash the org reading its memory
+                if isinstance(loaded, dict):
+                    frontmatter = loaded
+                    body = "\n".join(lines[end + 1:]).strip()
         return MemoryRecord(
             category=frontmatter.get("category", ""),
             title=frontmatter.get("title", ""),
