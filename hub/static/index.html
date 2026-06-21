@@ -443,11 +443,14 @@ async function loadModelsView() {
     const isDefault = m.name === mine;
     const tags = (m.recommended ? '<span class="pill" style="border-color:var(--cyan);color:var(--cyan)">★ recommended</span> ' : '')
       + (isDefault ? '<span class="pill" style="border-color:var(--green);color:var(--green)">your default</span>' : '');
+    const b = m.bench;
+    const measured = b ? `<div class="mono" style="margin:0 0 8px;font-size:11.5px"><span style="color:var(--cyan)">measured:</span> <span class="${b.accepted_rate >= 67 ? 'pass' : (b.accepted_rate > 0 ? 'soft' : 'fail')}">${b.accepted_rate}% cleared</span> · ${b.mean_time}s · ${b.mean_retries} retries <span class="muted">(last benchmark)</span></div>` : '';
     return `<div class="panel" style="margin:0">
       <div class="row" style="justify-content:space-between;align-items:baseline">
         <span><strong>${esc(m.label)}</strong> ${tags}</span>
         <span class="pill">${esc(m.kind)} · ${esc(m.cost)}</span></div>
-      <div class="muted" style="margin:8px 0;font-size:13px;line-height:1.5">${esc(m.note)}</div>
+      <div class="muted" style="margin:8px 0 6px;font-size:13px;line-height:1.5">${esc(m.note)}</div>
+      ${measured}
       ${isDefault ? '<span class="muted" style="font-size:11px">used by default in every studio</span>'
         : `<button class="ghost" onclick="setDefaultModel('${esc(m.name)}')">Set as my default</button>`}
     </div>`;

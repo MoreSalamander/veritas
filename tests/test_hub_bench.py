@@ -47,3 +47,16 @@ def test_bench_defaults_to_the_star_when_no_models_given(tmp_path):
     client = TestClient(create_app(data_dir=tmp_path, provider=ScriptedProvider({})))
     token = client.post("/api/bench/start", json={"models": []}).json()["token"]
     assert token  # falls back to DEFAULT_MODEL rather than running an empty matrix
+
+
+def test_bench_results_persist_and_surface_in_models(tmp_path):
+    # the notes go from stated -> proven: a finished bench writes results that /api/models serves
+    client = TestClient(create_app(data_dir=tmp_path, provider=ScriptedProvider({})))
+    assert all(m["bench"] is None for m in client.get("/api/models").json())  # nothing measured yet
+    token = client.post("/api/bench/start", json={"models": ["gemma-12b"]}).json()["token"]
+    deadline = time.time() + 30
+    while client.get(f"/api/bench/{token}").json()["phase"] != "done" and time.time() < deadline:
+        time.sleep(0.1)
+    assert (tmp_path / "bench_latest.json").exists()
+    gemma = next(m for m in client.get("/api/models").json() if m["name"] == "gemma-12b")
+    assert gemma["bench"] and gemma["bench"]["model"] == "gemma-12b" and gemma["bench"]["n"] == 3

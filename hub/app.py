@@ -219,11 +219,13 @@ class BenchSession:
     streaming per-cell progress. Long-running and (for cloud models) costly — the UI confirms first."""
 
     def __init__(self, token: str, models: list[str],
-                 provider_for: Callable[[str], ModelProvider], repeats: int = 1) -> None:
+                 provider_for: Callable[[str], ModelProvider], repeats: int = 1,
+                 results_path: Path | None = None) -> None:
         self.token = token
         self.models = models
         self.provider_for = provider_for
         self.repeats = repeats
+        self.results_path = results_path  # where to persist the summary so Models notes go live
         self.lock = threading.Lock()
         self.state: dict[str, Any] = {
             "phase": "running", "total": len(models) * len(_BENCH_GOALS) * repeats,
@@ -262,14 +264,29 @@ class BenchSession:
                         with self.lock:
                             self.state["cells"].append(cell)
                             self.state["done"] += 1
+            summary = _bench_aggregate(self.state["cells"])
             with self.lock:
-                self.state["summary"] = _bench_aggregate(self.state["cells"])
+                self.state["summary"] = summary
                 self.state["current"] = None
                 self.state["phase"] = "done"
+            self._persist(summary)
         except Exception as exc:  # defensive — a cell already catches its own errors
             with self.lock:
                 self.state["error"] = f"{type(exc).__name__}: {exc}"
                 self.state["phase"] = "done"
+
+    def _persist(self, summary: list[dict[str, Any]]) -> None:
+        """Write the latest per-model results so the Models tab can show measured (not just stated)
+        capability. Keyed by model; the freshest run wins."""
+        if self.results_path is None:
+            return
+        try:
+            by_model = {r["model"]: r for r in summary}
+            payload = {"at": datetime.now(timezone.utc).isoformat(), "models": by_model}
+            self.results_path.parent.mkdir(parents=True, exist_ok=True)
+            self.results_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except OSError:
+            pass
 
 
 _VOICES_CACHE: list[dict[str, str]] | None = None
@@ -684,9 +701,18 @@ def create_app(
 
     @app.get("/api/models")
     def list_models() -> list[dict[str, Any]]:
+        # measured results from the last Labs benchmark, if any (the notes go from stated -> proven)
+        bench: dict[str, Any] = {}
+        bench_path = base / "bench_latest.json"
+        if bench_path.exists():
+            try:
+                bench = json.loads(bench_path.read_text(encoding="utf-8")).get("models", {})
+            except (OSError, ValueError):
+                bench = {}
         return [
             {"name": k, "label": v["label"], "cost": v["cost"], "kind": v["kind"],
-             "note": MODEL_NOTES.get(k, ""), "recommended": k == DEFAULT_MODEL}
+             "note": MODEL_NOTES.get(k, ""), "recommended": k == DEFAULT_MODEL,
+             "bench": bench.get(k)}
             for k, v in MODELS.items()
         ]
 
@@ -851,7 +877,8 @@ def create_app(
         models = [m for m in req.models if m in MODELS] or [DEFAULT_MODEL]
         token = uuid4().hex
         sess = BenchSession(token, models, lambda m: injected_provider or _provider_for(m),
-                            repeats=max(1, min(req.repeats, 3)))
+                            repeats=max(1, min(req.repeats, 3)),
+                            results_path=base / "bench_latest.json")
         bench_sessions[token] = sess
         sess.start()
         return {"token": token}
