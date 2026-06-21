@@ -13,9 +13,12 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any, TypedDict
 from uuid import uuid4
 
@@ -43,6 +46,7 @@ from orgs.production_studio.taste import (
     build_create_production,
 )
 from orgs.registry import REGISTRY, get_org
+from orgs.software_studio.builder import build as build_software
 from orgs.web_studio.aesthetics import aesthetic_gates
 from orgs.web_studio.browser import RenderResult
 from orgs.web_studio.create import Review, build_create_page
@@ -176,6 +180,96 @@ def _keyword_route(request: str) -> str:
         if any(k in r for k in kws):
             return org
     return "software"
+
+
+# --- Labs benchmark: measure which model clears which work (feeds the Models tab's notes) ---
+
+class BenchRequest(BaseModel):
+    models: list[str] = []
+    repeats: int = 1
+
+
+# A few quick function-shape goals — same build for every model, so the comparison is fair + fast.
+_BENCH_GOALS: list[tuple[str, str]] = [
+    ("double", "a function that returns a number doubled"),
+    ("clamp", "a function that clamps a number to a [lo, hi] range"),
+    ("reverse", "a function that reverses a string"),
+]
+
+
+def _bench_aggregate(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Per model: accepted-rate, mean wall-clock, mean retries — the benchmark verdict."""
+    by_model: dict[str, list[dict[str, Any]]] = {}
+    for c in cells:
+        by_model.setdefault(c["model"], []).append(c)
+    out: list[dict[str, Any]] = []
+    for model, cs in by_model.items():
+        n = len(cs)
+        out.append({
+            "model": model, "n": n,
+            "accepted_rate": round(sum(1 for c in cs if c["accepted"]) / n * 100) if n else 0,
+            "mean_time": round(sum(c["time"] for c in cs) / n, 1) if n else 0.0,
+            "mean_retries": round(sum(c["retries"] for c in cs) / n, 1) if n else 0.0,
+        })
+    return out
+
+
+class BenchSession:
+    """Runs a models x goals matrix in the background (each build isolated, no cross-run learning),
+    streaming per-cell progress. Long-running and (for cloud models) costly — the UI confirms first."""
+
+    def __init__(self, token: str, models: list[str],
+                 provider_for: Callable[[str], ModelProvider], repeats: int = 1) -> None:
+        self.token = token
+        self.models = models
+        self.provider_for = provider_for
+        self.repeats = repeats
+        self.lock = threading.Lock()
+        self.state: dict[str, Any] = {
+            "phase": "running", "total": len(models) * len(_BENCH_GOALS) * repeats,
+            "done": 0, "current": None, "cells": [], "summary": None, "error": None,
+        }
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            s = dict(self.state)
+            s["cells"] = list(self.state["cells"])
+            return s
+
+    def _cell(self, model: str, label: str, goal: str) -> dict[str, Any]:
+        mem = MemoryStore(Path(tempfile.mkdtemp(prefix="veritas_bench_")))
+        t0 = time.perf_counter()
+        try:
+            res = build_software(goal, self.provider_for(model), mem, shape="function")
+            retries = len([e for e in res.activity if e.actor == "retry"])
+            return {"model": model, "goal": label, "accepted": res.accepted,
+                    "retries": retries, "time": round(time.perf_counter() - t0, 1)}
+        except Exception as exc:
+            return {"model": model, "goal": label, "accepted": False, "retries": 0,
+                    "time": round(time.perf_counter() - t0, 1), "error": f"{type(exc).__name__}"}
+
+    def _run(self) -> None:
+        try:
+            for model in self.models:
+                for label, goal in _BENCH_GOALS:
+                    for _ in range(self.repeats):
+                        with self.lock:
+                            self.state["current"] = f"{model} · {label}"
+                        cell = self._cell(model, label, goal)
+                        with self.lock:
+                            self.state["cells"].append(cell)
+                            self.state["done"] += 1
+            with self.lock:
+                self.state["summary"] = _bench_aggregate(self.state["cells"])
+                self.state["current"] = None
+                self.state["phase"] = "done"
+        except Exception as exc:  # defensive — a cell already catches its own errors
+            with self.lock:
+                self.state["error"] = f"{type(exc).__name__}: {exc}"
+                self.state["phase"] = "done"
 
 
 _VOICES_CACHE: list[dict[str, str]] | None = None
@@ -749,6 +843,23 @@ def create_app(
             return {"error": "unknown produce session"}
         sess.provide_review(body.approved, body.feedback)
         return {"ok": True}
+
+    bench_sessions: dict[str, BenchSession] = {}
+
+    @app.post("/api/bench/start")
+    def bench_start(req: BenchRequest) -> dict[str, str]:
+        models = [m for m in req.models if m in MODELS] or [DEFAULT_MODEL]
+        token = uuid4().hex
+        sess = BenchSession(token, models, lambda m: injected_provider or _provider_for(m),
+                            repeats=max(1, min(req.repeats, 3)))
+        bench_sessions[token] = sess
+        sess.start()
+        return {"token": token}
+
+    @app.get("/api/bench/{token}")
+    def bench_state(token: str) -> dict[str, Any]:
+        sess = bench_sessions.get(token)
+        return sess.snapshot() if sess else {"error": "unknown bench session"}
 
     @app.get("/api/profile/production")
     def production_profile() -> dict[str, Any]:

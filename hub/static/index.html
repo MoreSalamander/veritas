@@ -206,6 +206,7 @@
     <a data-view="orgview">Organization</a>
     <a data-view="runs">Runs</a>
     <a data-view="create">Create</a>
+    <a data-view="labs">Labs</a>
     <a data-view="memory">Memory</a>
     <a data-view="models">Models</a>
   </nav>
@@ -310,6 +311,20 @@
 
   <section id="memory" class="hidden"><h1>Institutional Memory</h1><div id="memfilters" class="filters"></div><div id="memlist" class="grid2"></div></section>
 
+  <section id="labs" class="hidden">
+    <h1>Labs</h1>
+    <div class="muted" style="margin:-12px 0 16px;max-width:700px">Products built on the engines, and the bench that measures them.</div>
+    <h2>Products</h2>
+    <div id="labsproducts" class="grid2"></div>
+    <h2>Benchmark</h2>
+    <div class="panel">
+      <div class="muted" style="font-size:13px">Run a quick function matrix to see which model reliably clears the work. Local models are free (but it takes a few minutes); cloud models cost a few cents per build.</div>
+      <div id="benchmodels" style="display:flex;flex-wrap:wrap;gap:14px;margin-top:12px"></div>
+      <div class="row" style="margin-top:12px"><button id="benchgo">Run benchmark</button><span class="muted" id="benchest" style="font-size:12px"></span></div>
+    </div>
+    <div id="benchresult"></div>
+  </section>
+
   <section id="models" class="hidden">
     <h1>Models</h1>
     <div class="muted" style="margin:-12px 0 16px;max-width:700px">Which model proposes. Reliability comes from the gates regardless — so this is only about which model reliably <em>clears</em> which work. Notes are from the project's own benchmarks.</div>
@@ -326,8 +341,9 @@ const isHard = g => g.determinism !== 'soft';
 document.querySelectorAll('nav a').forEach(a => a.onclick = () => {
   document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
   a.classList.add('active');
-  ['home','dashboard','orgview','runs','create','memory','models'].forEach(v => $('#'+v).classList.toggle('hidden', v !== a.dataset.view));
+  ['home','dashboard','orgview','runs','create','labs','memory','models'].forEach(v => $('#'+v).classList.toggle('hidden', v !== a.dataset.view));
   if (a.dataset.view === 'home') loadHome();
+  if (a.dataset.view === 'labs') loadLabs();
   if (a.dataset.view === 'models') loadModelsView();
   if (a.dataset.view === 'runs') loadRuns();
   if (a.dataset.view === 'memory') loadMemory();
@@ -1119,15 +1135,77 @@ const VERIFY_TAG = {
 };
 let LAST_ROUTE = null;
 
-async function loadHome() {
-  if (!ORGS.length) ORGS = await api('/api/orgs');
-  const card = o => `<div class="panel orgcard" onclick="goToOrg('${esc(o.name)}')" style="cursor:pointer;margin:0">
+function orgCard(o) {
+  return `<div class="panel orgcard" onclick="goToOrg('${esc(o.name)}')" style="cursor:pointer;margin:0">
       <div style="font-weight:600;font-size:14px;margin-bottom:3px">${esc(o.title.replace(' (preset)', ''))}</div>
       <div class="muted" style="font-size:12px;line-height:1.5">${esc(o.produces)}</div>
       <div style="margin-top:8px"><span class="proftag" style="color:var(--green);border-color:rgba(52,211,153,.3)">verified by ${esc(VERIFY_TAG[o.name] || 'gates')}</span></div>
     </div>`;
-  $('#enginedir').innerHTML = HOME_ENGINES.map(n => ORGS.find(o => o.name === n)).filter(Boolean).map(card).join('');
-  $('#labsdir').innerHTML = ORGS.filter(o => !HOME_ENGINES.includes(o.name)).map(card).join('');
+}
+
+async function loadHome() {
+  if (!ORGS.length) ORGS = await api('/api/orgs');
+  $('#enginedir').innerHTML = HOME_ENGINES.map(n => ORGS.find(o => o.name === n)).filter(Boolean).map(orgCard).join('');
+  $('#labsdir').innerHTML = ORGS.filter(o => !HOME_ENGINES.includes(o.name)).map(orgCard).join('');
+}
+
+async function loadLabs() {
+  if (!ORGS.length) ORGS = await api('/api/orgs');
+  $('#labsproducts').innerHTML = ORGS.filter(o => !HOME_ENGINES.includes(o.name)).map(orgCard).join('');
+  const models = await api('/api/models');
+  $('#benchmodels').innerHTML = models.map(m =>
+    `<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--dim)"><input type="checkbox" class="benchm" value="${esc(m.name)}" ${m.kind === 'ollama' ? 'checked' : ''}> ${esc(m.label)}${m.kind === 'claude' ? ' <span style="color:var(--amber)">($)</span>' : ''}</label>`).join('');
+  $('#benchmodels').onchange = updateBenchEst;
+  updateBenchEst();
+}
+
+function updateBenchEst() {
+  const n = document.querySelectorAll('.benchm:checked').length;
+  $('#benchest').textContent = n ? `${n * 3} builds — ${n} model(s) × 3 function goals` : 'pick at least one model';
+}
+
+function renderBench(s) {
+  const pct = s.total ? Math.round(s.done / s.total * 100) : 0;
+  let html = `<div class="panel"><div class="row" style="justify-content:space-between">
+      <span>${s.phase === 'done' ? 'Benchmark complete' : 'Running…'}${s.current ? ' · <span class="mono">' + esc(s.current) + '</span>' : ''}</span>
+      <span class="mono muted">${s.done}/${s.total}</span></div>
+      <div class="bartrack" style="margin-top:8px"><span class="barfill" style="width:${pct}%"></span></div>`;
+  if (s.summary && s.summary.length) {
+    html += `<div class="subh">Results — accepted-rate · mean wall-clock · mean retries</div>
+      <table style="width:100%;font-family:var(--mono);font-size:12.5px;border-collapse:collapse">
+      <tr style="color:var(--dim);text-align:left"><th>model</th><th>accepted</th><th>time</th><th>retries</th></tr>` +
+      s.summary.map(r => `<tr><td style="padding:3px 0">${esc(r.model)}</td>
+        <td class="${r.accepted_rate >= 67 ? 'pass' : (r.accepted_rate > 0 ? 'soft' : 'fail')}">${r.accepted_rate}%</td>
+        <td>${r.mean_time}s</td><td>${r.mean_retries}</td></tr>`).join('') +
+      `</table><div class="muted" style="margin-top:8px;font-size:11px">accepted = cleared every hard gate — the only "done" that counts.</div>`;
+  }
+  $('#benchresult').innerHTML = html + `</div>`;
+}
+
+async function pollBench(token) {
+  while (true) {
+    let s;
+    try { s = await api('/api/bench/' + token); } catch (e) { await sleep(900); continue; }
+    if (s.error) { $('#benchresult').innerHTML = `<div class="panel"><span class="fail">${esc(s.error)}</span></div>`; break; }
+    renderBench(s);
+    if (s.phase === 'done') { $('#benchgo').disabled = false; break; }
+    await sleep(700);
+  }
+}
+
+async function runBench() {
+  const models = [...document.querySelectorAll('.benchm:checked')].map(c => c.value);
+  if (!models.length) return;
+  const builds = models.length * 3;
+  const hasCloud = models.some(m => ['haiku', 'sonnet', 'opus'].includes(m));
+  const warn = hasCloud ? '\n\nIncludes cloud models — this will cost a few cents per build.'
+    : '\n\nLocal only (free), but it can take a few minutes.';
+  if (!confirm(`Run the benchmark: ${builds} builds (${models.length} model(s) × 3 function goals)?` + warn)) return;
+  $('#benchgo').disabled = true;
+  $('#benchresult').innerHTML = `<div class="panel muted"><span class="livedot"></span> starting…</div>`;
+  const start = await api('/api/bench/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({models, repeats: 1}) });
+  if (!start.token) { $('#benchresult').innerHTML = `<div class="panel"><span class="fail">could not start</span></div>`; $('#benchgo').disabled = false; return; }
+  pollBench(start.token);
 }
 
 function goToOrg(org, goal) {
@@ -1163,6 +1241,7 @@ async function askRoute() {
 
 $('#askgo').onclick = askRoute;
 $('#askbox').onkeydown = e => { if (e.key === 'Enter') askRoute(); };
+$('#benchgo').onclick = runBench;
 
 loadOrgs();
 loadModels();
