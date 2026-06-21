@@ -65,6 +65,7 @@
   .tarrow { color: #3a4a5a; }
   .orgcard { transition: border-color .12s; }
   .orgcard:hover { border-color: var(--cyan); }
+  .navlabel { font-size: 9.5px; letter-spacing: .5px; text-transform: uppercase; color: #5f6f82; margin: 12px 8px 4px; }
   pre.code { background: #0c1119; border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px;
              overflow-x: auto; font-family: var(--mono); font-size: 12px; color: var(--ink);
              white-space: pre; margin: 0; line-height: 1.5; }
@@ -202,12 +203,14 @@
   <div class="tagline">The model proposes. The gates decide.</div>
   <nav>
     <a data-view="home" class="active">Home</a>
-    <a data-view="dashboard">Mission Control</a>
-    <a data-view="orgview">Organization</a>
-    <a data-view="runs">Runs</a>
-    <a data-view="create">Create</a>
+    <div class="navlabel">Engines</div>
+    <a data-view="studio" data-org="software">Software</a>
+    <a data-view="studio" data-org="web">Web</a>
+    <a data-view="studio" data-org="research">Research</a>
+    <a data-view="studio" data-org="production">Production</a>
+    <a data-view="studio" data-org="empirical">Empirical</a>
+    <div class="navlabel">&nbsp;</div>
     <a data-view="labs">Labs</a>
-    <a data-view="memory">Memory</a>
     <a data-view="models">Models</a>
   </nav>
 </aside>
@@ -226,6 +229,8 @@
     <h2>Labs — products built on the engines</h2>
     <div id="labsdir" class="grid2"></div>
   </section>
+
+  <section id="studio" class="hidden"></section>
 
   <section id="dashboard" class="hidden">
     <h1>Mission Control</h1>
@@ -341,15 +346,12 @@ const isHard = g => g.determinism !== 'soft';
 document.querySelectorAll('nav a').forEach(a => a.onclick = () => {
   document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
   a.classList.add('active');
-  ['home','dashboard','orgview','runs','create','labs','memory','models'].forEach(v => $('#'+v).classList.toggle('hidden', v !== a.dataset.view));
-  if (a.dataset.view === 'home') loadHome();
-  if (a.dataset.view === 'labs') loadLabs();
-  if (a.dataset.view === 'models') loadModelsView();
-  if (a.dataset.view === 'runs') loadRuns();
-  if (a.dataset.view === 'memory') loadMemory();
-  if (a.dataset.view === 'dashboard') loadDash();
-  if (a.dataset.view === 'orgview') loadOrg();
-  if (a.dataset.view === 'create') initCreate();
+  const view = a.dataset.view;
+  ['home','studio','labs','models','dashboard','orgview','runs','create','memory'].forEach(v => $('#'+v).classList.toggle('hidden', v !== view));
+  if (view === 'home') loadHome();
+  if (view === 'studio') loadStudio(a.dataset.org);
+  if (view === 'labs') loadLabs();
+  if (view === 'models') loadModelsView();
 });
 
 // A gate row that makes the hard/soft split visceral: HARD gates are filled and tinted
@@ -422,7 +424,7 @@ async function loadModels() {
 function applyDefaultModel() {
   const d = localStorage.getItem('veritas_model');
   if (!d) return;
-  ['#model', '#cmodel', '#pmodel'].forEach(sel => {
+  ['#model', '#cmodel', '#pmodel', '#studiomodel'].forEach(sel => {
     const el = $(sel);
     if (el && [...el.options].some(o => o.value === d)) el.value = d;
   });
@@ -1208,12 +1210,108 @@ async function runBench() {
   pollBench(start.token);
 }
 
+// Open an org's Studio (any org — engines have a nav tab; presets open the same Studio view).
 function goToOrg(org, goal) {
-  if ([...$('#org').options].some(o => o.value === org)) $('#org').value = org;
-  if (goal !== undefined) $('#goal').value = goal || '';
-  syncHint();
-  document.querySelector('nav a[data-view="dashboard"]').click();
-  $('#goal').focus();
+  document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+  ['home','labs','models','dashboard','orgview','runs','create','memory'].forEach(v => $('#'+v).classList.add('hidden'));
+  $('#studio').classList.remove('hidden');
+  const tab = document.querySelector(`nav a[data-org="${org}"]`);
+  if (tab) tab.classList.add('active');
+  loadStudio(org).then(() => {
+    if (goal !== undefined && $('#studiogoal')) { $('#studiogoal').value = goal || ''; $('#studiogoal').focus(); }
+  });
+}
+
+let STUDIO_MODELS = null;
+async function loadStudio(org) {
+  const meta = (ORGS.find(o => o.name === org)) || {name: org, title: org, produces: '', goal_hint: '', needs_sources: false};
+  const roster = await getRoster(org);
+  if (!STUDIO_MODELS) STUDIO_MODELS = await api('/api/models');
+  const opts = STUDIO_MODELS.map(m => `<option value="${esc(m.name)}">${esc(m.label)} · ${esc(m.cost)}</option>`).join('');
+  const createBtn = (org === 'web' || org === 'production')
+    ? `<button class="ghost" onclick="openCreateFor('${esc(org)}')">Create mode — you approve</button>` : '';
+  const sources = meta.needs_sources
+    ? `<textarea id="studiosources" style="width:100%;margin-top:10px;min-height:80px;background:#0c1119;border:1px solid var(--line);color:var(--ink);padding:10px;border-radius:10px;font-family:var(--mono);font-size:13px" placeholder="Paste your sources — the report can only cite these. Separate with a line of just ---"></textarea>` : '';
+  $('#studio').innerHTML = `
+    <h1>${esc(meta.title.replace(' (preset)', ''))}</h1>
+    <div class="muted" style="margin:-12px 0 16px">${esc(meta.produces)} · <span style="color:var(--green)">verified by ${esc(VERIFY_TAG[org] || 'its gates')}</span></div>
+    <div class="panel">
+      <div class="row">
+        <select id="studiomodel">${opts}</select>
+        <input type="text" id="studiogoal" placeholder="${esc(meta.goal_hint || 'a goal…')}" />
+        <button id="studiorun">Run</button>${createBtn}
+      </div>${sources}
+      <div class="muted" style="margin-top:10px">The model proposes; the deterministic gates decide — watch the cast and gates light up below.</div>
+    </div>
+    <div id="studiotrace" style="margin-top:8px">${roster ? '<div class="panel">' + renderRunTrace([], roster) + '</div>' : ''}</div>
+    <h2>This studio's runs</h2><div id="studiorundetail"></div><div id="studioruns"></div>
+    <h2>This studio's memory</h2><div id="studiomem" class="grid2"></div>`;
+  applyDefaultModel();
+  $('#studiorun').onclick = () => runStudio(org, roster);
+  loadStudioRuns(org);
+  loadStudioMem(org);
+}
+
+async function runStudio(org, roster) {
+  const goal = $('#studiogoal').value.trim();
+  if (!goal) return;
+  let sources = [];
+  if ($('#studiosources')) sources = $('#studiosources').value.split(/^\s*---\s*$/m).map(s => s.trim()).filter(Boolean);
+  $('#studiorun').disabled = true;
+  $('#studiotrace').innerHTML = `<div class="panel"><div class="verdict running"><span class="livedot"></span> RUNNING…</div><div id="studiotl" style="margin-top:10px"></div></div>`;
+  let start;
+  try {
+    start = await api('/api/runs/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({goal, org, model: $('#studiomodel').value, sources}) });
+  } catch (e) { $('#studiotrace').innerHTML = `<div class="panel"><span class="fail">couldn't reach the hub</span></div>`; $('#studiorun').disabled = false; return; }
+  if (!start.token) { $('#studiotrace').innerHTML = `<div class="panel"><span class="fail">${esc(start.error || 'could not start')}</span></div>`; $('#studiorun').disabled = false; return; }
+  while (true) {
+    let p;
+    try { p = await api('/api/runs/progress/' + start.token); } catch (e) { await sleep(500); continue; }
+    if (p.error) { $('#studiotrace').innerHTML = `<div class="panel"><span class="fail">${esc(p.error)}</span></div>`; break; }
+    const tl = $('#studiotl');
+    if (tl) tl.innerHTML = roster ? renderRunTrace(p.events, roster) : p.events.map(timelineRow).join('');
+    if (p.done) {
+      if (p.run) {
+        $('#studiotrace').innerHTML = (roster ? '<div class="panel">' + renderRunTrace(p.run.activity, roster) + '</div>' : '') + runCard(p.run);
+        loadStudioRuns(org);
+      }
+      break;
+    }
+    await sleep(350);
+  }
+  $('#studiorun').disabled = false;
+}
+
+async function loadStudioRuns(org) {
+  const runs = (await api('/api/runs')).filter(r => r.org === org);
+  $('#studioruns').innerHTML = runs.length ? runs.slice(0, 15).map(r => {
+    const mk = r.accepted ? '✓' : '✗', cls = r.accepted ? 'pass' : 'fail';
+    return `<div class="runrow" onclick="studioRunDetail('${esc(r.id)}')"><span class="runmk ${cls}">${mk}</span><span class="pill">${esc(r.model || '')}</span><span class="rg2">${esc(r.goal)}</span><span class="runtel">${esc((r.created_at || '').slice(0, 16).replace('T', ' '))}</span></div>`;
+  }).join('') : '<div class="muted">No runs yet — run one above.</div>';
+}
+
+async function studioRunDetail(id) {
+  const r = await api('/api/runs/' + id);
+  $('#studiorundetail').innerHTML = r && r.gates ? '<h2 style="margin-top:0">Run detail</h2>' + runCard(r) : '';
+  $('#studiorundetail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function loadStudioMem(org) {
+  const mem = (await api('/api/memory')).filter(m => m.org === org);
+  $('#studiomem').innerHTML = mem.length ? mem.slice(0, 12).map(m => {
+    const reason = m.rejected_because || m.accepted_because || '';
+    return `<div class="panel"><div class="row" style="justify-content:space-between"><strong>${esc(m.title)}</strong><span class="pill">${esc(m.category)}</span></div>
+      <div class="muted mono" style="margin-top:6px">${esc(reason)}</div></div>`;
+  }).join('') : '<div class="muted">No memory yet.</div>';
+}
+
+function openCreateFor(org) {
+  ['home','studio','labs','models','dashboard','orgview','runs','memory'].forEach(v => $('#'+v).classList.add('hidden'));
+  $('#create').classList.remove('hidden');
+  document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+  document.querySelector(`nav a[data-org="${org}"]`)?.classList.add('active');
+  initCreate();
+  setCreateOrg(org === 'production' ? 'production' : 'web');
 }
 
 async function askRoute() {
