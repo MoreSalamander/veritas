@@ -451,7 +451,7 @@ class ModuleResult:
 
 
 def build_module(goal: str, provider: ModelProvider, memory: MemoryStore) -> ModuleResult:
-    run = Run(goal=goal, memory=memory)
+    run = Run(goal=goal, memory=memory, max_attempts=provider.retry_budget())
     recalled = memory.recall(goal, categories=["failure", "lesson", "decision"], limit=3)
     lessons = format_lessons(recalled)
     informed_by = [record.id for record in recalled]

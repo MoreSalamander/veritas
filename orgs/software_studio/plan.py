@@ -125,7 +125,7 @@ class PlanResult:
 
 
 def build_plan(goal: str, provider: ModelProvider, memory: MemoryStore) -> PlanResult:
-    run = Run(goal=goal, memory=memory)
+    run = Run(goal=goal, memory=memory, max_attempts=provider.retry_budget())
     recalled = memory.recall(goal, categories=["failure", "lesson"], limit=3)
     lessons = format_lessons(recalled)
     informed_by = [record.id for record in recalled]

@@ -75,12 +75,16 @@ class Outcome:
 
 
 class Run:
-    def __init__(self, goal: str, memory: MemoryStore, run_id: str | None = None) -> None:
+    def __init__(self, goal: str, memory: MemoryStore, run_id: str | None = None,
+                 max_attempts: int = 3) -> None:
         self.goal = goal
         self.memory = memory
         self.id = run_id or _new_id("run")
         self.log: list[ActivityEntry] = []
         self.phase: Phase = Phase.EXPLAIN
+        # The default retry budget for attempt() — set from the provider so a thinking model
+        # caps lower (its retries are slow and rarely pay off). attempt() can still override.
+        self.max_attempts = max_attempts
 
     def _activity(self, phase: Phase, actor: str, message: str, duration_ms: float = 0.0) -> None:
         self.phase = phase
@@ -153,17 +157,19 @@ class Run:
         self,
         propose: Callable[[str | None], Artifact],
         gates: Sequence[Gate],
-        max_attempts: int = 3,
+        max_attempts: int | None = None,
     ) -> Outcome:
         """The retry loop: propose, gate, and on rejection re-propose with the failing
-        gates' evidence as feedback — up to max_attempts. Lets the org fix its own work
-        instead of dying on the first miss. If no attempt fully passes, returns the best
-        one (most hard gates passed). The feedback drives the *implementation* to fix
-        itself; the verification criteria are never weakened to force a pass."""
+        gates' evidence as feedback — up to max_attempts (defaults to the Run's budget, which
+        a thinking model caps lower). Lets the org fix its own work instead of dying on the
+        first miss. If no attempt fully passes, returns the best one (most hard gates passed).
+        The feedback drives the *implementation* to fix itself; the verification criteria are
+        never weakened to force a pass."""
+        limit = max_attempts if max_attempts is not None else self.max_attempts
         feedback: str | None = None
         best: Outcome | None = None
         best_score = -1
-        for n in range(1, max_attempts + 1):
+        for n in range(1, limit + 1):
             outcome = self.submit(propose(feedback), gates)
             if outcome.accepted:
                 if n > 1:
@@ -175,7 +181,7 @@ class Run:
             if score > best_score:
                 best_score, best = score, outcome
             feedback = self._feedback(outcome)
-            if n < max_attempts:
+            if n < limit:
                 self._activity(
                     Phase.SYNTHESIZE, "retry",
                     f"attempt {n} rejected ({score} hard gates passed) — re-proposing with feedback",

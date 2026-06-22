@@ -104,6 +104,39 @@ class _RecordingProvider(ScriptedProvider):
         return self
 
 
+def test_retry_budget_caps_thinking_lower():
+    # off-thinking keeps the full budget (cheap, useful retries); thinking caps to 2 (slow,
+    # rarely-paying retries). Cloud / scripted providers use the default.
+    assert OllamaProvider(model="gemma4:12b", think=False).retry_budget() == 3
+    assert OllamaProvider(model="gemma4:12b", think=True).retry_budget() == 2
+    assert ScriptedProvider({}).retry_budget() == 3
+
+
+def test_run_honours_its_max_attempts_budget(tmp_path):
+    # a Run built with a capped budget stops retrying at that limit (proves the budget flows from
+    # the provider into the loop). An always-failing hard gate exhausts the cap.
+    from engine.artifact import Artifact, Determinism, GateResult
+    from engine.gate import Gate
+    from engine.run import Run
+
+    class AlwaysFail(Gate):
+        name = "always-fail"
+        determinism = Determinism.HARD
+
+        def check(self, artifact: Artifact) -> GateResult:
+            return self._result(False, "no")
+
+    run = Run(goal="g", memory=MemoryStore(tmp_path), max_attempts=2)
+    attempts = {"n": 0}
+
+    def propose(_fb):
+        attempts["n"] += 1
+        return Artifact.propose(type="code", owner="dev", payload="x", rationale="t")
+
+    run.attempt(propose, [AlwaysFail()])
+    assert attempts["n"] == 2  # capped at the Run's budget, not the default 3
+
+
 def test_build_retunes_provider_for_the_routed_shape(tmp_path):
     mod = _RecordingProvider({"router": "module", "architect": CONTRACT, "pm": PM, "developer": MODULE})
     build("a temperature module", mod, MemoryStore(tmp_path))

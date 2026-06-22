@@ -49,7 +49,7 @@ class StudioResult:
 
 def build_function(goal: str, provider: ModelProvider, memory: MemoryStore) -> StudioResult:
     """Phase 1 pipeline: goal -> spec -> code, with the core hard gates only."""
-    run = Run(goal=goal, memory=memory)
+    run = Run(goal=goal, memory=memory, max_attempts=provider.retry_budget())
 
     spec_outcome = run.attempt(
         lambda fb: SpecAgent(provider).propose(goal, feedback=fb), [SpecScorerGate()]
@@ -79,7 +79,7 @@ def build_function_in(
     oracle-free properties); only the developer's prompt and the gate harnesses change with
     the Language. Same spine as build_function — proof the org's verification model is one
     model, many languages."""
-    run = Run(goal=goal, memory=memory)
+    run = Run(goal=goal, memory=memory, max_attempts=provider.retry_budget())
 
     spec_outcome = run.attempt(
         lambda fb: SpecAgent(provider).propose(goal, feedback=fb), [SpecScorerGate()]
@@ -126,7 +126,7 @@ def build_software(
     Before proposing anything, the org recalls its own relevant failures and lessons
     and feeds them to the proposers — so it stops repeating its own mistakes. What
     was recalled is stamped into each artifact's provenance (informed_by)."""
-    run = Run(goal=goal, memory=memory)
+    run = Run(goal=goal, memory=memory, max_attempts=provider.retry_budget())
 
     # The org reads its own memory first.
     recalled = memory.recall(goal, categories=["failure", "lesson", "decision"], limit=3)

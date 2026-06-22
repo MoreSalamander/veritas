@@ -40,6 +40,14 @@ class ModelProvider(ABC):
         shapes — a clean, measured win (see OllamaProvider.for_shape)."""
         return self
 
+    def retry_budget(self, default: int = 3) -> int:
+        """How many attempts the retry loop should allow. Default: the standard 3. A reasoning
+        model running with THINKING on overrides this DOWN — a careful think-then-answer that
+        fails twice rarely flips on a third, and each thinking retry is the most expensive op in
+        the system. Capping bounds worst-case latency (one bench codec build spiraled to 1191s /
+        4 retries) WITHOUT lowering accept-rate (a doomed build fails either way, just sooner)."""
+        return default
+
 
 class OllamaProvider(ModelProvider):
     """Local-model backend for development. Talks to Ollama's HTTP API.
@@ -113,6 +121,12 @@ class OllamaProvider(ModelProvider):
             model=self.model, host=self.host, temperature=self.temperature,
             timeout=600.0 if want_think else 120.0, think=want_think,
         )
+
+    def retry_budget(self, default: int = 3) -> int:
+        # Thinking already does the reasoning up front; a 3rd expensive thinking retry rarely
+        # converts a fail, so cap to 2 when thinking. Off-thinking keeps the full budget (those
+        # retries are cheap AND genuinely useful — the involution/clamp self-corrections).
+        return 2 if self.think else default
 
 
 class ClaudeProvider(ModelProvider):
