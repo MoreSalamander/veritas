@@ -45,7 +45,8 @@ from orgs.production_studio.taste import (
     Review as ProdReview,
     build_create_production,
 )
-from orgs.registry import REGISTRY, get_org
+from orgs.planning import StepResult, execute_plan, gate_plan, propose_plan
+from orgs.registry import REGISTRY, OrgRun, get_org
 from orgs.software_studio.builder import build as build_software
 from orgs.web_studio.aesthetics import aesthetic_gates
 from orgs.web_studio.browser import RenderResult
@@ -156,6 +157,11 @@ class ProduceRequest(BaseModel):
 
 
 class RouteRequest(BaseModel):
+    request: str
+    model: str = DEFAULT_MODEL
+
+
+class PlanStartRequest(BaseModel):
     request: str
     model: str = DEFAULT_MODEL
 
@@ -598,6 +604,84 @@ class ProductionCreateSession:
             set_activity_listener(None)
 
 
+class PlanSession:
+    """The Plan tab — cross-org planning over HTTP. A daemon thread proposes a runnable plan
+    (gate-checked, self-correcting), then blocks on the human (review Event): approve runs the
+    plan step-by-step through each org's gates; refine folds feedback in and re-plans. Mirrors the
+    create/produce sessions — same turn-based-web-conversation-with-zero-engine-forking discipline."""
+
+    def __init__(self, token: str, request: str, model: str, provider: ModelProvider,
+                 memory_for: Callable[[str], MemoryStore],
+                 record_run: Callable[[OrgRun, str], dict[str, Any]]) -> None:
+        self.token = token
+        self.request = request
+        self.model = model
+        self.provider = provider
+        self.memory_for = memory_for
+        self.record_run = record_run
+        self.lock = threading.Lock()
+        self.state: dict[str, Any] = {
+            "phase": "planning",  # planning | reviewing | executing | done
+            "request": request, "model": model,
+            "plan": [], "runnable": False, "gate": "",
+            "events": [], "steps": [], "accepted": None, "error": None,
+        }
+        self._review = threading.Event()
+        self._review_val: tuple[bool, str] = (False, "")
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            return dict(self.state)
+
+    def provide_review(self, approved: bool, feedback: str) -> None:
+        self._review_val = (approved, feedback)
+        self._review.set()
+
+    def _set(self, **fields: Any) -> None:
+        with self.lock:
+            self.state.update(fields)
+
+    def _on_step(self, _index: int, sr: StepResult) -> None:
+        run_dict = self.record_run(sr.run, self.model)  # summarize + save → shows in that studio too
+        with self.lock:
+            self.state["steps"].append(
+                {"org": sr.org, "goal": sr.goal, "accepted": sr.accepted, "run": run_dict}
+            )
+
+    def _run(self) -> None:
+        try:
+            while True:
+                self._set(phase="planning")
+                plan = propose_plan(self.request, self.provider)
+                runnable, evidence = gate_plan(plan)
+                self._set(phase="reviewing",
+                          plan=[{"org": s.org, "goal": s.goal} for s in plan.steps],
+                          runnable=runnable, gate=evidence)
+                self._review.wait()
+                self._review.clear()
+                approved, feedback = self._review_val
+                if not approved:  # refine: fold the human's words in and re-plan
+                    if feedback:
+                        self.request = f"{self.request}\n\nRevision requested: {feedback}"
+                    continue
+                if not runnable:  # can't execute a plan the gate refused
+                    self._set(phase="done", accepted=False)
+                    return
+                # approved + runnable → execute the chain, streaming each org's activity
+                self._set(phase="executing", steps=[], events=[])
+                set_activity_listener(lambda e: self.state["events"].append(_event(e)))
+                result = execute_plan(plan, self.provider, self.memory_for, on_step=self._on_step)
+                self._set(phase="done", accepted=result.accepted)
+                return
+        except Exception as exc:  # model error, missing key, an org pipeline blowing up
+            self._set(phase="done", error=f"{type(exc).__name__}: {exc}")
+        finally:
+            set_activity_listener(None)
+
+
 def create_app(
     data_dir: Path | None = None, provider: ModelProvider | None = None
 ) -> FastAPI:
@@ -621,6 +705,13 @@ def create_app(
     # Create-mode sessions (the interview/build conversation), keyed by token.
     create_sessions: dict[str, CreateSession] = {}
     produce_sessions: dict[str, ProductionCreateSession] = {}
+    plan_sessions: dict[str, PlanSession] = {}
+
+    def _record_run(org_run: OrgRun, model: str) -> dict[str, Any]:
+        # Persist a plan step's run like any other, so it also shows up in that studio's history.
+        summary = summarize(org_run, datetime.now(timezone.utc).isoformat(), model=model)
+        runs.save(summary)
+        return runs.get(summary.id) or {}
 
     def web_profile_store() -> ProfileStore:
         return ProfileStore(base / "profiles" / "web.json")
@@ -903,6 +994,30 @@ def create_app(
         sess = produce_sessions.get(token)
         if sess is None:
             return {"error": "unknown produce session"}
+        sess.provide_review(body.approved, body.feedback)
+        return {"ok": True}
+
+    # --- Plan: cross-org planning. Propose a runnable plan → human confirms → execute the chain. ---
+
+    @app.post("/api/plan/start")
+    def plan_start(req: PlanStartRequest) -> dict[str, str]:
+        token = uuid4().hex
+        prov = injected_provider or _provider_for(req.model)
+        sess = PlanSession(token, req.request, req.model, prov, org_memory, _record_run)
+        plan_sessions[token] = sess
+        sess.start()
+        return {"token": token}
+
+    @app.get("/api/plan/{token}")
+    def plan_state(token: str) -> dict[str, Any]:
+        sess = plan_sessions.get(token)
+        return sess.snapshot() if sess else {"error": "unknown plan session"}
+
+    @app.post("/api/plan/{token}/review")
+    def plan_review(token: str, body: ReviewBody) -> dict[str, Any]:
+        sess = plan_sessions.get(token)
+        if sess is None:
+            return {"error": "unknown plan session"}
         sess.provide_review(body.approved, body.feedback)
         return {"ok": True}
 

@@ -213,6 +213,7 @@
   <div class="tagline">The model proposes. The gates decide.</div>
   <nav>
     <a data-view="home" class="active">Home</a>
+    <a data-view="plan">Plan</a>
     <div class="navlabel">Engines</div>
     <a data-view="studio" data-org="software">Software</a>
     <a data-view="studio" data-org="web">Web</a>
@@ -323,6 +324,20 @@
     <div id="modellist" style="display:grid;gap:10px"></div>
   </section>
 
+  <section id="plan" class="hidden">
+    <h1>Plan</h1>
+    <div class="muted" style="margin:-12px 0 16px;max-width:720px">Describe something bigger than one studio. The planner proposes an ordered plan <em>across the engines</em>; a deterministic gate checks it's runnable; you confirm; then each step ships through its own gates. The plan ships iff every step ships — the interview, one level up.</div>
+    <div class="panel" id="planstart">
+      <div class="row">
+        <select id="planmodel" title="local is free; Claude models cost a few cents"></select>
+        <input type="text" id="planreq" placeholder="e.g. a researched landing page for a coffee startup" />
+        <button id="plango">Plan it</button>
+      </div>
+      <div class="muted" style="margin-top:10px">The model proposes the plan; the gate decides if it's runnable; you approve before anything runs.</div>
+    </div>
+    <div id="planstatus"></div>
+  </section>
+
   <section id="chat" class="hidden">
     <h1>Chat</h1>
     <div class="ungoverned">⚠ Ungrounded · Unverified · No memory. This is the model's word alone — nothing said here passes a gate, is grounded in a source, or is saved. It's here on purpose: it's what every other studio would be <em>without</em> the scaffold. Trust accordingly.</div>
@@ -353,8 +368,9 @@ document.querySelectorAll('nav a[data-view]').forEach(a => a.onclick = () => {
   document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
   a.classList.add('active');
   const view = a.dataset.view;
-  ['home','studio','labs','models','create','chat'].forEach(v => $('#'+v).classList.toggle('hidden', v !== view));
+  ['home','plan','studio','labs','models','create','chat'].forEach(v => $('#'+v).classList.toggle('hidden', v !== view));
   if (view === 'home') loadHome();
+  if (view === 'plan') loadPlan();
   if (view === 'studio') loadStudio(a.dataset.org);
   if (view === 'labs') loadLabs();
   if (view === 'models') loadModelsView();
@@ -424,7 +440,7 @@ async function loadOrgs() {
 function applyDefaultModel() {
   const d = localStorage.getItem('veritas_model');
   if (!d) return;
-  ['#model', '#cmodel', '#pmodel', '#studiomodel', '#chatmodel'].forEach(sel => {
+  ['#model', '#cmodel', '#pmodel', '#studiomodel', '#chatmodel', '#planmodel'].forEach(sel => {
     const el = $(sel);
     if (el && [...el.options].some(o => o.value === d)) el.value = d;
   });
@@ -1147,6 +1163,87 @@ async function sendChat() {
 $('#chatgo').onclick = sendChat;
 $('#chatbox').onkeydown = e => { if (e.key === 'Enter') sendChat(); };
 $('#chatclear').onclick = () => { CHAT = []; renderChat(); };
+
+// --- Plan: cross-org planning. The planner proposes; a gate checks runnability; you confirm;
+// then each step ships through its own org's gates. The plan ships iff every step ships. ---
+let PLAN = { token: null, sig: null };
+async function loadPlan() {
+  if (!$('#planmodel').options.length) {
+    const models = await api('/api/models');
+    $('#planmodel').innerHTML = models.map(m => `<option value="${esc(m.name)}">${esc(m.label)} · ${esc(m.cost)}</option>`).join('');
+    applyDefaultModel();
+  }
+}
+async function startPlan() {
+  const request = $('#planreq').value.trim();
+  if (!request) return;
+  $('#plango').disabled = true;
+  $('#planstatus').innerHTML = `<div class="panel"><div class="verdict running"><span class="livedot"></span> PLANNING…</div></div>`;
+  let start;
+  try {
+    start = await api('/api/plan/start', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request, model: $('#planmodel').value }) });
+  } catch (e) { $('#planstatus').innerHTML = `<div class="panel"><span class="fail">couldn't reach the hub</span></div>`; $('#plango').disabled = false; return; }
+  if (!start.token) { $('#planstatus').innerHTML = `<div class="panel"><span class="fail">${esc(start.error || 'could not start')}</span></div>`; $('#plango').disabled = false; return; }
+  PLAN.token = start.token; PLAN.sig = null;
+  pollPlan();
+}
+async function pollPlan() {
+  while (PLAN.token) {
+    let s;
+    try { s = await api('/api/plan/' + PLAN.token); } catch (e) { await sleep(500); continue; }
+    if (s.error) { $('#planstatus').innerHTML = `<div class="panel"><span class="fail">${esc(s.error)}</span></div>`; $('#plango').disabled = false; break; }
+    // re-render only on real state change, so the feedback box doesn't get wiped mid-keystroke
+    const sig = JSON.stringify([s.phase, s.runnable, (s.steps || []).length, (s.events || []).length, s.accepted]);
+    if (sig !== PLAN.sig) { PLAN.sig = sig; renderPlan(s); }
+    if (s.phase === 'done') { PLAN.token = null; $('#plango').disabled = false; break; }
+    await sleep(350);
+  }
+}
+function planStepBlock(st) {
+  const mk = st.accepted ? '✓' : '✗', cls = st.accepted ? 'pass' : 'fail';
+  return `<div style="margin-bottom:10px">
+    <div class="row" style="gap:8px;margin-bottom:6px"><span class="runmk ${cls}">${mk}</span><span class="pill org">${esc(st.org)}</span><strong>${esc(st.goal)}</strong></div>
+    ${st.run ? runCard(st.run) : ''}</div>`;
+}
+function renderPlan(s) {
+  if (s.phase === 'planning') {
+    $('#planstatus').innerHTML = `<div class="panel"><div class="verdict running"><span class="livedot"></span> PLANNING…</div></div>`;
+    return;
+  }
+  if (s.phase === 'reviewing') {
+    const steps = (s.plan || []).map((st, i) => `<div class="row" style="gap:8px"><span class="pill">${i + 1}</span><span class="pill org">${esc(st.org)}</span><span>${esc(st.goal)}</span></div>`).join('');
+    const gc = s.runnable ? 'pass' : 'fail';
+    const gate = `<div class="gate ${s.runnable ? 'hard' : ''}" style="margin-top:12px"><div class="grow"><span class="gname"><span class="marker ${gc}">${s.runnable ? '●' : '○'}</span><span class="tier">HARD</span>plan-runnable</span><span class="gverdict ${gc}">${s.runnable ? 'PASS' : 'BLOCKED'}</span></div><div class="gev">${esc(s.gate)}</div></div>`;
+    const bar = s.runnable
+      ? `<div class="row" style="margin-top:12px"><button id="planapprove">Approve &amp; run</button><button class="ghost" id="planrefine">Request changes</button></div>`
+      : `<div class="row" style="margin-top:12px"><button class="ghost" id="planrefine">Refine the plan</button></div>`;
+    $('#planstatus').innerHTML = `<div class="panel"><h2 style="margin-top:0">Proposed plan</h2>
+      <div style="display:grid;gap:6px">${steps}</div>${gate}
+      <input type="text" id="planfeedback" placeholder="What to change (optional)…" style="margin-top:12px" />${bar}</div>`;
+    if ($('#planapprove')) $('#planapprove').onclick = () => reviewPlan(true, '');
+    $('#planrefine').onclick = () => reviewPlan(false, $('#planfeedback').value.trim());
+    return;
+  }
+  if (s.phase === 'executing') {
+    $('#planstatus').innerHTML = `<div class="panel"><div class="verdict running"><span class="livedot"></span> EXECUTING the plan…</div></div>${(s.steps || []).map(planStepBlock).join('')}`;
+    return;
+  }
+  // done
+  if (s.error) { $('#planstatus').innerHTML = `<div class="panel"><span class="fail">Stopped:</span> <span class="mono">${esc(s.error)}</span></div>`; return; }
+  const banner = s.accepted
+    ? `<div class="verdict shipped">PLAN SHIPPED <span class="earned">— every step cleared its own gates</span></div>`
+    : `<div class="verdict rejected">PLAN STOPPED <span class="earned">— a step didn't ship; the strict chain halted</span></div>`;
+  $('#planstatus').innerHTML = `<div class="panel">${banner}</div>${(s.steps || []).map(planStepBlock).join('')}`;
+}
+async function reviewPlan(approved, feedback) {
+  $('#planstatus').innerHTML = `<div class="panel muted"><span class="livedot"></span> ${approved ? 'running the plan…' : 're-planning…'}</div>`;
+  await api('/api/plan/' + PLAN.token + '/review', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approved, feedback }) });
+  PLAN.sig = null;  // force the next poll to re-render the new phase (the existing loop picks it up)
+}
+$('#plango').onclick = startPlan;
+$('#planreq').onkeydown = e => { if (e.key === 'Enter') startPlan(); };
 
 loadOrgs();
 loadHome();
