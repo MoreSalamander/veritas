@@ -107,3 +107,52 @@ it converts a failure into a verified ship.
 **Open follow-up:** the `codec` 1191s/4-retry spiral argues for a retry cap (or time budget)
 on the thinking path — it would bound worst-case latency on doomed builds without changing
 accept-rate. Not yet implemented.
+
+---
+
+## Self-consistency as a confidence signal (2026-06-22) — measure-before-build
+
+**Question:** could the research org drop the "you must provide sources" requirement and instead
+answer from the model's own knowledge, *flagging* what's unreliable rather than refusing it? And is
+**self-consistency** (does the model agree with itself across N samples?) a usable confidence flag?
+We measured before building. `bench/selfconsistency.py` · gemma4:12b · 23 ground-truthed questions
+spanning well-known / established / obscure / **recent (post-cutoff)** / false-premise traps · 8
+samples each · temp 0.8.
+
+**Findings (the design moved because of these):**
+
+1. **Hedging beats raw self-consistency, decisively.** Given permission to say "I don't know," the
+   model *consistently* admits ignorance rather than scattering — so on genuine unknowns (an obscure
+   attendance figure, an obscure bassist) agreement stayed ~100% but **hedge rate hit 100%**. Raw
+   agreement would call those "confident"; they're the opposite. Self-consistency (agreement) barely
+   separated categories at N=8 (obscure 94% vs established 100%); the model's own *elicited* "I don't
+   know" is the stronger, cheaper signal. The original self-consistency proposal is the weaker one.
+
+2. **The recency disclaimer is NOT warranted — killed by data.** A blanket "don't trust post-2023
+   facts" rule would have *falsely flagged four correct 2024 answers* (the US election, Euro 2024, the
+   World Series, the Oscars — the model knew them all) and been redundant on the one it didn't know
+   (Super Bowl LIX, Feb 2025), which it **correctly hedged**. The model self-discloses its real cutoff
+   by hedging better than any fixed date rule could. Recency is *subsumed by hedge-detection*, not a
+   separate mechanism.
+
+3. **The irreducible blind spot, isolated and quantified: ~6%.** Exactly one confident-wrong slipped
+   every signal — "how many studio albums had black midi released as of 2023?" → "2" at 88% agreement,
+   no hedge (it's 3). Obscure, *pre*-cutoff, confidently wrong: not caught by hedging, scatter, or
+   recency. 1/18 confident assertions ≈ 6% (small sample). This is the rate that bounds what a
+   "confident" tier may ever claim — low enough to ship *labelled*, never low enough to call verified.
+   (Low-agreement *did* catch the other wrong answers — Wet Leg at 75%, the Einstein trap at 88% — so
+   layered signals flag everything unreliable *except* the ~6% confident-wrong.)
+
+**Instrument honesty:** the first summary mislabelled two cases — it counted the *hedged* Super Bowl
+answer as confident-wrong, and required a trap rejection to name the exact fact ("photoelectric") so it
+scored a correct rejection as wrong. Both were measurement bugs (now fixed: a hedge isn't a confident
+assertion; a trap is passed by correcting the premise any way). Corrected, both traps were handled
+correctly and the confident-wrong rate is ~6%, not 11%.
+
+**Design implication (data-backed):** build the knowledge mode on **elicited hedge-detection** as the
+primary flag, low self-consistency as a secondary flag, recency folded in (not separate). Every claim
+ships tagged model-asserted/confident or flagged — **never green**; the ~6% confident-wrong is disclosed,
+not hidden. It's the inverse of grounding: ground only the flagged minority. (Design note:
+`docs/confidence-layer.md`.) This run is exploration; the formal version is an Empirical Lab experiment
+where the aggregate metric is stable enough to clear the reproducibility gate — the system gating its
+own evolution.
