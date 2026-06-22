@@ -263,6 +263,12 @@ it is.</p>
   </div>
 </div>
 
+<p class="muted" style="margin-top:20px">And, sitting honestly <em>beneath</em> all three, a <strong style="color:var(--ink)">Chat
+tab</strong>: a plain model with no gates, no grounding, no memory — the model's word alone, labelled
+exactly that. It's not a tier so much as the absence of one, and it earns its place by making the
+others <em>visible</em>: it is precisely what every studio above would be <em>without</em> the scaffold.
+Tier zero, named for what it is.</p>
+
 <div class="callout">
   The keystone move: an <strong>interview up front</strong> converts vague intent into concrete,
   checkable criteria <em>before</em> anything is built. It relocates verification to the front
@@ -292,6 +298,16 @@ distinct verification models run side by side:</p>
 <p>Because verification is the only thing that differs, products can <strong>reuse</strong> a model
 (a Newsroom is just the research grounding pipeline) or <strong>compose</strong> several (a Startup =
 web landing page + software MVP). Adding a new studio is one registry entry — never an engine rewrite.</p>
+
+<p>One layer up from composition, a <strong>Plan tab</strong> turns the interview loose across <em>all</em>
+the studios. Describe something bigger than one engine — <em>"a researched landing page for a coffee
+startup"</em> — and a planner proposes an ordered plan (research → web → …); a deterministic gate checks
+it's <strong>runnable</strong> (real studios, concrete goals) <em>before</em> anything runs; you confirm;
+then each step ships through its own gates. The plan ships iff every step ships. The presets stop being
+hardcoded recipes and become plans it derives in conversation. And the handoff obeys the same rule as
+everything else: where one step's verified output can be checked by the next — a grounded report feeding
+a later grounded step — the trust <em>chains</em>; where no downstream gate could verify it, that handoff
+stays the human's call rather than a silent unchecked bridge.</p>
 
 <p>The verification is real enough to catch the model when it's wrong. A favorite example: when proving
 a property like "<em>decoding reverses encoding</em>," the system uses an injection-safe vocabulary of
@@ -362,6 +378,15 @@ Right: at module scale a too-weak model yields nothing — the gates refuse rath
   verdict mean something.
 </div>
 
+<p style="margin-top:22px">A second reading from the same bench sharpened the local story. Taking <em>one</em>
+model and flipping only its reasoning on or off, <strong>thinking</strong> turned out to be the difference
+between shipping and not at module scale — converting a build that never passed into a first-try success —
+while on easy functions it was simply ~10× slower for no gain. So thinking is now <em>adaptive</em>: on for
+the hard shapes, off for the easy ones, and capped to fewer retries when it's on (a careful answer that
+fails twice rarely flips on a third). The gates are what make this safe to tune at all — every thinking
+build that ships still clears the <em>same</em> hard floor, so it's a genuinely verified pass, never a
+reasoning-induced false green.</p>
+
 <!-- ───────────────────────── BOOTSTRAP ───────────────────────── -->
 <h2>Part 6 — The strange loop</h2>
 <div class="h2sub">It already built a piece of itself.</div>
@@ -414,7 +439,7 @@ human step, by design.</p>
 
 <footer>
   Veritas Dynamics · a MoreSalamander project · built by the engineer learning how to build it.<br/>
-  Engine: Artifact · Gate · Memory · Run · Executor · Validation &nbsp;|&nbsp; 5 verification models · 225 tests · mypy --strict clean
+  Engine: Artifact · Gate · Memory · Run · Executor · Validation &nbsp;|&nbsp; 5 verification models · cross-org planning · 245 tests · mypy --strict clean
 </footer>
 
 </div>
