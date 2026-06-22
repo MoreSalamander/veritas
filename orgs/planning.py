@@ -27,6 +27,7 @@ from engine.gate import Gate
 from engine.memory import MemoryStore
 from engine.model import ModelProvider
 from orgs.registry import REGISTRY, OrgRun, get_org
+from orgs.research_studio.report import parse_report
 
 # The planner composes from the five verification-model ENGINES. The presets are themselves
 # frozen plans (startup = web+software), so letting the planner pick one as a step would be
@@ -43,6 +44,11 @@ class PlanParseError(ValueError):
 class PlanStep:
     org: str
     goal: str
+    # Pinned sources for steps whose org grounds against a corpus (research, the grounded presets).
+    # The MODEL can't know the user's sources, so the planner never proposes these — they're
+    # supplied by the human at review time and attached before execution. Ignored by orgs that
+    # don't ground.
+    sources: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -185,31 +191,58 @@ class PlanResult:
     problems: list[str] = field(default_factory=list)  # set when the plan itself wasn't runnable
 
 
+def corpus_from_run(run: OrgRun) -> list[str]:
+    """The typed handoff. Extract groundable source text from a SHIPPED step so a LATER grounded
+    step can cite into what an earlier step already verified — the chain of trust, made real:
+    step 2 may only quote step 1's claims, and step 1's claims were themselves grounded.
+
+    DOCTRINE: only an output that is itself grounded (a research report) chains trust cleanly,
+    because the downstream grounding gates can verify the handoff. Other artifacts (a web page, a
+    function) have NO downstream gate that checks 'did B faithfully use A', so they contribute
+    nothing here — that boundary stays a human judgment, never a silent unverified injection."""
+    texts: list[str] = []
+    for outcome in run.outcomes:
+        if outcome.artifact.type == "report":
+            try:
+                report = parse_report(outcome.artifact.payload)
+            except Exception:
+                continue
+            texts.extend(c.text for c in report.claims if c.text.strip())
+    return texts
+
+
 def execute_plan(
     plan: Plan,
     provider: ModelProvider,
     memory_for: Callable[[str], MemoryStore],
     *,
-    sources: list[str] | None = None,
     on_step: Callable[[int, StepResult], None] | None = None,
 ) -> PlanResult:
     """Run each step through its org's own pipeline, in order, STRICT: a step that doesn't ship
     stops the plan (matching how every other multi-stage chain in Veritas behaves). Each step uses
-    its org's own memory namespace (recall stays domain-relevant). `on_step(index, result)` is an
-    optional hook for live streaming. The plan ships iff every step ships.
+    its org's own memory namespace (recall stays domain-relevant) and its own pinned sources (for
+    grounded orgs). `on_step(index, result)` is an optional hook for live streaming. The plan ships
+    iff every step ships.
 
     Note: cross-step data handoff is deliberately NOT typed here — each step gets the original
-    goal text only. Threading one step's output into the next is the next rung; this slice proves
-    the orchestration + gating end to end first."""
+    goal text (+ its own human-supplied sources), not the previous step's OUTPUT. Threading one
+    step's verified output into the next is the next rung; this slice proves the orchestration +
+    gating end to end first."""
     problems = plan_problems(plan)
     if problems:
         return PlanResult(plan, [], accepted=False, problems=problems)
 
     results: list[StepResult] = []
     accepted = True
+    handoff: list[str] = []  # verified groundable text from earlier steps (the typed handoff)
     for i, step in enumerate(plan.steps):
         org = get_org(step.org)
-        run = org.build(step.goal, provider, memory_for(step.org), sources=sources)
+        # a grounded step cites into its own human sources PLUS what earlier verified steps produced;
+        # a non-grounding org has no gate to verify a handoff, so it never receives one.
+        step_sources = list(step.sources)
+        if org.needs_sources:
+            step_sources += handoff
+        run = org.build(step.goal, provider, memory_for(step.org), sources=(step_sources or None))
         sr = StepResult(org=step.org, goal=step.goal, run=run)
         results.append(sr)
         if on_step is not None:
@@ -217,6 +250,7 @@ def execute_plan(
         if not run.accepted:
             accepted = False
             break  # strict chain — don't run later steps on a broken foundation
+        handoff += corpus_from_run(run)  # this step's verified output is available to later ones
     return PlanResult(plan, results, accepted=accepted)
 
 

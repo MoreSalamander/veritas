@@ -1166,7 +1166,7 @@ $('#chatclear').onclick = () => { CHAT = []; renderChat(); };
 
 // --- Plan: cross-org planning. The planner proposes; a gate checks runnability; you confirm;
 // then each step ships through its own org's gates. The plan ships iff every step ships. ---
-let PLAN = { token: null, sig: null };
+let PLAN = { token: null, sig: null, plan: [] };
 async function loadPlan() {
   if (!$('#planmodel').options.length) {
     const models = await api('/api/models');
@@ -1212,7 +1212,13 @@ function renderPlan(s) {
     return;
   }
   if (s.phase === 'reviewing') {
-    const steps = (s.plan || []).map((st, i) => `<div class="row" style="gap:8px"><span class="pill">${i + 1}</span><span class="pill org">${esc(st.org)}</span><span>${esc(st.goal)}</span></div>`).join('');
+    PLAN.plan = s.plan || [];
+    const steps = (s.plan || []).map((st, i) => {
+      const src = st.needs_sources
+        ? `<textarea id="plansrc-${i}" placeholder="Paste sources for this step — it can only cite these. Separate with a line of just ---" style="width:100%;margin-top:6px;min-height:60px;background:#0c1119;border:1px solid var(--line);color:var(--ink);padding:8px;border-radius:8px;font-family:var(--mono);font-size:12px"></textarea>`
+        : '';
+      return `<div style="margin-bottom:8px"><div class="row" style="gap:8px"><span class="pill">${i + 1}</span><span class="pill org">${esc(st.org)}</span><span>${esc(st.goal)}</span></div>${src}</div>`;
+    }).join('');
     const gc = s.runnable ? 'pass' : 'fail';
     const gate = `<div class="gate ${s.runnable ? 'hard' : ''}" style="margin-top:12px"><div class="grow"><span class="gname"><span class="marker ${gc}">${s.runnable ? '●' : '○'}</span><span class="tier">HARD</span>plan-runnable</span><span class="gverdict ${gc}">${s.runnable ? 'PASS' : 'BLOCKED'}</span></div><div class="gev">${esc(s.gate)}</div></div>`;
     const bar = s.runnable
@@ -1237,9 +1243,14 @@ function renderPlan(s) {
   $('#planstatus').innerHTML = `<div class="panel">${banner}</div>${(s.steps || []).map(planStepBlock).join('')}`;
 }
 async function reviewPlan(approved, feedback) {
+  // collect per-step sources (aligned to the plan) so a grounded step has a corpus to cite into
+  const sources = (approved ? PLAN.plan : []).map((st, i) => {
+    const el = $('#plansrc-' + i);
+    return el ? el.value.split(/^\s*---\s*$/m).map(x => x.trim()).filter(Boolean) : [];
+  });
   $('#planstatus').innerHTML = `<div class="panel muted"><span class="livedot"></span> ${approved ? 'running the plan…' : 're-planning…'}</div>`;
   await api('/api/plan/' + PLAN.token + '/review', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ approved, feedback }) });
+    body: JSON.stringify({ approved, feedback, sources }) });
   PLAN.sig = null;  // force the next poll to re-render the new phase (the existing loop picks it up)
 }
 $('#plango').onclick = startPlan;

@@ -166,6 +166,14 @@ class PlanStartRequest(BaseModel):
     model: str = DEFAULT_MODEL
 
 
+class PlanReviewBody(BaseModel):
+    approved: bool
+    feedback: str = ""
+    # Per-step sources, aligned to the plan's steps (empty for steps that don't ground). The human
+    # supplies these for research/grounded steps so they have a corpus to cite into.
+    sources: list[list[str]] = []
+
+
 class ChatMessage(BaseModel):
     role: str  # "user" | "assistant"
     content: str
@@ -627,7 +635,7 @@ class PlanSession:
             "events": [], "steps": [], "accepted": None, "error": None,
         }
         self._review = threading.Event()
-        self._review_val: tuple[bool, str] = (False, "")
+        self._review_val: tuple[bool, str, list[list[str]]] = (False, "", [])
 
     def start(self) -> None:
         threading.Thread(target=self._run, daemon=True).start()
@@ -636,8 +644,9 @@ class PlanSession:
         with self.lock:
             return dict(self.state)
 
-    def provide_review(self, approved: bool, feedback: str) -> None:
-        self._review_val = (approved, feedback)
+    def provide_review(self, approved: bool, feedback: str,
+                       sources: list[list[str]] | None = None) -> None:
+        self._review_val = (approved, feedback, sources or [])
         self._review.set()
 
     def _set(self, **fields: Any) -> None:
@@ -657,12 +666,15 @@ class PlanSession:
                 self._set(phase="planning")
                 plan = propose_plan(self.request, self.provider)
                 runnable, evidence = gate_plan(plan)
-                self._set(phase="reviewing",
-                          plan=[{"org": s.org, "goal": s.goal} for s in plan.steps],
-                          runnable=runnable, gate=evidence)
+                self._set(
+                    phase="reviewing",
+                    plan=[{"org": s.org, "goal": s.goal,
+                           "needs_sources": s.org in REGISTRY and REGISTRY[s.org].needs_sources}
+                          for s in plan.steps],
+                    runnable=runnable, gate=evidence)
                 self._review.wait()
                 self._review.clear()
-                approved, feedback = self._review_val
+                approved, feedback, sources = self._review_val
                 if not approved:  # refine: fold the human's words in and re-plan
                     if feedback:
                         self.request = f"{self.request}\n\nRevision requested: {feedback}"
@@ -670,6 +682,11 @@ class PlanSession:
                 if not runnable:  # can't execute a plan the gate refused
                     self._set(phase="done", accepted=False)
                     return
+                # attach the human's per-step sources (aligned to the plan) before executing — so a
+                # grounded step (research/newsroom/education) has a corpus to cite into.
+                for i, srcs in enumerate(sources):
+                    if i < len(plan.steps):
+                        plan.steps[i].sources = [s for s in srcs if s.strip()]
                 # approved + runnable → execute the chain, streaming each org's activity
                 self._set(phase="executing", steps=[], events=[])
                 set_activity_listener(lambda e: self.state["events"].append(_event(e)))
@@ -1014,11 +1031,11 @@ def create_app(
         return sess.snapshot() if sess else {"error": "unknown plan session"}
 
     @app.post("/api/plan/{token}/review")
-    def plan_review(token: str, body: ReviewBody) -> dict[str, Any]:
+    def plan_review(token: str, body: PlanReviewBody) -> dict[str, Any]:
         sess = plan_sessions.get(token)
         if sess is None:
             return {"error": "unknown plan session"}
-        sess.provide_review(body.approved, body.feedback)
+        sess.provide_review(body.approved, body.feedback, body.sources)
         return {"ok": True}
 
     bench_sessions: dict[str, BenchSession] = {}

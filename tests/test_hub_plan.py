@@ -93,6 +93,29 @@ def test_plan_refine_then_approve_replans(tmp_path):
     assert [step["org"] for step in runnable["plan"]] == ["software"]
 
 
+def test_plan_marks_grounded_steps_and_passes_their_sources(tmp_path):
+    # a research step is flagged needs_sources in the review, and the human's pasted sources reach
+    # it as a pinned corpus so its grounding can pass.
+    report = json.dumps({"topic": "eagles", "claims": [
+        {"text": "Bald eagles fly up to 30 mph",
+         "citations": [{"source": "src1", "quote": "fly at speeds of up to 30 mph"}]}]})
+    plan_json = '{"steps":[{"org":"research","goal":"how fast are eagles"}]}'
+    provider = ScriptedProvider({"planner": plan_json, "researcher": report,
+                                 "judge": json.dumps([{"index": 0, "verdict": "SUPPORTED"}])})
+    client = TestClient(create_app(data_dir=tmp_path, provider=provider))
+
+    token = client.post("/api/plan/start", json={"request": "an eagle report"}).json()["token"]
+    reviewing = _poll(client, token, lambda s: s["phase"] == "reviewing")
+    assert reviewing["plan"][0]["needs_sources"] is True  # the UI shows a sources box for this step
+
+    # approve with the corpus the report cites into (becomes src1)
+    client.post(f"/api/plan/{token}/review", json={"approved": True,
+                "sources": [["Bald eagles can fly at speeds of up to 30 mph."]]})
+    done = _poll(client, token, lambda s: s["phase"] == "done")
+    assert done["accepted"] is True
+    assert done["steps"][0]["org"] == "research" and done["steps"][0]["accepted"] is True
+
+
 def test_plan_state_unknown_token_is_an_error(tmp_path):
     client = TestClient(create_app(data_dir=tmp_path, provider=_provider("{}")))
     assert "error" in client.get("/api/plan/nope").json()
