@@ -34,6 +34,12 @@ class ModelProvider(ABC):
     def propose(self, *, role: str, prompt: str, system: str | None = None) -> str:
         raise NotImplementedError
 
+    def for_shape(self, shape: str) -> "ModelProvider":
+        """Return a provider tuned for a build of this shape ("function" | "module" | "app").
+        Default: unchanged. Local reasoning models override this to turn THINKING on for harder
+        shapes — a clean, measured win (see OllamaProvider.for_shape)."""
+        return self
+
 
 class OllamaProvider(ModelProvider):
     """Local-model backend for development. Talks to Ollama's HTTP API.
@@ -93,6 +99,20 @@ class OllamaProvider(ModelProvider):
             payload = json.loads(response.read().decode("utf-8"))
         text = payload.get("response", "")
         return str(text)
+
+    def for_shape(self, shape: str) -> "ModelProvider":
+        # Adaptive thinking, earned by the benchmark: on the local star (gemma4:12b), turning
+        # THINKING on flips MODULE builds from never-ships to first-try-green (temp 0/2 -> 2/2,
+        # codec 0/2 -> 1/2), while on FUNCTIONS it's just ~10x slower for no gain (and failed a
+        # function think-off clears). So: think for module/app, direct for function. A reasoning
+        # model that isn't a thinker simply ignores the flag, so this is safe for every local model.
+        want_think = shape in ("module", "app")
+        if want_think == self.think:
+            return self
+        return OllamaProvider(
+            model=self.model, host=self.host, temperature=self.temperature,
+            timeout=600.0 if want_think else 120.0, think=want_think,
+        )
 
 
 class ClaudeProvider(ModelProvider):

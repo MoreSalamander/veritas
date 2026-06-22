@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from engine.memory import MemoryStore
-from engine.model import ScriptedProvider
+from engine.model import OllamaProvider, ScriptedProvider
 from orgs.software_studio.builder import build
 
 SPEC = json.dumps(
@@ -78,3 +78,37 @@ def test_routes_to_app(tmp_path):
     result = build("a tiny store app", provider, MemoryStore(tmp_path))
     assert result.shape == "app" and result.accepted
     assert [o.artifact.type for o in result.outcomes] == ["plan", "package", "entrypoint", "e2e-spec"]
+
+
+# --- adaptive thinking: the proposer is re-tuned for the routed shape ---
+
+def test_ollama_for_shape_toggles_thinking():
+    base = OllamaProvider(model="gemma4:12b", think=False)
+    assert base.for_shape("function") is base            # functions stay direct
+    for hard in ("module", "app"):
+        tuned = base.for_shape(hard)                      # harder shapes turn thinking ON
+        assert isinstance(tuned, OllamaProvider) and tuned.think is True and tuned.model == base.model
+    thinker = OllamaProvider(model="gemma4:12b", think=True)
+    assert thinker.for_shape("module") is thinker         # already correct -> no needless rebuild
+
+
+class _RecordingProvider(ScriptedProvider):
+    """Behaves like ScriptedProvider but records the shape build() asks it to tune for."""
+
+    def __init__(self, by_role):
+        super().__init__(by_role)
+        self.shaped: list[str] = []
+
+    def for_shape(self, shape):
+        self.shaped.append(shape)
+        return self
+
+
+def test_build_retunes_provider_for_the_routed_shape(tmp_path):
+    mod = _RecordingProvider({"router": "module", "architect": CONTRACT, "pm": PM, "developer": MODULE})
+    build("a temperature module", mod, MemoryStore(tmp_path))
+    assert mod.shaped == ["module"]  # re-tuned for the module shape after routing
+
+    fn = _RecordingProvider({"router": "function", "spec": SPEC, "developer": CODE, "qa": "[]", "doc": DOC})
+    build("add two numbers", fn, MemoryStore(tmp_path))
+    assert fn.shaped == ["function"]

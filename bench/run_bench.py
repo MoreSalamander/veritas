@@ -52,6 +52,9 @@ from orgs.software_studio.builder import build  # noqa: E402
 MODELS = {
     "qwen-9b": lambda: OllamaProvider(model="qwen3.5:9b", think=False, timeout=300),
     "gemma-12b": lambda: OllamaProvider(model="gemma4:12b", think=False, timeout=300),
+    # Clean think-on vs think-off A/B: SAME model (gemma4:12b), only the `think` flag differs —
+    # unlike the qwen 9b-vs-64k comparison, which confounded model size + context + thinking.
+    "gemma-12b-think": lambda: OllamaProvider(model="gemma4:12b", think=True, timeout=900),
     "llama-8b": lambda: OllamaProvider(model="llama3.1:8b", think=False, timeout=300),
     "qwen-64k-think": lambda: OllamaProvider(model="qwen3.5-64k:latest", think=True, timeout=900),
     "sonnet": lambda: ClaudeProvider(model="claude-sonnet-4-6"),  # cloud — costs a few cents/build
@@ -86,10 +89,13 @@ def main() -> None:
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--models", default=",".join(MODELS))
     ap.add_argument("--quick", action="store_true", help="functions only")
+    ap.add_argument("--shape", default="", help="only goals of this shape (function|module)")
     args = ap.parse_args()
 
     models = [m.strip() for m in args.models.split(",") if m.strip() in MODELS]
     goals = [g for g in GOALS if not (args.quick and g[2] != "function")]
+    if args.shape:
+        goals = [g for g in goals if g[2] == args.shape]
     rows: list[dict] = []
 
     print(f"matrix: {len(goals)} goals x {len(models)} models x {args.repeats} repeat(s)\n", flush=True)

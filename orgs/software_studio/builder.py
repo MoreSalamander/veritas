@@ -61,6 +61,11 @@ def build(
     goal: str, provider: ModelProvider, memory: MemoryStore, *, shape: str = "auto"
 ) -> BuildResult:
     chosen = shape if shape in ("function", "module", "app") else Router(provider).classify(goal)
+    # Adaptive thinking: now that the shape is known, re-tune the proposer for it. Routing itself
+    # is a trivial one-word call (think off is right); the real build of a module/app gets thinking
+    # turned on, where the benchmark proved it converts gemma failures into first-try ships. A no-op
+    # for cloud and non-reasoning models (for_shape returns self).
+    provider = provider.for_shape(chosen)
 
     if chosen == "app":
         a = build_app(goal, provider, memory)
