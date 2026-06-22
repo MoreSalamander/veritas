@@ -72,6 +72,18 @@ def test_missing_output_fails_integrity(tmp_path):
     assert not res.passed
 
 
+def test_render_works_from_a_relative_data_dir(tmp_path, monkeypatch):
+    # Regression: the hub launches with a RELATIVE data dir (./hub_data), so asset paths were
+    # cwd-relative. The concat demuxer resolves its entries relative to the LIST FILE's dir, which
+    # doubled the prefix (.../<id>/hub_data/productions/<id>/img.png) and broke every hub render.
+    # The absolute tmp_path tests above never exercised this. Render under a relative path here.
+    monkeypatch.chdir(tmp_path)
+    work = __import__("pathlib").Path("rel_data/productions/x")  # relative to cwd, like the hub
+    timeline, art = _render(work)
+    assert PublishFormatGate(SMALL).check(art).passed
+    assert OutputIntegrityGate(timeline.total).check(art).passed
+
+
 def test_full_production_publishes_six_stages(tmp_path):
     provider = ScriptedProvider(
         {"concept": CONCEPT, "scriptwriter": SCRIPT, "storyboard-artist": STORYBOARD})

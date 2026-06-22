@@ -6,6 +6,12 @@
       "runtimeExecutable": ".venv/bin/python",
       "runtimeArgs": ["-m", "uvicorn", "hub.app:app", "--port", "8099"],
       "port": 8099
+    },
+    {
+      "name": "docs",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8077", "--directory", "docs"],
+      "port": 8077
     }
   ]
 }

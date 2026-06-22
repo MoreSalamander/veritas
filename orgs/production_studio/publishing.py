@@ -73,14 +73,19 @@ class FfmpegPublisher(Publisher):
         work = out_path.parent
         work.mkdir(parents=True, exist_ok=True)
 
+        # The concat demuxer resolves each `file` path relative to the LIST FILE's own directory,
+        # not the cwd — so we write basenames (assets are always siblings of the list here). Writing
+        # the full cwd-relative path doubled the prefix when the data dir was relative (e.g. the hub's
+        # ./hub_data), producing .../<id>/hub_data/productions/<id>/img.png and a missing-file error.
+
         # video: a concat-demuxer list of images with per-clip durations (last image repeated so its
         # duration takes effect — a known concat-demuxer requirement).
         vlist = work / "_video.txt"
         vlines = []
         for c in timeline.clips:
-            vlines.append(f"file '{c.image}'")
+            vlines.append(f"file '{Path(c.image).name}'")
             vlines.append(f"duration {c.duration}")
-        vlines.append(f"file '{timeline.clips[-1].image}'")
+        vlines.append(f"file '{Path(timeline.clips[-1].image).name}'")
         vlist.write_text("\n".join(vlines), encoding="utf-8")
 
         # audio: each beat's narration once, in first-appearance order (a clip's audio is its beat's).
@@ -90,7 +95,7 @@ class FfmpegPublisher(Publisher):
         for c in timeline.clips:
             if c.beat_id not in seen and c.audio:
                 seen.add(c.beat_id)
-                alines.append(f"file '{c.audio}'")
+                alines.append(f"file '{Path(c.audio).name}'")
         alist.write_text("\n".join(alines), encoding="utf-8")
 
         video = work / "_video.mp4"

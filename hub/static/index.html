@@ -46,6 +46,16 @@
   .artifact { margin-top: 12px; }
   .artifact .loc { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-bottom: 4px; }
   .prodvid { width: 100%; max-width: 480px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; background: #000; }
+  .ungoverned { border: 1px solid var(--amber); background: rgba(251,191,36,.07); color: var(--amber);
+                border-radius: 12px; padding: 12px 16px; font-size: 13px; line-height: 1.5; max-width: 720px; }
+  .chatmsg { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; max-width: 760px; }
+  .chatmsg.user { align-items: flex-end; margin-left: auto; }
+  .chatmsg .who { font-size: 10px; letter-spacing: .5px; text-transform: uppercase; color: var(--dim); }
+  .chatmsg.assistant .who { color: var(--amber); }
+  .bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+            padding: 10px 14px; font-size: 14px; line-height: 1.55; white-space: pre-wrap; max-width: 600px; }
+  .chatmsg.user .bubble { border-color: var(--cyan); }
+  .chatmsg.assistant .bubble { border-style: dashed; }
 
   /* --- live trace: the cast + gate boxes light up as the run flows --- */
   .tstage { border-left: 2px solid #1a2230; padding: 0 0 11px 12px; margin-bottom: 2px; }
@@ -212,6 +222,10 @@
     <div class="navlabel">&nbsp;</div>
     <a data-view="labs">Labs</a>
     <a data-view="models">Models</a>
+    <div class="navlabel">Ungoverned</div>
+    <a data-view="chat">Chat</a>
+    <div class="navlabel">&nbsp;</div>
+    <a href="/about" target="_blank" rel="noopener">About ↗</a>
   </nav>
 </aside>
 <main>
@@ -308,6 +322,25 @@
     <div class="muted" style="margin:-12px 0 16px;max-width:700px">Which model proposes. Reliability comes from the gates regardless — so this is only about which model reliably <em>clears</em> which work. Notes are from the project's own benchmarks.</div>
     <div id="modellist" style="display:grid;gap:10px"></div>
   </section>
+
+  <section id="chat" class="hidden">
+    <h1>Chat</h1>
+    <div class="ungoverned">⚠ Ungrounded · Unverified · No memory. This is the model's word alone — nothing said here passes a gate, is grounded in a source, or is saved. It's here on purpose: it's what every other studio would be <em>without</em> the scaffold. Trust accordingly.</div>
+    <div class="panel" style="margin-top:14px">
+      <div class="row">
+        <select id="chatmodel" title="which model answers — there are no gates either way"></select>
+        <span class="muted" style="font-size:12px">no gates run · nothing is saved · refresh clears the conversation</span>
+      </div>
+    </div>
+    <div id="chatthread" style="margin:14px 0"></div>
+    <div class="panel">
+      <div class="row">
+        <input type="text" id="chatbox" placeholder="Ask anything — and trust it at your own risk." />
+        <button id="chatgo">Send</button>
+        <button class="ghost" id="chatclear" type="button">Clear</button>
+      </div>
+    </div>
+  </section>
 </main>
 
 <script>
@@ -316,15 +349,16 @@ const api = (p, opt) => fetch(p, opt).then(r => r.json());
 const esc = s => (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const isHard = g => g.determinism !== 'soft';
 
-document.querySelectorAll('nav a').forEach(a => a.onclick = () => {
+document.querySelectorAll('nav a[data-view]').forEach(a => a.onclick = () => {
   document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
   a.classList.add('active');
   const view = a.dataset.view;
-  ['home','studio','labs','models','create'].forEach(v => $('#'+v).classList.toggle('hidden', v !== view));
+  ['home','studio','labs','models','create','chat'].forEach(v => $('#'+v).classList.toggle('hidden', v !== view));
   if (view === 'home') loadHome();
   if (view === 'studio') loadStudio(a.dataset.org);
   if (view === 'labs') loadLabs();
   if (view === 'models') loadModelsView();
+  if (view === 'chat') loadChat();
 });
 
 // A gate row that makes the hard/soft split visceral: HARD gates are filled and tinted
@@ -390,7 +424,7 @@ async function loadOrgs() {
 function applyDefaultModel() {
   const d = localStorage.getItem('veritas_model');
   if (!d) return;
-  ['#model', '#cmodel', '#pmodel', '#studiomodel'].forEach(sel => {
+  ['#model', '#cmodel', '#pmodel', '#studiomodel', '#chatmodel'].forEach(sel => {
     const el = $(sel);
     if (el && [...el.options].some(o => o.value === d)) el.value = d;
   });
@@ -1073,6 +1107,46 @@ async function askRoute() {
 $('#askgo').onclick = askRoute;
 $('#askbox').onkeydown = e => { if (e.key === 'Enter') askRoute(); };
 $('#benchgo').onclick = runBench;
+
+// --- Chat: the ungoverned tab. No gates, no memory, stateless on the server; the whole
+// conversation lives in this array and is sent each turn, and is gone on refresh. ---
+let CHAT = [];
+async function loadChat() {
+  if (!$('#chatmodel').options.length) {
+    const models = await api('/api/models');
+    $('#chatmodel').innerHTML = models.map(m => `<option value="${esc(m.name)}">${esc(m.label)} · ${esc(m.cost)}</option>`).join('');
+    applyDefaultModel();
+  }
+  renderChat();
+}
+function renderChat(pending) {
+  const rows = CHAT.map(m =>
+    `<div class="chatmsg ${m.role}"><span class="who">${m.role === 'user' ? 'You' : 'Model · unverified'}</span><div class="bubble">${esc(m.content)}</div></div>`
+  ).join('');
+  const wait = pending ? `<div class="chatmsg assistant"><span class="who">Model · unverified</span><div class="bubble muted">…</div></div>` : '';
+  $('#chatthread').innerHTML = (rows + wait) || '<div class="muted">No messages yet — nothing here is checked.</div>';
+  $('#chatthread').scrollIntoView({ block: 'end' });
+}
+async function sendChat() {
+  const text = $('#chatbox').value.trim();
+  if (!text) return;
+  CHAT.push({ role: 'user', content: text });
+  $('#chatbox').value = '';
+  $('#chatgo').disabled = true;
+  renderChat(true);
+  let r;
+  try {
+    r = await api('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: CHAT, model: $('#chatmodel').value }) });
+  } catch (e) { r = { error: 'could not reach the hub' }; }
+  CHAT.push({ role: 'assistant', content: r.error ? '⚠ ' + r.error : (r.reply || '(no response)') });
+  renderChat();
+  $('#chatgo').disabled = false;
+  $('#chatbox').focus();
+}
+$('#chatgo').onclick = sendChat;
+$('#chatbox').onkeydown = e => { if (e.key === 'Enter') sendChat(); };
+$('#chatclear').onclick = () => { CHAT = []; renderChat(); };
 
 loadOrgs();
 loadHome();

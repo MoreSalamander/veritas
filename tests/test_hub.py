@@ -74,6 +74,19 @@ def test_index_is_served(tmp_path):
     assert "VERI" in resp.text
 
 
+def test_chat_is_ungoverned_passthrough(tmp_path):
+    # The chat tab is the honest foil: it calls the model directly with NO gates, NO memory,
+    # NO persistence. It returns the model's reply and writes nothing to the run/memory stores.
+    provider = ScriptedProvider({"chat": "the sky is blue"})
+    client = TestClient(create_app(data_dir=tmp_path, provider=provider))
+    resp = client.post("/api/chat", json={"messages": [{"role": "user", "content": "why is the sky blue?"}]})
+    assert resp.status_code == 200
+    assert resp.json()["reply"] == "the sky is blue"
+    # nothing was persisted — the ungoverned tab leaves no trace
+    assert client.get("/api/runs").json() == []
+    assert client.get("/api/memory").json() == []
+
+
 def test_orgs_endpoint_lists_registry(tmp_path):
     client = _client(tmp_path)
     orgs = client.get("/api/orgs").json()

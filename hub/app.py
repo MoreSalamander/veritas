@@ -160,6 +160,18 @@ class RouteRequest(BaseModel):
     model: str = DEFAULT_MODEL
 
 
+class ChatMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    # The whole conversation is sent each turn — the chat is stateless on the server (nothing
+    # is persisted, by design: this is the ungoverned tab).
+    messages: list[ChatMessage]
+    model: str = DEFAULT_MODEL
+
+
 # Deterministic fallback if the model-routed pick fails: first keyword group that matches wins.
 _ROUTE_KEYWORDS: list[tuple[tuple[str, ...], str]] = [
     (("video", "film", "animation", "movie", "trailer", "narrat", "explainer"), "production"),
@@ -671,6 +683,30 @@ def create_app(
         return {"org": org, "title": o.title, "goal": goal,
                 "produces": o.produces, "needs_sources": o.needs_sources}
 
+    @app.post("/api/chat")
+    def chat(req: ChatRequest) -> dict[str, Any]:
+        """The honest foil to every other studio: a plain LLM chat with NO gates, NO grounding,
+        NO memory, NO persistence. Nothing here is verified — it's the model's word alone. It
+        earns its place by making the contrast visible: this is exactly what every other tab
+        would be WITHOUT the deterministic scaffold. The trust tier here is 'none'."""
+        system = (
+            "You are a helpful assistant in an unverified scratchpad. Answer directly and "
+            "concisely. Nothing you say here is checked by any gate or grounded in any source."
+        )
+        # propose() is single-turn, so flatten the conversation into the prompt: prior turns are
+        # context, the final user turn is the question. (No injection concern — there are no gates
+        # downstream and nothing is executed; the reply is shown verbatim to the human.)
+        convo = "\n".join(
+            f"{'User' if m.role == 'user' else 'Assistant'}: {m.content}" for m in req.messages
+        )
+        prompt = f"{convo}\nAssistant:" if convo else ""
+        try:
+            prov = injected_provider or _provider_for(req.model)
+            reply = prov.propose(role="chat", prompt=prompt, system=system).strip()
+        except Exception as exc:  # model down / unknown model / API error
+            return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"reply": reply}
+
     @app.get("/api/dashboard")
     def dashboard() -> dict[str, Any]:
         all_runs = runs.list()
@@ -921,6 +957,11 @@ def create_app(
     def index() -> FileResponse:
         # Never cache the shell: the UI iterates fast and a stale index is pure confusion.
         return FileResponse(_STATIC / "index.html", headers={"Cache-Control": "no-store"})
+
+    @app.get("/about")
+    def about() -> FileResponse:
+        # The standalone explainer (docs/about.html) served in-hub too — one file, two homes.
+        return FileResponse(_ROOT / "docs" / "about.html", headers={"Cache-Control": "no-store"})
 
     if _STATIC.exists():
         app.mount("/static", StaticFiles(directory=_STATIC), name="static")
