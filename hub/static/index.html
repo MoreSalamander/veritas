@@ -46,6 +46,7 @@
   .artifact { margin-top: 12px; }
   .artifact .loc { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-bottom: 4px; }
   .prodvid { width: 100%; max-width: 480px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; background: #000; }
+  .reportframe { width: 100%; height: 520px; border: 1px solid var(--line); border-radius: 12px; background: #0d1117; }
   .ungoverned { border: 1px solid var(--amber); background: rgba(251,191,36,.07); color: var(--amber);
                 border-radius: 12px; padding: 12px 16px; font-size: 13px; line-height: 1.5; max-width: 720px; }
   .chatmsg { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; max-width: 760px; }
@@ -425,12 +426,19 @@ function runCard(r) {
   const model = r.model ? `<span class="pill">${esc(r.model)}</span> ` : '';
   const informed = r.informed_by && r.informed_by.length
     ? `<div class="muted" style="margin-top:8px">informed by ${r.informed_by.length} prior memory(ies): ${r.informed_by.map(esc).join(', ')}</div>` : '';
-  const reportLink = (r.accepted && r.id && (r.artifacts || []).some(a => a.type === 'report'))
-    ? `<a href="/report/${esc(r.id)}" target="_blank" rel="noopener" class="pill" style="border-color:var(--cyan);color:var(--cyan);display:inline-block;margin:10px 0 4px;text-decoration:none">📄 View as document ↗</a>` : '';
+  const hasReport = r.accepted && r.id && (r.artifacts || []).some(a => a.type === 'report');
+  const reportEmbed = hasReport
+    ? `<div style="margin:12px 0">
+         <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+           <strong style="font-size:13px">📄 Document</strong>
+           <a href="/report/${esc(r.id)}" target="_blank" rel="noopener" class="pill" style="border-color:var(--cyan);color:var(--cyan);text-decoration:none">open full page ↗</a>
+         </div>
+         <iframe src="/report/${esc(r.id)}" class="reportframe" loading="lazy"></iframe>
+       </div>` : '';
   return `<div class="panel">
       <div class="runhead"><span>${org}${model}<strong>${esc(r.goal)}</strong></span></div>
       ${verdictBanner(r)}
-      ${reportLink}
+      ${reportEmbed}
       <div class="gates">${r.gates.map(gateLine).join('')}</div>
       ${r.artifacts.map(a => artifactBlock(r.org, a)).join('')}
       ${informed}</div>`;
