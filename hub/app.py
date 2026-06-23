@@ -8,6 +8,7 @@ seam. Static UI is served at /.
 
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
@@ -23,7 +24,7 @@ from typing import Any, TypedDict
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -48,6 +49,7 @@ from orgs.production_studio.taste import (
 from orgs.planning import StepResult, execute_plan, gate_plan, propose_plan
 from orgs.registry import REGISTRY, OrgRun, get_org
 from orgs.research_studio.knowledge import Brief, build_brief
+from orgs.research_studio.report import ReportParseError, parse_report
 from orgs.software_studio.builder import build as build_software
 from orgs.web_studio.aesthetics import aesthetic_gates
 from orgs.web_studio.browser import RenderResult
@@ -175,6 +177,75 @@ class BriefRequest(BaseModel):
 # The confident-wrong rate the knowledge mode must disclose (bench/RESULTS.md, 2026-06-22). Soft by
 # nature — measured on one model; the honest framing is "model-asserted, not verified".
 CONFIDENT_WRONG_RATE = "~6%"
+
+
+_REPORT_CSS = """
+  :root { --bg:#0d1117; --panel:#161b22; --line:#222b35; --ink:#e6edf3; --dim:#8b98a9;
+          --cyan:#22d3ee; --green:#34d399; --quote:#fbbf24; --mono:ui-monospace,Menlo,monospace; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font-family:Georgia,'Times New Roman',serif; line-height:1.7; }
+  .wrap { max-width:760px; margin:0 auto; padding:56px 24px 120px; }
+  .kicker { font-family:var(--mono); font-size:12px; letter-spacing:2px; text-transform:uppercase;
+            color:var(--cyan); margin-bottom:14px; }
+  h1 { font-size:38px; line-height:1.15; margin:0 0 10px; letter-spacing:-.5px; }
+  .meta { color:var(--dim); font-family:var(--mono); font-size:12.5px; margin-bottom:8px; }
+  .verified { display:inline-block; font-family:var(--mono); font-size:11px; color:var(--green);
+              border:1px solid var(--green); border-radius:20px; padding:3px 10px; margin:14px 0 36px; }
+  .claim { margin:0 0 30px; }
+  .statement { font-size:19px; margin:0 0 10px; }
+  .statement sup { font-family:var(--mono); font-size:11px; color:var(--cyan); }
+  .grounding { border-left:2px solid var(--line); padding:2px 0 2px 16px; margin-left:2px; }
+  .cite { font-family:var(--mono); font-size:13px; color:var(--dim); margin:6px 0; }
+  .cite .src { color:var(--cyan); }
+  .cite .quote { color:var(--quote); }
+  footer { margin-top:48px; padding-top:22px; border-top:1px solid var(--line);
+           font-family:var(--mono); font-size:12px; color:var(--dim); }
+  a { color:var(--cyan); text-decoration:none; }
+"""
+
+
+def _report_document_html(run: dict[str, Any]) -> str:
+    """Render a grounded research report as a readable document — with every claim shown beside the
+    VERBATIM quote that grounds it, so the verification model is visible on the page, not just in the
+    gate ledger. Raises ReportParseError / KeyError if the run has no usable report artifact."""
+    artifact = next((a for a in run.get("artifacts", []) if a.get("type") == "report"), None)
+    if artifact is None:
+        raise KeyError("no report artifact in this run")
+    report = parse_report(artifact["payload"])
+    e = html.escape
+
+    claims_html = []
+    for claim in report.claims:
+        cites = "".join(
+            f'<div class="cite">[{i + 1}] <span class="src">{e(c.source)}</span> — '
+            f'&ldquo;<span class="quote">{e(c.quote)}</span>&rdquo;</div>'
+            for i, c in enumerate(claim.citations)
+        )
+        markers = "".join(f"<sup>[{i + 1}]</sup>" for i in range(len(claim.citations)))
+        claims_html.append(
+            f'<div class="claim"><p class="statement">{e(claim.text)} {markers}</p>'
+            f'<div class="grounding">{cites}</div></div>'
+        )
+
+    topic = e(report.topic or run.get("goal", "Grounded report"))
+    model = e(str(run.get("model", "")))
+    when = e(str(run.get("created_at", ""))[:16].replace("T", " "))
+    n = len(report.claims)
+    return (
+        f'<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
+        f'<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f'<title>{topic}</title><style>{_REPORT_CSS}</style></head><body><div class="wrap">'
+        f'<div class="kicker">Veritas · Research Studio</div>'
+        f'<h1>{topic}</h1>'
+        f'<div class="meta">{n} claim{"s" if n != 1 else ""}, each grounded · {model} · {when}</div>'
+        f'<div class="verified">✓ every claim cited &amp; quoted verbatim from a pinned source</div>'
+        f'{"".join(claims_html)}'
+        f'<footer>Each claim above traces to a verbatim quote in a source you provided — that is what '
+        f'&ldquo;verified&rdquo; means here. Grounding is fidelity to the sources, not a guarantee of '
+        f'truth. · <a href="/">← back to the hub</a></footer>'
+        f'</div></body></html>'
+    )
 
 
 def _brief_dict(brief: Brief) -> dict[str, Any]:
@@ -1144,6 +1215,17 @@ def create_app(
     def about() -> FileResponse:
         # The standalone explainer (docs/about.html) served in-hub too — one file, two homes.
         return FileResponse(_ROOT / "docs" / "about.html", headers={"Cache-Control": "no-store"})
+
+    @app.get("/report/{run_id}")
+    def report_document(run_id: str) -> HTMLResponse:
+        """A grounded research report as a viewable document page (grounding shown inline)."""
+        run = runs.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        try:
+            return HTMLResponse(_report_document_html(run), headers={"Cache-Control": "no-store"})
+        except (ReportParseError, KeyError):
+            raise HTTPException(status_code=404, detail="no readable report in this run")
 
     if _STATIC.exists():
         app.mount("/static", StaticFiles(directory=_STATIC), name="static")

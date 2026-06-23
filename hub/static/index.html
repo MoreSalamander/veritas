@@ -409,6 +409,8 @@ function verdictBanner(r) {
 function artifactBlock(org, a) {
   const loc = `hub_data/memory/${esc(org)}/${esc(a.store)}/${esc(a.file)}`;
   let body = a.payload ? `<pre class="code">${esc(a.payload)}</pre>` : '';
+  // a grounded report is shown as a readable document (see runCard), so skip the raw JSON dump here.
+  if (a.type === 'report') body = '<div class="muted" style="font-size:12px">rendered as a document — open it above</div>';
   // a published production carries a manifest pointing at the rendered file — play it inline.
   if (a.type === 'publish') {
     try {
@@ -423,9 +425,12 @@ function runCard(r) {
   const model = r.model ? `<span class="pill">${esc(r.model)}</span> ` : '';
   const informed = r.informed_by && r.informed_by.length
     ? `<div class="muted" style="margin-top:8px">informed by ${r.informed_by.length} prior memory(ies): ${r.informed_by.map(esc).join(', ')}</div>` : '';
+  const reportLink = (r.accepted && r.id && (r.artifacts || []).some(a => a.type === 'report'))
+    ? `<a href="/report/${esc(r.id)}" target="_blank" rel="noopener" class="pill" style="border-color:var(--cyan);color:var(--cyan);display:inline-block;margin:10px 0 4px;text-decoration:none">📄 View as document ↗</a>` : '';
   return `<div class="panel">
       <div class="runhead"><span>${org}${model}<strong>${esc(r.goal)}</strong></span></div>
       ${verdictBanner(r)}
+      ${reportLink}
       <div class="gates">${r.gates.map(gateLine).join('')}</div>
       ${r.artifacts.map(a => artifactBlock(r.org, a)).join('')}
       ${informed}</div>`;
