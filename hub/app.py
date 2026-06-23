@@ -47,6 +47,7 @@ from orgs.production_studio.taste import (
 )
 from orgs.planning import StepResult, execute_plan, gate_plan, propose_plan
 from orgs.registry import REGISTRY, OrgRun, get_org
+from orgs.research_studio.knowledge import Brief, build_brief
 from orgs.software_studio.builder import build as build_software
 from orgs.web_studio.aesthetics import aesthetic_gates
 from orgs.web_studio.browser import RenderResult
@@ -164,6 +165,31 @@ class RouteRequest(BaseModel):
 class PlanStartRequest(BaseModel):
     request: str
     model: str = DEFAULT_MODEL
+
+
+class BriefRequest(BaseModel):
+    question: str
+    model: str = DEFAULT_MODEL
+
+
+# The confident-wrong rate the knowledge mode must disclose (bench/RESULTS.md, 2026-06-22). Soft by
+# nature — measured on one model; the honest framing is "model-asserted, not verified".
+CONFIDENT_WRONG_RATE = "~6%"
+
+
+def _brief_dict(brief: Brief) -> dict[str, Any]:
+    return {
+        "question": brief.question,
+        "claims": [
+            {"question": c.question, "answer": c.answer, "level": c.confidence.level,
+             "agreement": c.confidence.agreement, "hedged": c.confidence.hedged,
+             "reason": c.confidence.reason}
+            for c in brief.claims
+        ],
+        "confident": len(brief.confident),
+        "flagged": len(brief.flagged),
+        "confident_wrong_rate": CONFIDENT_WRONG_RATE,
+    }
 
 
 class PlanReviewBody(BaseModel):
@@ -1037,6 +1063,30 @@ def create_app(
             return {"error": "unknown plan session"}
         sess.provide_review(body.approved, body.feedback, body.sources)
         return {"ok": True}
+
+    # --- Knowledge mode: answer from the model's own knowledge, FLAG the uncertain. Soft, never green. ---
+    brief_progress: dict[str, dict[str, Any]] = {}
+
+    @app.post("/api/brief/start")
+    def brief_start(req: BriefRequest) -> dict[str, str]:
+        token = uuid4().hex
+        brief_progress[token] = {"done": False, "brief": None, "error": None}
+
+        def worker() -> None:
+            try:
+                prov = injected_provider or _provider_for(req.model)
+                brief_progress[token]["brief"] = _brief_dict(build_brief(req.question, prov))
+            except Exception as exc:  # model down, bad model, etc.
+                brief_progress[token]["error"] = f"{type(exc).__name__}: {exc}"
+            finally:
+                brief_progress[token]["done"] = True
+
+        threading.Thread(target=worker, daemon=True).start()
+        return {"token": token}
+
+    @app.get("/api/brief/{token}")
+    def brief_state(token: str) -> dict[str, Any]:
+        return brief_progress.get(token) or {"error": "unknown brief"}
 
     bench_sessions: dict[str, BenchSession] = {}
 

@@ -1015,6 +1015,18 @@ async function loadStudio(org) {
     ? `<button class="ghost" onclick="openCreateFor('${esc(org)}')">Create mode — you approve</button>` : '';
   const sources = meta.needs_sources
     ? `<textarea id="studiosources" style="width:100%;margin-top:10px;min-height:80px;background:#0c1119;border:1px solid var(--line);color:var(--ink);padding:10px;border-radius:10px;font-family:var(--mono);font-size:13px" placeholder="Paste your sources — the report can only cite these. Separate with a line of just ---"></textarea>` : '';
+  // Research-only: the "ask without sources" knowledge mode — answer from the model's knowledge,
+  // flag the uncertain. Soft, never green (the inverse of grounding).
+  const knowledgePanel = (org === 'research') ? `
+    <h2>Ask without sources <span class="muted" style="text-transform:none;letter-spacing:0">— knowledge mode</span></h2>
+    <div class="panel">
+      <div class="ungoverned">⚠ This answers from the model's <em>own knowledge</em> — not grounded in any source. Confident answers are the model's word, <strong>not verified</strong> (~6% are wrong). Flagged answers are the worklist to actually source or check. It's the inverse of grounding.</div>
+      <div class="row" style="margin-top:12px">
+        <input type="text" id="briefq" placeholder="e.g. tell me about the indie band Wet Leg" />
+        <button id="briefgo">Ask</button>
+      </div>
+    </div>
+    <div id="briefresult"></div>` : '';
   $('#studio').innerHTML = `
     <h1>${esc(meta.title.replace(' (preset)', ''))}</h1>
     <div class="muted" style="margin:-12px 0 16px">${esc(meta.produces)} · <span style="color:var(--green)">verified by ${esc(VERIFY_TAG[org] || 'its gates')}</span></div>
@@ -1027,12 +1039,55 @@ async function loadStudio(org) {
       <div class="muted" style="margin-top:10px">The model proposes; the deterministic gates decide — watch the cast and gates light up below.</div>
     </div>
     <div id="studiotrace" style="margin-top:8px">${roster ? '<div class="panel">' + renderRunTrace([], roster) + '</div>' : ''}</div>
+    ${knowledgePanel}
     <h2>This studio's runs</h2><div id="studiorundetail"></div><div id="studioruns"></div>
     <h2>This studio's memory</h2><div id="studiomem" class="grid2"></div>`;
   applyDefaultModel();
   $('#studiorun').onclick = () => runStudio(org, roster);
+  if ($('#briefgo')) { $('#briefgo').onclick = startBrief; $('#briefq').onkeydown = e => { if (e.key === 'Enter') startBrief(); }; }
   loadStudioRuns(org);
   loadStudioMem(org);
+}
+
+// --- Knowledge mode: ask without sources, see confidence honestly (soft, never verified) ---
+async function startBrief() {
+  const q = $('#briefq').value.trim();
+  if (!q) return;
+  $('#briefgo').disabled = true;
+  $('#briefresult').innerHTML = `<div class="panel"><div class="verdict running"><span class="livedot"></span> THINKING… (asking the model several times, measuring its confidence)</div></div>`;
+  let start;
+  try {
+    start = await api('/api/brief/start', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, model: $('#studiomodel').value }) });
+  } catch (e) { $('#briefresult').innerHTML = `<div class="panel"><span class="fail">couldn't reach the hub</span></div>`; $('#briefgo').disabled = false; return; }
+  while (true) {
+    let s;
+    try { s = await api('/api/brief/' + start.token); } catch (e) { await sleep(600); continue; }
+    if (s.error) { $('#briefresult').innerHTML = `<div class="panel"><span class="fail">${esc(s.error)}</span></div>`; break; }
+    if (s.done) { renderBrief(s.brief); break; }
+    await sleep(500);
+  }
+  $('#briefgo').disabled = false;
+}
+function briefClaim(c) {
+  const flagged = c.level === 'flagged';
+  const cls = flagged ? 'soft' : 'pass';
+  return `<div class="gate ${flagged ? '' : 'hard'}">
+      <div class="grow"><span class="gname"><span class="marker ${cls}">${flagged ? '⚑' : '●'}</span>${esc(c.question)}</span>
+        <span class="gverdict ${cls}">${flagged ? 'FLAGGED' : 'model-asserted'}</span></div>
+      <div class="gev"><strong>${esc(c.answer || '—')}</strong> — ${esc(c.reason)}</div></div>`;
+}
+function renderBrief(b) {
+  if (!b) { $('#briefresult').innerHTML = `<div class="panel"><span class="fail">no brief returned</span></div>`; return; }
+  const confident = b.claims.filter(c => c.level !== 'flagged');
+  const flagged = b.claims.filter(c => c.level === 'flagged');
+  $('#briefresult').innerHTML = `<div class="panel">
+    <div class="ungoverned">Nothing here is verified. <strong>${b.confident}</strong> model-asserted (the model's word — about ${esc(b.confident_wrong_rate || '~6%')} of these are wrong), <strong>${b.flagged}</strong> flagged for grounding or a human check.</div>
+    <h3 style="margin:14px 0 8px">Model-asserted <span class="muted" style="font-weight:400">· unverified</span></h3>
+    <div class="gates">${confident.map(briefClaim).join('') || '<div class="muted">none</div>'}</div>
+    <h3 style="margin:18px 0 8px">Flagged — the grounding worklist</h3>
+    <div class="gates">${flagged.map(briefClaim).join('') || '<div class="muted">none — the model was confident on everything (still not verified)</div>'}</div>
+  </div>`;
 }
 
 async function runStudio(org, roster) {
