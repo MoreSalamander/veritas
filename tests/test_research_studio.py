@@ -80,3 +80,18 @@ def test_quote_matching_is_whitespace_insensitive():
     spaced = json.dumps({"topic": "x", "claims": [
         {"text": "speed", "citations": [{"source": "src1", "quote": "fly   at speeds\nof up to 30 mph"}]}]})
     assert QuotesVerbatimGate(CORPUS).check(_report(spaced)).passed
+
+
+def test_quote_matching_is_typography_insensitive():
+    # the source uses curly quotes and an em-dash; the model re-typed them as ASCII. Same WORDS, so
+    # it's still verbatim — typography shouldn't decide truth (this is what failed the gto-poker runs).
+    corpus = {"src1": "Balance is the foundation of GTO — you must “mix” your play."}
+    ascii_copy = json.dumps({"topic": "x", "claims": [
+        {"text": "mixing", "citations": [{"source": "src1",
+         "quote": 'foundation of GTO - you must "mix" your play'}]}]})
+    assert QuotesVerbatimGate(corpus).check(_report(ascii_copy)).passed
+    # but a real PARAPHRASE (different words) still fails — only typography is folded, not meaning
+    paraphrase = json.dumps({"topic": "x", "claims": [
+        {"text": "mixing", "citations": [{"source": "src1",
+         "quote": "balance is central so you should vary your play"}]}]})
+    assert not QuotesVerbatimGate(corpus).check(_report(paraphrase)).passed

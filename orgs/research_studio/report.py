@@ -79,6 +79,21 @@ def parse_report(payload: str) -> Report:
     return Report(topic=str(obj.get("topic", "")), claims=claims)
 
 
+# Typographic variants that must NOT decide a verbatim match. Sources (especially from the web) use
+# curly quotes/apostrophes, en/em dashes, and ellipsis characters that a model routinely re-types as
+# their ASCII forms (or vice versa). Folding these keeps the gate strict on the WORDS — a paraphrase
+# still fails — while not rejecting an exact copy over punctuation style. (Same intent as the
+# whitespace fold: formatting shouldn't decide truth.)
+_TYPOGRAPHY = str.maketrans({
+    "“": '"', "”": '"',                 # “ ”  curly double quotes
+    "‘": "'", "’": "'",                 # ‘ ’  curly single quotes / apostrophe
+    "′": "'", "″": '"',                 # ′ ″  primes
+    "–": "-", "—": "-", "―": "-",  # – — ―  dashes
+    "…": "...",                              # …  ellipsis
+})
+
+
 def normalize(text: str) -> str:
-    """Whitespace-insensitive form for verbatim matching — formatting shouldn't decide truth."""
-    return " ".join(text.split())
+    """Whitespace- and typography-insensitive form for verbatim matching — smart quotes, dashes and
+    ellipses shouldn't decide truth; the WORDS still must match exactly, so a paraphrase still fails."""
+    return " ".join(text.translate(_TYPOGRAPHY).split())

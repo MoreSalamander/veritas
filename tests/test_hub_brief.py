@@ -49,6 +49,29 @@ def test_brief_returns_confident_and_flagged_claims(tmp_path):
     assert "unverified" in conf["reason"]
 
 
+def test_brief_renders_as_a_viewable_document(tmp_path):
+    provider = SequencedProvider({
+        "knowledge-writer": ["Where is the band from?\nWho are the members?"],
+        "knowledge": ["london", "london", "london", "london", "london",
+                      "a b", "c d", "e f", "g h", "a b"],
+    })
+    client = TestClient(create_app(data_dir=tmp_path, provider=provider))
+    token = client.post("/api/brief/start", json={"question": "tell me about the band"}).json()["token"]
+    _poll(client, token)
+
+    resp = client.get(f"/brief/{token}")
+    assert resp.status_code == 200 and "text/html" in resp.headers["content-type"]
+    page = resp.text
+    assert "Where is the band from?" in page and "london" in page   # a claim + its answer
+    assert "NOT verified" in page and "Knowledge mode" in page       # the unverified framing is loud
+
+
+def test_brief_document_404s_for_unknown_token(tmp_path):
+    provider = SequencedProvider({"knowledge-writer": [""], "knowledge": ["x"]})
+    client = TestClient(create_app(data_dir=tmp_path, provider=provider))
+    assert client.get("/brief/nope").status_code == 404
+
+
 def test_brief_unknown_token_is_an_error(tmp_path):
     provider = SequencedProvider({"knowledge-writer": [""], "knowledge": ["x"]})
     client = TestClient(create_app(data_dir=tmp_path, provider=provider))

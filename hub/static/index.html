@@ -1077,29 +1077,20 @@ async function startBrief() {
     let s;
     try { s = await api('/api/brief/' + start.token); } catch (e) { await sleep(600); continue; }
     if (s.error) { $('#briefresult').innerHTML = `<div class="panel"><span class="fail">${esc(s.error)}</span></div>`; break; }
-    if (s.done) { renderBrief(s.brief); break; }
+    if (s.done) { renderBrief(s.brief, start.token); break; }
     await sleep(500);
   }
   $('#briefgo').disabled = false;
 }
-function briefClaim(c) {
-  const flagged = c.level === 'flagged';
-  const cls = flagged ? 'soft' : 'pass';
-  return `<div class="gate ${flagged ? '' : 'hard'}">
-      <div class="grow"><span class="gname"><span class="marker ${cls}">${flagged ? '⚑' : '●'}</span>${esc(c.question)}</span>
-        <span class="gverdict ${cls}">${flagged ? 'FLAGGED' : 'model-asserted'}</span></div>
-      <div class="gev"><strong>${esc(c.answer || '—')}</strong> — ${esc(c.reason)}</div></div>`;
-}
-function renderBrief(b) {
+function renderBrief(b, token) {
   if (!b) { $('#briefresult').innerHTML = `<div class="panel"><span class="fail">no brief returned</span></div>`; return; }
-  const confident = b.claims.filter(c => c.level !== 'flagged');
-  const flagged = b.claims.filter(c => c.level === 'flagged');
+  // the brief renders as a viewable document (amber/unverified — the inverse of the grounded report)
   $('#briefresult').innerHTML = `<div class="panel">
-    <div class="ungoverned">Nothing here is verified. <strong>${b.confident}</strong> model-asserted (the model's word — about ${esc(b.confident_wrong_rate || '~6%')} of these are wrong), <strong>${b.flagged}</strong> flagged for grounding or a human check.</div>
-    <h3 style="margin:14px 0 8px">Model-asserted <span class="muted" style="font-weight:400">· unverified</span></h3>
-    <div class="gates">${confident.map(briefClaim).join('') || '<div class="muted">none</div>'}</div>
-    <h3 style="margin:18px 0 8px">Flagged — the grounding worklist</h3>
-    <div class="gates">${flagged.map(briefClaim).join('') || '<div class="muted">none — the model was confident on everything (still not verified)</div>'}</div>
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+      <strong style="font-size:13px">📄 Knowledge brief <span class="muted" style="font-weight:400">· ${b.confident} model-asserted, ${b.flagged} flagged · not verified</span></strong>
+      <a href="/brief/${esc(token)}" target="_blank" rel="noopener" class="pill" style="border-color:var(--amber);color:var(--amber);text-decoration:none">open full page ↗</a>
+    </div>
+    <iframe src="/brief/${esc(token)}" class="reportframe"></iframe>
   </div>`;
 }
 

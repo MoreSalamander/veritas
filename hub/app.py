@@ -263,6 +263,51 @@ def _brief_dict(brief: Brief) -> dict[str, Any]:
     }
 
 
+def _brief_document_html(brief: dict[str, Any]) -> str:
+    """Render a knowledge-mode Brief as a viewable document — the inverse of the grounded report,
+    so it wears AMBER 'unverified' rather than green 'verified'. Ephemeral by design (a Brief is the
+    throwaway, never-green mode): served from the live session, no persistence."""
+    e = html.escape
+    claims = brief.get("claims", [])
+    confident = [c for c in claims if c.get("level") != "flagged"]
+    flagged = [c for c in claims if c.get("level") == "flagged"]
+
+    def block(c: dict[str, Any], amber: bool) -> str:
+        col = "#fbbf24" if amber else "var(--ink)"
+        return (
+            f'<div class="claim"><p class="statement">{e(str(c.get("question", "")))}</p>'
+            f'<div class="grounding"><div class="cite">'
+            f'<strong style="color:{col}">{e(str(c.get("answer", "")) or "—")}</strong> '
+            f'<span style="color:var(--dim)">— {e(str(c.get("reason", "")))}</span>'
+            f'</div></div></div>'
+        )
+
+    q = e(str(brief.get("question", "Knowledge brief")))
+    rate = e(str(brief.get("confident_wrong_rate", "~6%")))
+    nconf, nflag = brief.get("confident", len(confident)), brief.get("flagged", len(flagged))
+    h2 = ('font-family:var(--mono);font-size:13px;letter-spacing:1px;color:var(--dim);'
+          'text-transform:uppercase;margin:30px 0 12px')
+    conf_html = "".join(block(c, False) for c in confident) or '<p class="meta">none</p>'
+    flag_html = "".join(block(c, True) for c in flagged) or \
+        '<p class="meta">none — the model was confident on everything (still not verified)</p>'
+    return (
+        f'<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
+        f'<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f'<title>{q}</title><style>{_REPORT_CSS}</style></head><body><div class="wrap">'
+        f'<div class="kicker">Veritas · Research Studio · Knowledge mode</div>'
+        f'<h1>{q}</h1>'
+        f'<div class="meta">{nconf} model-asserted · {nflag} flagged · from the model’s own knowledge</div>'
+        f'<div class="verified" style="color:#fbbf24;border-color:#fbbf24">⚠ NOT verified — '
+        f'model-asserted; about {rate} of confident answers are wrong</div>'
+        f'<h2 style="{h2}">Model-asserted · unverified</h2>{conf_html}'
+        f'<h2 style="{h2}">Flagged — needs grounding or a human</h2>{flag_html}'
+        f'<footer>The inverse of grounding: answered from the model’s own knowledge, the uncertain '
+        f'claims flagged. Nothing here is verified — &ldquo;confident&rdquo; means the model was consistent '
+        f'and didn’t hedge, not that it is true. · <a href="/">← back to the hub</a></footer>'
+        f'</div></body></html>'
+    )
+
+
 class PlanReviewBody(BaseModel):
     approved: bool
     feedback: str = ""
@@ -1158,6 +1203,14 @@ def create_app(
     @app.get("/api/brief/{token}")
     def brief_state(token: str) -> dict[str, Any]:
         return brief_progress.get(token) or {"error": "unknown brief"}
+
+    @app.get("/brief/{token}")
+    def brief_document(token: str) -> HTMLResponse:
+        """The knowledge Brief as a viewable document page (ephemeral — served from the live session)."""
+        prog = brief_progress.get(token)
+        if not prog or not prog.get("brief"):
+            raise HTTPException(status_code=404, detail="no brief for this token (it may have expired)")
+        return HTMLResponse(_brief_document_html(prog["brief"]), headers={"Cache-Control": "no-store"})
 
     bench_sessions: dict[str, BenchSession] = {}
 
