@@ -336,6 +336,74 @@ then the real engine is swapped behind the seam — the pattern that worked ever
   + lesson ship on grounding; the combiner's all-parts-shipped logic). The verification thesis is
   fully demonstrated — five models, and products built by reusing and composing them.*
 
+- **P28 · The Second Brain — a cross-org knowledge commons** — *verification model: **containment**,
+  not content. The commons holds material the human curated but no gate has fact-checked; the org's
+  job is to keep it labeled and quarantined forever. Done-when for the rung: every commons record
+  carries a resolvable origin + a `human-vouched` tag, and that tag provably survives into any
+  provenance that touches it; no gate ever promotes a commons record to fact.* The existing per-org
+  memory (`hub_data/memory/<org>/`) stays untouched and visually isolated — it is *produced* output.
+  The commons is a new, parallel `MemoryStore(base / "memory" / "commons")` of *ingested* input, a new
+  `category="source"`, reusing the proven YAML-frontmatter + `index.md` format verbatim. **Curation is
+  real verification of the *source*, not its *claims*:** the human vouches "this is a worthwhile source"
+  (earning `human-vouched`, the P21 tier) — they do not vouch that every sentence in the transcript is
+  true. So the consumption rule is **attributed-vs-factual**: a grounding gate may cite the commons for
+  *"Source X states Y"* (verifiable — the quote is verbatim, the source is vouched) but may **never**
+  ground *"Y is true"* on it (its truth was checked by no one). Sibling of **P23** — the commons is the
+  first store that outgrows `recall()`'s `load_all()`, so it makes P23's embedding-backed recall load-bearing.
+  - **P28a · The commons store** — `MemoryStore` at `memory/commons/` + `MemoryRecord.from_source(url,
+    channel, transcript, captured_why)` → `category="source"`, `human-vouched` frontmatter; a "Second
+    Brain" nav entry that lists/searches it and appears in **no** org tab. *DONE (2026-06-23): engine/memory.py
+    `from_source` + `TRUST_VOUCHED` + a persist-time containment guard (a source record without a resolvable
+    origin AND the human-vouched tag is refused at persist — unverified material lives in the commons only while
+    labeled). hub/app.py: a parallel `MemoryStore(base/"memory"/"commons")`, GET/POST `/api/commons` (manual
+    transcript entry; no-origin → 400). hub UI: a "Second Brain" nav entry + view (add form + ◆ human-vouched
+    cards) under its own "Knowledge" group, in no org tab. 6 tests (tests/test_commons.py + test_hub_commons.py),
+    267 pass, mypy clean. Verified live on an isolated instance: save → list → 400-on-no-origin.*
+  - **P28b · Manual ingest (URL paste)** — paste a YouTube URL → fetch transcript → `from_source` → persist.
+    No share-sheet yet; prove the spine with paste. *DONE (2026-06-23): hub/ingest.py = a `TranscriptFetcher`
+    seam (ABC) with `YtDlpFetcher` (captions via yt-dlp — manual subs preferred, auto-captions fallback,
+    json3/VTT parsed to clean text; downloads through yt-dlp's own HTTP client so it inherits TLS/headers) and
+    `ScriptedFetcher` so tests stay offline; `TranscriptUnavailable` is the fail-honestly signal. `/api/commons`
+    now fetches when no transcript is pasted (URL is the primary flow; manual paste is the fallback), 422s with a
+    clear message on no-captions/unreadable URLs, persists nothing junk. yt-dlp added to the hub extra +
+    mypy override. 11 commons/ingest tests (parsers, scripted fetch+fail, URL→fetch→persist, fail-honestly),
+    272 pass, mypy clean (67 files). Verified LIVE: a real YouTube URL → title/channel + 2029-char transcript
+    persisted human-vouched; a non-video URL → 422.*
+  - **P28c1 · Opt-in consumption — the trust mechanics (the thesis-proving rung).** Pass a commons-store
+    handle into one org's pipeline (Research first; a real signature/plumbing change through `hub/app.py`, not
+    a one-liner). Prove the *containment under consumption* on a deliberately trivial corpus (one source, so
+    retrieval is not a variable and can't mask the gate) — this is the first rung where the commons meets a
+    gate, and it meets it at the seam laundering would slip through (grounding's verbatim-quote check). Kept
+    small and isolated on purpose: retrieval engineering must not contaminate whether the gate actually holds
+    the line. *DONE (2026-06-24): orgs/research_studio/gates.py `VouchedAttributionGate` (HARD) — a claim citing
+    a commons source must NAME (attribute) that source in its text, else it's stating unverified material as
+    fact → refused. The deterministic signature of honest framing: an attributed claim names its source; it
+    can't be gamed harmfully because laundering would require writing "According to X, …", which is the honest
+    attributed form we allow. pipeline.py: `build_report(..., vouched=)` maps commons source id → attribution
+    label, adds the gate, and folds the commons ids into `informed_by` so the unverified provenance travels with
+    the output. Gate added to the research roster. Tests (tests/test_research_vouched.py): the crux — identical
+    citation + identical verbatim quote, ONLY the framing differs → "According to Rick Astley, the sky is green"
+    PASSES, bare "The sky is green" REFUSES; verified-tier sources untouched; pipeline accepts attributed +
+    carries commons provenance, refuses factual. 277 pass, mypy clean. NOTE: feeding commons sources into a hub
+    Research run is retrieval = P28c2; c1 deliberately proves the containment on a trivial corpus so retrieval
+    can't mask whether the gate holds.*
+  - **P28c2 · Passage retrieval — the scaling rung.** A whole transcript is the wrong unit to *recall* (a long
+    document matches almost any query and dumps 50k chars into the proposer's prompt) — but the right unit to
+    *store* (one source = one artifact, one provenance, one trust tag; storing the whole body is strictly more
+    information than chunks, and you can always derive passages but never un-chunk). So passages are a READ-path
+    transform, not a storage change: split each source into passages, rank passages, return the top few, each
+    still carrying its parent source's id/url/trust. Leaves `from_source`/the record untouched and the org's
+    proven `recall()` untouched. **Merges with P23** — passage-level is also the right granularity for embeddings
+    (which degrade on long text), so do the embedding work here, on passages. *Done: recall against a many-source
+    commons returns relevant PASSAGES (not whole transcripts) with parent provenance intact; a benchmark shows
+    passage recall beats whole-source recall on relevance at commons scale.*
+  - **P28d · Intent router (optional, deferrable)** — at ingest, "make software / make a video / write a
+    paper" spawns the matching org's run seeded with the commons record id. *Done: one ingest-with-intent
+    produces an org run whose output traces back to the source record.* (Explicitly optional — the store +
+    paste + consumption is the whole value; this never blocks them.)
+  - **P28e · Share hop** — *only now* the iOS Shortcut / browser extension that POSTs a URL to P28b. The last
+    mile, on a proven pipeline. *Done: sharing from the YouTube app lands a record in the commons end to end.*
+
 **Not Veritas** (a different machine — emergent simulation, "script incentives not outcomes," no
 artifact + no gate): Civilization Simulator, AI Dungeon Master, Company Simulator. These belong to
 the the-house-always-wins / Memory Economy City thread, not here.

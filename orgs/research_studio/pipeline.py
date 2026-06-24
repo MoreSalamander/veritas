@@ -22,6 +22,7 @@ from orgs.research_studio.gates import (
     QuotesVerbatimGate,
     ReportScorerGate,
     SupportGate,
+    VouchedAttributionGate,
 )
 from orgs.research_studio.report import Corpus
 
@@ -37,12 +38,19 @@ class ReportResult:
 
 def build_report(
     topic: str, corpus: Corpus, provider: ModelProvider, memory: MemoryStore,
-    *, judge: ModelProvider | None = None,
+    *, judge: ModelProvider | None = None, vouched: dict[str, str] | None = None,
 ) -> ReportResult:
+    """`vouched` maps any corpus source id drawn from the Second Brain (commons) -> its attribution
+    label. Those sources are human-vouched but UNVERIFIED, so a claim leaning on one must attribute
+    it, not state it as fact (VouchedAttributionGate). The commons source ids also flow into the
+    report's `informed_by`, so the unverified provenance travels with whatever the run produces."""
+    vouched = vouched or {}
     run = Run(goal=topic, memory=memory)
     recalled = memory.recall(topic, categories=["failure", "lesson", "decision"], limit=3)
     lessons = format_lessons(recalled)
-    informed_by = [record.id for record in recalled]
+    # The vouched commons sources are part of what informed the run — keep that in provenance so a
+    # downstream reader can see the work leaned on unverified, human-vouched material.
+    informed_by = [record.id for record in recalled] + sorted(vouched)
 
     def propose(feedback: str | None) -> Artifact:
         art = ResearcherAgent(provider).propose(topic, corpus, lessons=lessons, feedback=feedback)
@@ -56,6 +64,7 @@ def build_report(
             ClaimsCitedGate(),
             CitationsResolveGate(corpus),
             QuotesVerbatimGate(corpus),
+            VouchedAttributionGate(vouched),  # HARD — commons tier may ground only attributed claims
             SupportGate(judge or provider, corpus),  # SOFT — advisory judgment
             ValidationGate(),  # final authority — must run last
         ],

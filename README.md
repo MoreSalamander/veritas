@@ -275,6 +275,9 @@ entry. "It produces a different artifact" is never enough on its own — ask wha
 - **Judge collusion** — verifier sharing a model with the proposer. Keep them separate.
 - **Write-only failure memory** — rejections stored but never retrieved.
 - **Agent sprawl** — accreting roles before M1 proves a single loop.
+- **Laundered sources** — curated-but-unverified material (the Second Brain) treated as fact. A human
+  vouches a *source* is worth keeping, not that its claims are true; so a vouched source may ground only an
+  *attributed* claim ("Source X states Y"), never a factual one. The containment is checked, not trusted.
 
 ---
 

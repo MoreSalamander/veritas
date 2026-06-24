@@ -41,7 +41,7 @@ def test_grounded_report_ships(tmp_path):
     assert res.accepted
     names = [g.gate_name for g in res.report_outcome.artifact.provenance.gate_results]
     assert names == ["report-scorer", "every-claim-cited", "citations-resolve",
-                     "quotes-verbatim", "support", "validation"]
+                     "quotes-verbatim", "vouched-attribution", "support", "validation"]
     assert res.report_outcome.memory_path.parent.name == "institutional"
 
 

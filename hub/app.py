@@ -29,7 +29,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from engine.artifact import Artifact
-from engine.memory import MemoryStore
+from engine.memory import MemoryRecord, MemoryStore
+from hub.ingest import TranscriptFetcher, TranscriptUnavailable, YtDlpFetcher
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
 from engine.run import ActivityEntry, set_activity_listener
 from hub.store import RunStore, summarize
@@ -139,6 +140,13 @@ class RunRequest(BaseModel):
     sources: list[str] = []  # pinned corpus for orgs that need it (Research); ignored otherwise
 
 
+class CommonsSourceRequest(BaseModel):
+    url: str
+    transcript: str = ""  # blank => fetch it from the URL (P28b); provided => manual entry (P28a)
+    captured_why: str = ""  # the human's "why I saved this" — least-recoverable, most valuable
+    channel: str = ""
+
+
 class CreateStartRequest(BaseModel):
     goal: str
     model: str = DEFAULT_MODEL
@@ -203,6 +211,45 @@ _REPORT_CSS = """
            font-family:var(--mono); font-size:12px; color:var(--dim); }
   a { color:var(--cyan); text-decoration:none; }
 """
+
+
+def _commons_document_html(rec: MemoryRecord) -> str:
+    """A single Second Brain source as a standalone, readable page: the full transcript, with the
+    human-vouched provenance shown up top so the trust tier travels with the text."""
+    e = html.escape
+    prov = rec.provenance
+    url = str(prov.get("url") or "")
+    channel = str(prov.get("channel") or "")
+    why = str(prov.get("captured_why") or "")
+    trust = str(prov.get("trust") or "human-vouched")
+    meta = []
+    if channel:
+        meta.append(f'<div><span class="k">channel</span> {e(channel)}</div>')
+    if url:
+        meta.append(f'<div><span class="k">source</span> <a href="{e(url)}" target="_blank" rel="noopener">{e(url)}</a></div>')
+    if why:
+        meta.append(f'<div><span class="k">why saved</span> {e(why)}</div>')
+    meta.append(f'<div><span class="k">trust</span> <span class="vouch">◆ {e(trust)}</span> <span class="note">— vouches for the source, not the truth of its claims</span></div>')
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<title>{e(rec.title)} — Second Brain</title>
+<style>
+  :root {{ color-scheme: dark; }}
+  body {{ background:#0d1117; color:#c9d1d9; font:15px/1.6 -apple-system,system-ui,sans-serif; margin:0; padding:32px; }}
+  .wrap {{ max-width:820px; margin:0 auto; }}
+  h1 {{ font-size:20px; margin:0 0 12px; }}
+  .meta {{ background:#161b22; border:1px solid #21262d; border-radius:10px; padding:14px 16px; font-size:13px; display:grid; gap:6px; margin-bottom:20px; }}
+  .meta .k {{ display:inline-block; min-width:84px; color:#7d8590; }}
+  .vouch {{ color:#3fb950; }} .note {{ color:#7d8590; }}
+  a {{ color:#58a6ff; }}
+  pre {{ white-space:pre-wrap; word-wrap:break-word; font:13px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; background:#161b22; border:1px solid #21262d; border-radius:10px; padding:18px; }}
+  .back {{ color:#7d8590; font-size:13px; text-decoration:none; }}
+</style></head>
+<body><div class="wrap">
+  <a class="back" href="/">← back to the hub</a>
+  <h1>{e(rec.title)}</h1>
+  <div class="meta">{''.join(meta)}</div>
+  <pre>{e(rec.body)}</pre>
+</div></body></html>"""
 
 
 def _report_document_html(run: dict[str, Any]) -> str:
@@ -842,11 +889,15 @@ class PlanSession:
 
 
 def create_app(
-    data_dir: Path | None = None, provider: ModelProvider | None = None
+    data_dir: Path | None = None,
+    provider: ModelProvider | None = None,
+    fetcher: TranscriptFetcher | None = None,
 ) -> FastAPI:
     base = Path(data_dir) if data_dir else _DATA
     runs = RunStore(base / "runs")
     injected_provider = provider  # set in tests; when None, pick per-request by model
+    # Transcript fetcher for the Second Brain (P28b); ScriptedFetcher in tests so they stay offline.
+    transcript_fetcher = fetcher or YtDlpFetcher()
 
     # Each org keeps its own institutional memory: recall stays relevant to the
     # domain, and it mirrors how a hosted deployment would isolate tenants.
@@ -856,6 +907,11 @@ def create_app(
         if org_name not in memories:
             memories[org_name] = MemoryStore(base / "memory" / org_name)
         return memories[org_name]
+
+    # The Second Brain: one cross-org commons of curated source material, parallel to (never mixed
+    # into) the per-org memories above. It is input, not produced output, so it lives under its own
+    # root and shows in no org's view — only an org that opts in reads from it (P28).
+    commons = MemoryStore(base / "memory" / "commons")
 
     # Live run state, keyed by a one-shot token, so the UI can watch a run unfold
     # (Explain -> Synthesize -> Verify -> Persist) instead of only seeing the result.
@@ -1259,6 +1315,57 @@ def create_app(
         out.sort(key=lambda m: str(m["created_at"]), reverse=True)
         return out
 
+    @app.get("/api/commons")
+    def list_commons() -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for m in commons.load_all():
+            out.append(
+                {
+                    "id": m.id,
+                    "title": m.title,
+                    "tags": m.tags,
+                    "body": m.body,
+                    "url": m.provenance.get("url"),
+                    "channel": m.provenance.get("channel"),
+                    "captured_why": m.provenance.get("captured_why"),
+                    "trust": m.provenance.get("trust"),
+                    "file": f"memory/commons/institutional/{m.id}.md",
+                    "created_at": m.created_at,
+                }
+            )
+        out.sort(key=lambda m: str(m["created_at"]), reverse=True)
+        return out
+
+    @app.post("/api/commons")
+    def add_commons(body: CommonsSourceRequest) -> dict[str, Any]:
+        # Two ways in: paste a URL and let yt-dlp fetch the transcript (P28b, the default flow), or
+        # paste the transcript text directly (P28a, the manual fallback when a source has no captions).
+        # Containment is enforced in from_source/persist regardless of which path produced the text.
+        url, transcript, channel, title = body.url.strip(), body.transcript, body.channel, None
+        if not transcript.strip():
+            if not url:
+                raise HTTPException(status_code=400, detail="a source needs a URL or a pasted transcript")
+            try:
+                fetched = transcript_fetcher.fetch(url)
+            except TranscriptUnavailable as e:
+                # Fail honestly: a clear message and no junk record, not a 500.
+                raise HTTPException(status_code=422, detail=str(e)) from e
+            transcript = fetched.text
+            channel = channel or fetched.channel
+            title = fetched.title or None
+        try:
+            rec = MemoryRecord.from_source(
+                url=url,
+                transcript=transcript,
+                captured_why=body.captured_why,
+                channel=channel,
+                title=title,
+            )
+            commons.persist(rec)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return {"id": rec.id, "title": rec.title, "trust": rec.provenance.get("trust")}
+
     @app.get("/")
     def index() -> FileResponse:
         # Never cache the shell: the UI iterates fast and a stale index is pure confusion.
@@ -1279,6 +1386,15 @@ def create_app(
             return HTMLResponse(_report_document_html(run), headers={"Cache-Control": "no-store"})
         except (ReportParseError, KeyError):
             raise HTTPException(status_code=404, detail="no readable report in this run")
+
+    @app.get("/commons/{record_id}")
+    def commons_document(record_id: str) -> HTMLResponse:
+        """A single source's full transcript as its own viewable page (the 'open in its own page'
+        path; the Second Brain view also expands it inline)."""
+        rec = next((r for r in commons.load_all() if r.id == record_id), None)
+        if rec is None:
+            raise HTTPException(status_code=404, detail="source not found")
+        return HTMLResponse(_commons_document_html(rec), headers={"Cache-Control": "no-store"})
 
     if _STATIC.exists():
         app.mount("/static", StaticFiles(directory=_STATIC), name="static")

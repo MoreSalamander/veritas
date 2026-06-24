@@ -32,7 +32,8 @@ VERITAS_DATA=./hub_data .venv/bin/uvicorn hub.app:app --port 8099
 ## Layout
 - `engine/` — the substrate: Artifact, Gate, Memory, Run, Executor, Validation, model seam. Org-agnostic.
 - `orgs/` — each org = a cast (proposers) + domain gates. `registry.py` is the catalog the hub reads.
-- `hub/` — FastAPI control plane + the single-file UI (`hub/static/index.html`).
+- `hub/` — FastAPI control plane + the single-file UI (`hub/static/index.html`). `ingest.py` = the
+  transcript-fetcher seam (yt-dlp) feeding the Second Brain (the cross-org `memory/commons/` knowledge store).
 - `bench/` — measurement harnesses (`run_bench.py`, `selfconsistency.py`); `RESULTS.md` is curated.
 - `docs/` — `about.html` (explainer), design notes.
 
@@ -42,8 +43,11 @@ VERITAS_DATA=./hub_data .venv/bin/uvicorn hub.app:app --port 8099
    different artifact" is not enough; ask what *verifies* it.
 2. **Gates declare HARD or SOFT honestly.** Accept iff ≥1 HARD gate passed AND every HARD gate
    passed. **Zero hard gates can never accept.** SOFT (incl. LLM judges) can flag, never block.
-3. **Never show something as more verified than it is.** Three trust tiers: machine-proven (hard
-   gates) · model-judged (soft) · human-approved (create mode). Tag every artifact by who verified it.
+3. **Never show something as more verified than it is.** Trust tiers: machine-proven (hard gates) ·
+   model-judged (soft) · human-approved (create mode, a person signed off the output) · **human-vouched**
+   (Second Brain commons — a person curated the *source*, but nothing checked its *claims*). Tag every
+   artifact by who verified it. A human-vouched source may ground only an **attributed** claim ("Source X
+   states Y"), never a factual one ("Y is true") — that containment is `VouchedAttributionGate` (P28).
 4. **The model is swappable.** Every model call goes through `engine/model.py`'s `ModelProvider`
    seam. Tests use `ScriptedProvider`/`SequencedProvider` (offline, deterministic) — never a live model.
 5. **Memory only counts if retrieved at similar-task-start.** Failures/lessons are recalled and fed

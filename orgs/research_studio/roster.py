@@ -13,6 +13,7 @@ from orgs.research_studio.gates import (
     QuotesVerbatimGate,
     ReportScorerGate,
     SupportGate,
+    VouchedAttributionGate,
 )
 
 _CAST: list[tuple[str, str, str]] = [
@@ -24,6 +25,7 @@ _GATES: list[tuple[type[Gate], str]] = [
     (ClaimsCitedGate, "every claim carries a citation — no naked assertions"),
     (CitationsResolveGate, "every cited source resolves in the pinned corpus — no dangling references"),
     (QuotesVerbatimGate, "every quoted span actually appears, verbatim, in its cited source"),
+    (VouchedAttributionGate, "a claim leaning on a human-vouched (Second Brain) source must ATTRIBUTE it, not state it as fact — unverified material can't be laundered into grounded truth"),
     (SupportGate, "does the source actually SUPPORT the claim? — an LLM judge, advisory only"),
     (ValidationGate, "final authority: every hard gate passed, provenance complete"),
 ]

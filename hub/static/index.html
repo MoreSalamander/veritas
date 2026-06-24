@@ -224,6 +224,8 @@
     <div class="navlabel">&nbsp;</div>
     <a data-view="labs">Labs</a>
     <a data-view="models">Models</a>
+    <div class="navlabel">Knowledge</div>
+    <a data-view="commons">Second Brain</a>
     <div class="navlabel">Ungoverned</div>
     <a data-view="chat">Chat</a>
     <div class="navlabel">&nbsp;</div>
@@ -325,6 +327,21 @@
     <div id="modellist" style="display:grid;gap:10px"></div>
   </section>
 
+  <section id="commons" class="hidden">
+    <h1>Second Brain</h1>
+    <div class="muted" style="margin:-12px 0 16px;max-width:720px">Curated source material any engine can draw on — videos, talks, papers you fed in. It is <em>input</em>, not produced work, so it lives apart from every org's memory and shows in no studio. You picked it, so it's <strong>human-vouched</strong> — but that vouches for the <em>source</em>, not the truth of its claims. A grounding gate may cite it as <em>"this source states X"</em>; it may never treat X as a verified fact.</div>
+    <div class="panel" id="commonsadd">
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <input type="text" id="csurl" placeholder="source URL (e.g. https://youtu.be/…)" style="flex:1;min-width:260px" />
+        <input type="text" id="cschannel" placeholder="channel / author (optional)" style="flex:1;min-width:180px" />
+      </div>
+      <input type="text" id="cswhy" placeholder="why I saved this (one line — the most valuable, least-recoverable part)" style="width:100%;margin-top:8px" />
+      <textarea id="cstranscript" placeholder="transcript — optional; leave blank to fetch it from the URL" style="width:100%;height:96px;margin-top:8px;font-family:var(--mono);font-size:12.5px"></textarea>
+      <div class="row" style="margin-top:8px"><button id="csgo">Fetch &amp; Save</button><span class="muted" id="csmsg" style="font-size:12px"></span></div>
+    </div>
+    <div id="commonslist" style="display:grid;gap:10px;margin-top:16px"></div>
+  </section>
+
   <section id="plan" class="hidden">
     <h1>Plan</h1>
     <div class="muted" style="margin:-12px 0 16px;max-width:720px">Describe something bigger than one studio. The planner proposes an ordered plan <em>across the engines</em>; a deterministic gate checks it's runnable; you confirm; then each step ships through its own gates. The plan ships iff every step ships — the interview, one level up.</div>
@@ -369,12 +386,13 @@ document.querySelectorAll('nav a[data-view]').forEach(a => a.onclick = () => {
   document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
   a.classList.add('active');
   const view = a.dataset.view;
-  ['home','plan','studio','labs','models','create','chat'].forEach(v => $('#'+v).classList.toggle('hidden', v !== view));
+  ['home','plan','studio','labs','models','commons','create','chat'].forEach(v => $('#'+v).classList.toggle('hidden', v !== view));
   if (view === 'home') loadHome();
   if (view === 'plan') loadPlan();
   if (view === 'studio') loadStudio(a.dataset.org);
   if (view === 'labs') loadLabs();
   if (view === 'models') loadModelsView();
+  if (view === 'commons') loadCommons();
   if (view === 'chat') loadChat();
 });
 
@@ -484,6 +502,60 @@ async function loadModelsView() {
         : `<button class="ghost" onclick="setDefaultModel('${esc(m.name)}')">Set as my default</button>`}
     </div>`;
   }).join('');
+}
+
+// --- Second Brain: the cross-org commons of curated, human-vouched source material (P28) ---
+async function loadCommons() {
+  $('#csgo').onclick = saveSource;
+  const items = await api('/api/commons');
+  const list = $('#commonslist');
+  if (!items.length) {
+    list.innerHTML = '<div class="muted" style="font-size:13px">Nothing saved yet. Paste a source above — it becomes material any engine can draw on later.</div>';
+    return;
+  }
+  list.innerHTML = items.map(m => {
+    const why = m.captured_why ? `<div style="margin:6px 0;font-size:13px"><span class="muted">why:</span> ${esc(m.captured_why)}</div>` : '';
+    const src = m.channel ? `${esc(m.channel)} — ` : '';
+    const body = m.body || '';
+    const chars = body.length;
+    // Short transcripts show in full; long ones collapse to a snippet you can expand in place.
+    const txt = chars > 280
+      ? `<details class="csbody"><summary class="mono" style="font-size:11.5px;color:var(--dim);white-space:pre-wrap;cursor:pointer">${esc(body.slice(0, 280))}… <span class="muted" style="font-size:11px">(${chars.toLocaleString()} chars — click to expand)</span></summary><div class="mono" style="font-size:11.5px;color:var(--ink);white-space:pre-wrap;margin-top:8px;max-height:420px;overflow:auto">${esc(body)}</div></details>`
+      : `<div class="mono" style="font-size:11.5px;color:var(--dim);white-space:pre-wrap">${esc(body)}</div>`;
+    return `<div class="panel" style="margin:0">
+      <div class="row" style="justify-content:space-between;align-items:baseline">
+        <span><strong>${esc(m.title)}</strong></span>
+        <span class="pill" style="border-color:var(--green);color:var(--green)">◆ ${esc(m.trust || 'human-vouched')}</span></div>
+      <div class="muted" style="font-size:12px;margin:4px 0">${src}<a href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.url)}</a>
+        <a href="/commons/${esc(m.id)}" target="_blank" rel="noopener" style="margin-left:10px">open full ↗</a></div>
+      ${why}
+      ${txt}
+    </div>`;
+  }).join('');
+}
+
+async function saveSource() {
+  const url = $('#csurl').value.trim();
+  const transcript = $('#cstranscript').value.trim();
+  const msg = $('#csmsg');
+  if (!url) { msg.textContent = 'a source needs a URL'; return; }
+  msg.textContent = transcript ? 'saving…' : 'fetching transcript…';
+  const res = await fetch('/api/commons', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      url, transcript,
+      captured_why: $('#cswhy').value.trim(),
+      channel: $('#cschannel').value.trim(),
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    msg.textContent = 'rejected: ' + (err.detail || res.status);
+    return;
+  }
+  msg.textContent = 'saved ✓';
+  ['csurl','cschannel','cswhy','cstranscript'].forEach(id => $('#'+id).value = '');
+  loadCommons();
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

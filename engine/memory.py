@@ -30,6 +30,11 @@ _STOPWORDS = {
 }
 
 
+# The third trust tier as it appears in the commons: the human curated this source. It vouches
+# for the source's worth, never for the truth of the claims inside it (see from_source). P28.
+TRUST_VOUCHED = "human-vouched"
+
+
 def _stem(word: str) -> str:
     # Just enough to make "reverses"/"strings" match "reverse"/"string". Not linguistics.
     if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
@@ -114,6 +119,39 @@ class MemoryRecord:
         )
 
     @classmethod
+    def from_source(
+        cls,
+        *,
+        url: str,
+        transcript: str,
+        captured_why: str = "",
+        channel: str = "",
+        title: str | None = None,
+    ) -> "MemoryRecord":
+        """A piece of curated source material entering the commons (the Second Brain).
+
+        The human picked it, so it is `human-vouched` — but that vouches for the SOURCE, not the
+        truth of its claims (the human did not fact-check every sentence; they often hadn't even
+        read the transcript when they shared it). So this is NOT a verified artifact: a consumer
+        may cite it as "Source X states Y" (attributed — the quote is verbatim, the source vouched)
+        but may never ground "Y is true" on it. The `trust: human-vouched` provenance and the tag
+        below carry that contract; `persist` refuses any source record that drops them (P28a)."""
+        if not (url and url.strip()):
+            raise ValueError("a source record needs a resolvable origin (url)")
+        return cls(
+            category="source",
+            title=title or (f"[source] {channel}" if channel else f"[source] {url}"),
+            body=transcript,
+            tags=["source", TRUST_VOUCHED],
+            provenance={
+                "url": url,
+                "channel": channel,
+                "captured_why": captured_why,
+                "trust": TRUST_VOUCHED,
+            },
+        )
+
+    @classmethod
     def from_rejected_artifact(cls, artifact: Artifact, reason: str) -> "MemoryRecord":
         prov = _provenance_dict(artifact)
         prov["rejected_because"] = reason
@@ -167,6 +205,14 @@ class MemoryStore:
         self._embed_cache: dict[str, list[float]] = {}
 
     def persist(self, record: MemoryRecord) -> Path:
+        # Containment (P28): a source record without a resolvable origin AND the human-vouched
+        # trust tag is refused — unverified material may live in the commons only while it stays
+        # labeled, so nothing downstream can mistake it for a fact.
+        if record.category == "source":
+            if not record.provenance.get("url"):
+                raise ValueError("a source record needs a resolvable origin to persist")
+            if record.provenance.get("trust") != TRUST_VOUCHED or TRUST_VOUCHED not in record.tags:
+                raise ValueError("a source record must carry the human-vouched trust tag to persist")
         target_dir = self.failures if record.category == "failure" else self.institutional
         path = target_dir / f"{record.id}.md"
         path.write_text(self._render(record), encoding="utf-8")

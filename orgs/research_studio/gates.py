@@ -105,6 +105,52 @@ class QuotesVerbatimGate(Gate):
         return self._result(True, f"all {checked} quoted span(s) appear verbatim in their source")
 
 
+class VouchedAttributionGate(Gate):
+    """HARD: a claim that leans on a human-vouched (commons / Second Brain) source must ATTRIBUTE
+    it — name that source in the claim — not state its content as bare fact.
+
+    This is the containment that keeps the Second Brain from laundering unverified material into
+    grounded fact (P28c1). The verbatim-quote gate cannot tell *"Source X states Y"* from *"Y is
+    true"* — both can quote the same span exactly. The difference is framing, and the deterministic
+    signature of honest framing is that an attributed claim NAMES the source it is leaning on. So:
+    a curated video can back *"According to X, the sky is green"*; it can never back a naked *"The
+    sky is green."* A human vouched for the source, not for the truth of what it says.
+
+    `vouched` maps a commons source id (as it appears in the corpus) -> its attribution label (the
+    channel/title to look for in the claim). Sources NOT in `vouched` are verified-tier and untouched
+    by this gate — it governs only the unverified commons tier."""
+
+    name = "vouched-attribution"
+    determinism = Determinism.HARD
+
+    def __init__(self, vouched: dict[str, str]) -> None:
+        self.vouched = vouched
+
+    def check(self, artifact: Artifact) -> GateResult:
+        try:
+            report = parse_report(artifact.payload)
+        except ReportParseError as exc:
+            return self._result(False, f"report not usable: {exc}")
+        attributed = 0
+        for c in report.claims:
+            text = normalize(c.text).lower()
+            for cit in c.citations:
+                label = self.vouched.get(cit.source)
+                if not label:  # verified-tier source, or no usable label — not this gate's concern
+                    continue
+                if normalize(label).lower() not in text:
+                    return self._result(
+                        False,
+                        f"claim leans on human-vouched source {label!r} but does not attribute it: "
+                        f"{c.text[:70]!r} — a vouched source can ground an ATTRIBUTED claim "
+                        f'("according to {label}, ..."), never a bare factual assertion',
+                    )
+                attributed += 1
+        if attributed == 0:
+            return self._result(True, "no human-vouched sources cited")
+        return self._result(True, f"all {attributed} vouched-sourced citation(s) attribute their source")
+
+
 JUDGE_SYSTEM = (
     "You are a fact-checker. For each numbered claim you are given the text of the source it "
     "cites. Decide ONLY from that source text whether it SUPPORTS the claim. Respond with ONLY "

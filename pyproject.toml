@@ -10,8 +10,8 @@ requires-python = ">=3.11"
 dependencies = ["pyyaml>=6.0"]
 
 [project.optional-dependencies]
-hub = ["fastapi>=0.110", "uvicorn>=0.29", "anthropic>=0.40"]
-dev = ["pytest>=8.0", "mypy>=1.8", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27", "anthropic>=0.40", "playwright>=1.50"]
+hub = ["fastapi>=0.110", "uvicorn>=0.29", "anthropic>=0.40", "yt-dlp>=2024.0"]
+dev = ["pytest>=8.0", "mypy>=1.8", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27", "anthropic>=0.40", "playwright>=1.50", "yt-dlp>=2024.0"]
 # Web Studio (P14) renders in a real browser: after install, run `playwright install chromium`.
 
 [tool.setuptools.packages.find]
@@ -28,4 +28,8 @@ files = ["engine", "orgs", "hub"]
 
 [[tool.mypy.overrides]]
 module = "yaml"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "yt_dlp"
 ignore_missing_imports = true
