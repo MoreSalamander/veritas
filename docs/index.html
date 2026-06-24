@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Veritas Dynamics — reliable autonomous organizations</title>
+<meta name="description" content="An LLM proposes; a deterministic scaffold decides. Veritas is a trust system for autonomous organizations — typed artifacts, machine-checkable gates, provenance, institutional memory." />
+<style>
+  :root {
+    --bg: #0a0e14; --panel: #111722; --line: #1e2733; --ink: #e6edf3;
+    --dim: #8b98a9; --cyan: #22d3ee; --green: #34d399; --red: #f87171; --amber: #fbbf24;
+    --violet: #a78bfa;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans);
+         line-height: 1.65; -webkit-font-smoothing: antialiased; }
+  a { color: var(--cyan); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 22px 110px; }
+
+  header { padding: 78px 0 38px; border-bottom: 1px solid var(--line); }
+  .kicker { font-family: var(--mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+            color: var(--cyan); margin-bottom: 14px; }
+  h1 { font-size: 44px; line-height: 1.1; margin: 0 0 18px; letter-spacing: -1px; }
+  h1 b { color: var(--cyan); font-weight: 800; }
+  .lede { font-size: 19px; color: var(--dim); max-width: 680px; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+  .links { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 10px; }
+  .links a { font-family: var(--mono); font-size: 13px; border: 1px solid var(--line);
+             border-radius: 10px; padding: 9px 14px; color: var(--ink); }
+  .links a:hover { border-color: var(--cyan); text-decoration: none; }
+  .links a.primary { border-color: var(--cyan); color: var(--cyan); }
+
+  h2 { font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--cyan); margin: 60px 0 6px; }
+  .h2sub { font-size: 26px; font-weight: 700; margin: 0 0 18px; letter-spacing: -.5px; }
+  p { margin: 0 0 16px; }
+  .muted { color: var(--dim); }
+  em { color: var(--ink); font-style: normal; border-bottom: 1px dashed var(--dim); }
+
+  .callout { border-left: 3px solid var(--violet); background: rgba(167,139,250,.06);
+             border-radius: 0 12px 12px 0; padding: 16px 20px; margin: 22px 0; font-size: 16px; }
+  .callout strong { color: var(--ink); }
+
+  figure { margin: 28px 0; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { font-family: var(--mono); font-size: 11.5px; color: var(--dim); margin-top: 10px; text-align: center; }
+
+  table { width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: .5px; text-transform: uppercase; color: var(--dim); }
+  td .org { font-family: var(--mono); color: var(--cyan); }
+  td .how { color: var(--green); }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 20px 0; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } h1 { font-size: 32px; } }
+  .tier { border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; background: var(--panel); }
+  .tier .badge { font-family: var(--mono); font-size: 11px; letter-spacing: .5px; text-transform: uppercase; }
+  .tier .badge.machine { color: var(--green); }
+  .tier .badge.model { color: var(--amber); }
+  .tier .badge.human { color: var(--violet); }
+  .tier .badge.vouched { color: var(--cyan); }
+  .tier h4 { margin: 8px 0 6px; font-size: 16px; }
+  .tier p { font-size: 14px; color: var(--dim); margin: 0; }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; margin: 22px 0; }
+  .stat { font-family: var(--mono); font-size: 13px; color: var(--dim); line-height: 2; }
+  .stat b { color: var(--ink); }
+  .stat .done { color: var(--green); } .stat .next { color: var(--amber); }
+  footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--line);
+           font-family: var(--mono); font-size: 12px; color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">Veritas Dynamics</div>
+  <h1>An LLM <b>proposes</b>.<br>A deterministic scaffold <b>decides</b>.</h1>
+  <p class="lede">Reliable autonomous organizations. The model is a <strong>proposal engine</strong>;
+  trust comes from the <strong>scaffold around it</strong> — typed artifacts, machine-checkable gates,
+  provenance, institutional memory. It's a <strong>trust system</strong>, not a cleverer agent.</p>
+  <div class="links">
+    <a class="primary" href="about.html">Read the full explainer →</a>
+    <a href="https://github.com/MoreSalamander/veritas">Source on GitHub</a>
+  </div>
+</header>
+
+<h2>The thesis</h2>
+<div class="h2sub">Reliability is an architecture, not a bigger model.</div>
+<p>Almost every "AI builds software" project bets on <em>capability</em> — more model, more agents,
+and reliability is supposed to emerge. Veritas makes the opposite bet:</p>
+<div class="callout">
+  <strong>The model is swappable; the floor doesn't move.</strong> An LLM only ever <em>guesses</em>.
+  A guess becomes an accepted artifact only by clearing a deterministic gate that can <em>prove</em> it —
+  and a rejected guess is remembered, so the organization learns from what it refused.
+</div>
+
+<figure>
+<svg viewBox="0 0 840 190" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, Menlo, monospace">
+  <rect x="20" y="55" width="190" height="80" rx="12" fill="#111722" stroke="#fbbf24"/>
+  <text x="115" y="87" fill="#fbbf24" font-size="13" text-anchor="middle">LLM</text>
+  <text x="115" y="107" fill="#8b98a9" font-size="11" text-anchor="middle">proposal engine</text>
+  <text x="115" y="123" fill="#8b98a9" font-size="11" text-anchor="middle">"here's a guess"</text>
+  <line x1="210" y1="95" x2="300" y2="95" stroke="#3a4656" stroke-width="2"/>
+  <polygon points="300,95 290,90 290,100" fill="#3a4656"/>
+  <text x="255" y="85" fill="#8b98a9" font-size="10" text-anchor="middle">artifact</text>
+  <rect x="300" y="35" width="240" height="120" rx="12" fill="#111722" stroke="#34d399"/>
+  <text x="420" y="65" fill="#34d399" font-size="13" text-anchor="middle">DETERMINISTIC SCAFFOLD</text>
+  <text x="420" y="85" fill="#8b98a9" font-size="11" text-anchor="middle">gates · provenance · memory</text>
+  <text x="420" y="107" fill="#e6edf3" font-size="11" text-anchor="middle">can it be PROVEN?</text>
+  <text x="420" y="127" fill="#8b98a9" font-size="11" text-anchor="middle">the decision engine</text>
+  <line x1="540" y1="75" x2="630" y2="50" stroke="#34d399" stroke-width="2"/>
+  <polygon points="630,50 619,50 624,59" fill="#34d399"/>
+  <rect x="630" y="33" width="190" height="40" rx="10" fill="#0c1119" stroke="#34d399"/>
+  <text x="725" y="58" fill="#34d399" font-size="12" text-anchor="middle">✓ SHIPPED — earned</text>
+  <line x1="540" y1="115" x2="630" y2="140" stroke="#f87171" stroke-width="2"/>
+  <polygon points="630,140 619,136 624,145" fill="#f87171"/>
+  <rect x="630" y="117" width="190" height="40" rx="10" fill="#0c1119" stroke="#f87171"/>
+  <text x="725" y="142" fill="#f87171" font-size="12" text-anchor="middle">✗ REJECTED → remembered</text>
+</svg>
+<figcaption>The whole machine in one picture: propose → prove → ship or remember.</figcaption>
+</figure>
+
+<h2>What counts as an organization</h2>
+<div class="h2sub">An org is defined by its verification model.</div>
+<p>Not "it makes a different artifact" — ask what <em>verifies</em> it. Same verification model means
+same org, different role; a genuinely different way of knowing an artifact is true means a different org.
+Five distinct verification models run side by side on one unchanged engine:</p>
+<table>
+  <tr><th>Org</th><th>Makes</th><th>How it's verified</th></tr>
+  <tr><td><span class="org">software</span></td><td>code</td><td><span class="how">execute it</span> — run the cases &amp; properties in a sandbox</td></tr>
+  <tr><td><span class="org">web</span></td><td>web pages</td><td><span class="how">render it</span> — a real headless browser asserts the DOM</td></tr>
+  <tr><td><span class="org">research</span></td><td>grounded reports</td><td><span class="how">ground it</span> — every claim traces to a pinned source, verbatim</td></tr>
+  <tr><td><span class="org">production</span></td><td>narrated videos</td><td><span class="how">referential integrity</span> — entities stay consistent through the chain</td></tr>
+  <tr><td><span class="org">empirical</span></td><td>hypotheses</td><td><span class="how">reproduce it</span> — re-run the experiment, the results must match</td></tr>
+</table>
+<p class="muted">Products that reuse or compose these models — Newsroom, Education, Startup, Game — are
+<em>presets</em>, not new orgs: the substrate generalizes without new verification machinery.</p>
+
+<h2>Trust tiers</h2>
+<div class="h2sub">Never show something as more verified than it is.</div>
+<p>Not everything <em>can</em> be machine-proven. The discipline is to be honest about which tier each
+artifact earned, and never to dress one as another.</p>
+<div class="grid">
+  <div class="tier"><span class="badge machine">● machine-proven</span>
+    <h4>A hard gate proved it</h4>
+    <p>Executed, rendered, grounded, reproduced. A fact, not an opinion — the only "done" that ships.</p></div>
+  <div class="tier"><span class="badge model">○ model-judged</span>
+    <h4>An LLM judged it</h4>
+    <p>An advisory opinion (e.g. "does the source support the claim?"). Can flag, never block.</p></div>
+  <div class="tier"><span class="badge human">◆ human-approved</span>
+    <h4>A person signed off</h4>
+    <p>For taste — where feel is the only valid oracle. Real verification, human-tier, learned as memory.</p></div>
+  <div class="tier"><span class="badge vouched">◆ human-vouched</span>
+    <h4>A person curated the source</h4>
+    <p>The Second Brain: you vouched the <em>source</em> is worth keeping — not that its claims are true.</p></div>
+</div>
+
+<h2>The Second Brain</h2>
+<div class="h2sub">A knowledge commons that can't be laundered into fact.</div>
+<p>Any org can draw on a shared store of curated material — paste a URL, the transcript is fetched and
+kept. But curated is not verified: a human vouches for the <em>source</em>, not for the truth of what it
+says. So a vouched source can ground an <em>attributed</em> claim — <em>"Source X states Y"</em> — and is
+<strong>refused</strong> the moment it's used to assert <em>"Y is true."</em> The containment is a hard
+gate that's checked, not trusted — the same discipline, applied to knowledge coming in.</p>
+
+<h2>Where it stands</h2>
+<div class="panel stat">
+  <div><span class="done">✓ built</span> &nbsp;the engine substrate — Artifact · Gate · Memory · Run · Executor · Validation</div>
+  <div><span class="done">✓ built</span> &nbsp;<b>5 verification models</b> + 4 presets, cross-org planning, a benchmark harness</div>
+  <div><span class="done">✓ built</span> &nbsp;the <b>bootstrap</b> — the org built a real piece of Veritas under its own gates</div>
+  <div><span class="done">✓ built</span> &nbsp;create mode — interview → build → human-approved, with a learned aesthetic profile</div>
+  <div><span class="done">✓ built</span> &nbsp;the <b>Second Brain</b> — curated knowledge commons with attributed-only grounding</div>
+  <div><span class="next">→ next</span> &nbsp;passage-level retrieval &amp; embeddings · richer media production · hosting</div>
+  <div class="muted" style="margin-top:10px">277 tests · mypy --strict clean · local-first (Ollama) with a swappable cloud model</div>
+</div>
+
+<footer>
+  Veritas Dynamics — a MoreSalamander project. &nbsp;|&nbsp;
+  <a href="about.html">Full explainer</a> &nbsp;·&nbsp;
+  <a href="https://github.com/MoreSalamander/veritas">GitHub</a>
+  <br>The system that learns how to build the system.
+</footer>
+
+</div>
+</body>
+</html>
