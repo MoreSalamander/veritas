@@ -54,7 +54,8 @@
   td .how { color: var(--green); }
 
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 20px 0; }
-  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } h1 { font-size: 32px; } }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin: 20px 0; }
+  @media (max-width: 640px) { .grid, .grid3 { grid-template-columns: 1fr; } h1 { font-size: 32px; } }
   .tier { border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; background: var(--panel); }
   .tier .badge { font-family: var(--mono); font-size: 11px; letter-spacing: .5px; text-transform: uppercase; }
   .tier .badge.machine { color: var(--green); }
@@ -123,6 +124,28 @@ and reliability is supposed to emerge. Veritas makes the opposite bet:</p>
 <figcaption>The whole machine in one picture: propose → prove → ship or remember.</figcaption>
 </figure>
 
+<h2>How it works</h2>
+<div class="h2sub">Two primitives, one loop, one invariant.</div>
+<p>Everything is built from two primitives: a typed <em>artifact</em> (what an agent produces) and a
+<em>gate</em> (a check that declares itself HARD or SOFT). One loop runs them — a proposer makes an
+artifact, the gates rule on it, and it is accepted only if it <em>earns</em> it. Every accepted artifact
+carries a full provenance trail: who proposed it, which gates passed, what it was informed by.</p>
+<div class="callout">
+  <strong>The invariant: zero hard gates can never accept.</strong> Only a hard gate can say yes; soft
+  gates — including LLM judges — can flag, but never block, and never on their own ship anything. So the
+  system can never present a guess as a proof. And a rejected artifact isn't thrown away: it's written to
+  failure memory, so the refusal can teach the next attempt.
+</div>
+
+<h2>It learns</h2>
+<div class="h2sub">An organization that remembers what it refused.</div>
+<p>Memory only counts if it changes behavior. When a task starts, Veritas recalls the relevant past
+failures and decisions and feeds them to the proposer <em>before</em> it proposes — so it doesn't walk
+back into a mistake it already made. And when a gate rejects an artifact, the proposer re-attempts while
+<em>seeing the gate's evidence</em> (<span class="muted">"misquote of src1: …"</span>), self-correcting
+against the exact reason it failed. Getting better here isn't a bigger model; it's a loop that compounds
+what the gates taught it.</p>
+
 <h2>What counts as an organization</h2>
 <div class="h2sub">An org is defined by its verification model.</div>
 <p>Not "it makes a different artifact" — ask what <em>verifies</em> it. Same verification model means
@@ -165,6 +188,30 @@ kept. But curated is not verified: a human vouches for the <em>source</em>, not 
 says. So a vouched source can ground an <em>attributed</em> claim — <em>"Source X states Y"</em> — and is
 <strong>refused</strong> the moment it's used to assert <em>"Y is true."</em> The containment is a hard
 gate that's checked, not trusted — the same discipline, applied to knowledge coming in.</p>
+
+<h2>It's measured</h2>
+<div class="h2sub">New verification earns its place on data, not intuition.</div>
+<p>A benchmark harness runs the same goals across cheap local models and frontier cloud models and records
+what actually clears the gates. The headline finding: where the work is <em>achievable</em>, a cheap local
+model <strong>matches</strong> a frontier model on accepted-rate — because reliability lives in the
+scaffold, not the model — and where it <em>isn't</em>, every model is <strong>honestly refused</strong>
+rather than passed by a hopeful guess. No false greens, ever. The thesis, in data.</p>
+
+<h2>What it's already done</h2>
+<div class="h2sub">Past a single task — toward a platform that ships.</div>
+<div class="grid3">
+  <div class="tier"><h4>Built a piece of itself</h4>
+    <p>The strange loop: the Software Studio was given the goal <em>"estimate the tokens in a string"</em>
+    and produced a real Veritas component — accepted only after clearing its own hard gates. No human judged
+    the code; the gates did.</p></div>
+  <div class="tier"><h4>Plans across orgs</h4>
+    <p>A goal bigger than one studio becomes an ordered plan across the engines — and the plan ships only if
+    <em>every</em> step ships. The all-or-nothing discipline, one level up.</p></div>
+  <div class="tier"><h4>Create mode</h4>
+    <p>For work where taste is the only oracle: an interview asks until vague intent becomes a checkable
+    spec — manufacturing the gate up front — then a human approves the result, captured as a profile that
+    learns your taste.</p></div>
+</div>
 
 <h2>Where it stands</h2>
 <div class="panel stat">
