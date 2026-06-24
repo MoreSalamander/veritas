@@ -65,6 +65,13 @@
   .tier h4 { margin: 8px 0 6px; font-size: 16px; }
   .tier p { font-size: 14px; color: var(--dim); margin: 0; }
 
+  .cast { display: grid; gap: 12px; margin: 20px 0; }
+  .castgroup { border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; background: var(--panel); }
+  .castorg { font-family: var(--mono); font-size: 12px; letter-spacing: .5px; text-transform: uppercase; color: var(--cyan); margin-bottom: 8px; }
+  .castorg .n { color: var(--dim); margin-left: 6px; }
+  .castrole { font-size: 14px; color: var(--dim); padding: 5px 0; border-top: 1px solid var(--line); }
+  .castrole b { color: var(--ink); font-weight: 600; }
+  .tool { font-family: var(--mono); font-size: 10px; color: var(--amber); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; margin: 22px 0; }
   .stat { font-family: var(--mono); font-size: 13px; color: var(--dim); line-height: 2; }
   .stat b { color: var(--ink); }
@@ -161,6 +168,56 @@ Five distinct verification models run side by side on one unchanged engine:</p>
 </table>
 <p class="muted">Products that reuse or compose these models — Newsroom, Education, Startup, Game — are
 <em>presets</em>, not new orgs: the substrate generalizes without new verification machinery.</p>
+
+<h2>The cast</h2>
+<div class="h2sub">Every agent proposes; not one of them decides.</div>
+<p>More than twenty specialist agents do the work across the orgs. They are all <em>proposers</em> — they
+make artifacts; the gates rule. Some are pure <span class="tool">tool</span> roles with no model at all. And
+the checkers are kept honest by separation: the QA agent writes its tests without ever seeing the code, and
+the research judge runs on a different model than the writer.</p>
+<div class="cast">
+  <div class="castgroup">
+    <div class="castorg">software <span class="n">— 9</span></div>
+    <div class="castrole"><b>Router</b> — picks the function / module / app pipeline (a soft pre-decision; still hard-gated)</div>
+    <div class="castrole"><b>Spec Agent</b> — an executable spec from a goal: name, signature, cases, oracle-free properties</div>
+    <div class="castrole"><b>Developer Agent</b> — the source code; rewrites on rejection seeing the failing gates' evidence</div>
+    <div class="castrole"><b>QA Agent</b> — independent edge-case tests, written from the spec without ever seeing the code</div>
+    <div class="castrole"><b>Doc Agent</b> — docs whose code examples are run against the real function</div>
+    <div class="castrole"><b>Architect Agent</b> — a module contract: which functions exist, their signatures and properties</div>
+    <div class="castrole"><b>PM Agent</b> — acceptance as executable tests; at app scale, designs <code>main()</code>'s contract</div>
+    <div class="castrole"><b>Planner Agent</b> — a plan of module briefs for a goal too big for one module</div>
+    <div class="castrole"><b>Integrator Agent</b> — the entrypoint <code>main()</code> that composes the modules end to end</div>
+  </div>
+  <div class="castgroup">
+    <div class="castorg">web <span class="n">— 2</span></div>
+    <div class="castrole"><b>Designer</b> — the page's verifiable contract: the elements it must contain, as selectors (not its looks)</div>
+    <div class="castrole"><b>Web Developer</b> — a single self-contained HTML document; re-writes seeing the failing render gates</div>
+  </div>
+  <div class="castgroup">
+    <div class="castorg">research <span class="n">— 1 + judge</span></div>
+    <div class="castrole"><b>Researcher</b> — a report whose every claim cites a source and quotes it verbatim; re-writes on a misquote</div>
+  </div>
+  <div class="castgroup">
+    <div class="castorg">production <span class="n">— 6</span></div>
+    <div class="castrole"><b>Concept Developer</b> — the concept and its declared entities — the contract everything downstream is held to</div>
+    <div class="castrole"><b>Scriptwriter</b> — scenes and beats, using only the concept's declared entities</div>
+    <div class="castrole"><b>Storyboard Artist</b> — shots that cover every beat and show only the entities present in it</div>
+    <div class="castrole"><b>Asset Generator</b><span class="tool">tool</span> — an image per shot, narration audio per beat, each entity at its pinned reference</div>
+    <div class="castrole"><b>Editor</b><span class="tool">tool</span> — shots in storyboard order, each given its beat's narration time: a contiguous timeline</div>
+    <div class="castrole"><b>Publisher</b><span class="tool">tool</span> — renders the timeline to a real file with ffmpeg, to the target platform profile</div>
+  </div>
+  <div class="castgroup">
+    <div class="castorg">empirical <span class="n">— 3</span></div>
+    <div class="castrole"><b>Scientist</b> — one falsifiable hypothesis with a machine-checkable prediction (a comparison or threshold)</div>
+    <div class="castrole"><b>Experimentalist</b> — a self-contained, deterministic experiment that measures the metric</div>
+    <div class="castrole"><b>Experiment Runner</b><span class="tool">tool</span> — runs the security-scanned experiment repeatedly, records each result</div>
+  </div>
+  <div class="castgroup">
+    <div class="castorg">cross-cutting</div>
+    <div class="castrole"><b>Interviewer</b> — in create mode, asks until vague intent becomes a checkable spec — manufacturing the gate</div>
+    <div class="castrole"><b>Judge</b> — a separate-model fact-checker behind soft gates: it can flag, never block</div>
+  </div>
+</div>
 
 <h2>Trust tiers</h2>
 <div class="h2sub">Never show something as more verified than it is.</div>
