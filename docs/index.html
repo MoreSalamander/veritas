@@ -78,6 +78,23 @@
   .stat .done { color: var(--green); } .stat .next { color: var(--amber); }
   footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--line);
            font-family: var(--mono); font-size: 12px; color: var(--dim); }
+  /* runner */
+  .rn{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;margin:22px 0;}
+  .rn-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;}
+  .rn-bar .t{font-family:var(--mono);font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);}
+  .rn-att{font-family:var(--mono);font-size:12px;color:var(--dim);} .rn-att b{color:var(--cyan);}
+  .rn-track{display:flex;flex-wrap:wrap;align-items:stretch;}
+  .rn-s{flex:1;min-width:78px;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.02);padding:10px 7px;text-align:center;transition:all .3s;}
+  .rn-s .n{font-family:var(--mono);font-size:10.5px;color:var(--dim);transition:color .3s;}
+  .rn-s .g{font-family:var(--mono);font-size:9.5px;color:#4a5666;margin-top:3px;height:12px;}
+  .rn-s.on{border-color:var(--cyan);background:rgba(34,211,238,.10);box-shadow:0 0 20px -7px var(--cyan);} .rn-s.on .n{color:var(--ink);}
+  .rn-s.ok{border-color:var(--green);} .rn-s.ok .g{color:var(--green);}
+  .rn-s.no{border-color:var(--red);background:rgba(248,113,113,.10);} .rn-s.no .g{color:var(--red);} .rn-s.no .n{color:#f6b0b0;}
+  .rn-a{display:flex;align-items:center;color:#33414f;font-size:13px;padding:0 3px;}
+  .rn-con{margin-top:14px;background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:9px;padding:11px 14px;font-family:var(--mono);font-size:11.5px;line-height:1.8;height:128px;overflow:hidden;}
+  .rn-con .l{white-space:nowrap;color:var(--dim);} .rn-con .k{color:var(--violet);} .rn-con .ok{color:var(--green);} .rn-con .no{color:var(--red);} .rn-con .dn{color:var(--amber);}
+  .rn-cap{font-size:12px;color:var(--dim);margin-top:12px;line-height:1.5;}
+  @media(max-width:640px){.rn-a{display:none;} .rn-s{min-width:44%;}}
 </style>
 </head>
 <body>
@@ -143,6 +160,22 @@ carries a full provenance trail: who proposed it, which gates passed, what it wa
   gates — including LLM judges — can flag, but never block, and never on their own ship anything. So the
   system can never present a guess as a proof. And a rejected artifact isn't thrown away: it's written to
   failure memory, so the refusal can teach the next attempt.
+</div>
+
+<h2>Watch a run</h2>
+<div class="h2sub">A proposal earns acceptance — or is refused and remembered.</div>
+<div class="rn" id="rn">
+  <div class="rn-bar"><span class="t">software org · build(reverse_string)</span><span class="rn-att">attempt <b id="rnatt">1</b></span></div>
+  <div class="rn-track">
+    <div class="rn-s" data-s="propose"><div class="n">propose</div><div class="g"></div></div><div class="rn-a">→</div>
+    <div class="rn-s" data-s="syntax"><div class="n">syntax</div><div class="g">hard ●</div></div><div class="rn-a">→</div>
+    <div class="rn-s" data-s="security"><div class="n">security</div><div class="g">hard ●</div></div><div class="rn-a">→</div>
+    <div class="rn-s" data-s="property"><div class="n">property</div><div class="g">hard ●</div></div><div class="rn-a">→</div>
+    <div class="rn-s" data-s="validation"><div class="n">validation</div><div class="g">hard ●</div></div><div class="rn-a">→</div>
+    <div class="rn-s" data-s="accepted"><div class="n">accepted</div><div class="g"></div></div>
+  </div>
+  <div class="rn-con" id="rncon"></div>
+  <div class="rn-cap">Accept iff <strong>every hard gate passed</strong> — nothing ships on a soft gate alone. A rejection is written to failure memory and fed back to the next attempt (the retry loop).</div>
 </div>
 
 <h2>It learns</h2>
@@ -290,5 +323,37 @@ rather than passed by a hopeful guess. No false greens, ever. The thesis, in dat
 </footer>
 
 </div>
+<script>
+(function(){
+  const ss=[...document.querySelectorAll('.rn-s')], by=id=>ss.find(s=>s.dataset.s===id);
+  const con=document.getElementById('rncon'), att=document.getElementById('rnatt');
+  if(!con) return;
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const reduced=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const F=reduced?0.12:1;
+  function clr(){ss.forEach(s=>s.classList.remove('on','ok','no'));}
+  function log(t,c){const l=document.createElement('div');l.className='l';l.innerHTML=t;if(c)l.className='l '+c;con.appendChild(l);while(con.children.length>6)con.removeChild(con.firstChild);}
+  async function run(id,note){clr();by(id).classList.add('on');log('<span class="k">propose</span> '+note);await sleep(620*F);}
+  async function gate(id,ok,note){clr();const e=by(id);e.classList.add('on');log('<span class="k">gate_check</span> '+id);await sleep(560*F);e.classList.remove('on');e.classList.add(ok?'ok':'no');e.querySelector('.g').textContent=ok?'pass ✓':'fail ✕';log((ok?'gate_pass ':'gate_fail ')+id+(note?' · '+note:''),ok?'ok':'no');await sleep(720*F);}
+  function reset(n){con.innerHTML='';clr();ss.forEach(s=>{const g=s.querySelector('.g');const d=s.dataset.s;g.textContent=(d==='propose'||d==='accepted')?'':'hard ●';});att.textContent=n;}
+  async function loop(){while(true){
+    reset(1);await sleep(500*F);
+    await run('propose','DeveloperAgent drafts reverse_string');
+    await gate('syntax',true,'parses');
+    await gate('security',true,'no eval/exec/os');
+    await gate('property',false,'round_trip(reverse) violated');
+    log('retry ↺ feedback → re-propose','no');await sleep(1100*F);
+    reset(2);await sleep(360*F);
+    await run('propose','re-propose with gate feedback');
+    await gate('syntax',true,'parses');
+    await gate('security',true,'no eval/exec/os');
+    await gate('property',true,'round_trip holds');
+    await gate('validation',true,'all hard passed · provenance complete');
+    clr();by('accepted').classList.add('on','ok');by('accepted').querySelector('.g').textContent='✓ shipped';
+    log('<span class="dn">accepted</span> → institutional memory');await sleep(3200*F);
+  }}
+  loop();
+})();
+</script>
 </body>
 </html>
