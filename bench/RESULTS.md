@@ -156,3 +156,19 @@ not hidden. It's the inverse of grounding: ground only the flagged minority. (De
 `docs/confidence-layer.md`.) This run is exploration; the formal version is an Empirical Lab experiment
 where the aggregate metric is stable enough to clear the reproducibility gate — the system gating its
 own evolution.
+
+### Promoted (2026-06-26): the bound is now a reproducible Empirical Lab experiment
+
+The above is a *live* run — temp 0.8, it doesn't reproduce, so it cannot by itself govern a tier
+(the reflexive rule: README §4.5 / ROADMAP principle 3). So it was promoted. The 8-sample run
+(`results/selfconsistency_20260622-182254.md`) is frozen into a pinned transcript, and the
+load-bearing number — the **confident-wrong rate** — is recomputed *deterministically* from that
+frozen data in `bench/experiments/confidence_self_consistency.py`. The reproducibility is of the
+*analysis*, not the sampling; that boundary is the honest part.
+
+The claim, as a checkable hypothesis: among confidently-asserted answers (self-consistency ≥ 80% AND
+no elicited hedge), the wrong rate is **< 10%**. Frozen result: **1/17 = 5.9%** confident-wrong. The
+experiment is security-scanned, run 3× by a real subprocess executor, and clears the Empirical Lab's
+`reproducibility` + `supports-hypothesis` gates — asserted in `tests/test_confidence_experiment.py`.
+The confidence layer earned its place by passing the system it belongs to; the rate being **above
+zero** is why the tier ships *labelled*, never *verified*.

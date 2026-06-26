@@ -131,6 +131,37 @@ on the artifact:
 
 ---
 
+## 4.5 The reflexive rule — the gates are governed too
+
+There is one move that can quietly rot a trust system from the inside: **adding a new way of
+verifying, on the strength of a measurement that doesn't reproduce.** A clever new gate, a new
+"confidence" signal, a heuristic that looked good once — wired in because a demo or a single run
+seemed to support it. That is the same sin as a soft gate worn as hard, one level up: now the
+*verification mechanism itself* is the unverified claim.
+
+So the doctrine turns on itself:
+
+> **No new verification mechanism is trusted until it has cleared the system's own empirical bar.**
+> A signal that decides what counts as "verified" must first be shown — by a *reproducible*
+> experiment — to measure what it claims to. Until then it ships disabled, or labelled exploratory,
+> never as a gate.
+
+This is enforced by the same machinery, not by good intentions: a proposed mechanism's central claim
+becomes a **hypothesis** in the Empirical Lab (the reproducibility org), its supporting measurement
+becomes a **frozen, re-runnable experiment**, and it earns trust only when the Reproducibility and
+Supports-Hypothesis gates pass. The system gates its own evolution.
+
+**First instance (live).** The knowledge mode's "confident" tier — answer from the model's own
+knowledge, flag what's unreliable — rests on one number: how often a *confidently* asserted answer is
+wrong. That bound was found by an exploratory live run (`bench/selfconsistency.py`), which by its
+nature does not reproduce. So it was promoted: the run was frozen into a pinned transcript and the
+bound recomputed deterministically (`bench/experiments/confidence_self_consistency.py`), where it
+clears the Empirical Lab's gates — confident-wrong rate **5.9%**, below the 10% bar that lets the tier
+ship *labelled* but (being above zero) never *verified*. The confidence layer earned its place by
+passing the system it belongs to.
+
+---
+
 ## 5. The foundational insight
 
 If you were starting tomorrow, the first milestone is **not** "make an agent write code."
@@ -278,6 +309,10 @@ entry. "It produces a different artifact" is never enough on its own — ask wha
 - **Laundered sources** — curated-but-unverified material (the Second Brain) treated as fact. A human
   vouches a *source* is worth keeping, not that its claims are true; so a vouched source may ground only an
   *attributed* claim ("Source X states Y"), never a factual one. The containment is checked, not trusted.
+- **An ungoverned gate** — a new verification mechanism (a gate, a confidence signal) trusted on a
+  one-off or irreproducible measurement. The unverified-claim problem, raised one level: the *verifier*
+  is now the thing nobody checked. Defense is the reflexive rule (§4.5) — its claim clears the Empirical
+  Lab's reproducibility gates before it may gate anything.
 
 ---
 

@@ -5,7 +5,7 @@ This is *in what order, and how we know each phase is real.*
 
 ---
 
-## Two principles that shape the whole sequence
+## Three principles that shape the whole sequence
 
 **1. Build the org first; extract the hub from it.**
 The instinct is to build the central hub first — it's the platform, it's what the
@@ -21,6 +21,15 @@ scaffold + tests first, UI last.
 No phase is complete on a green screenshot. Each phase's definition-of-done requires a
 deterministic check passing **and**, from Phase 1 on, a real artifact being *rejected*
 into failure memory. The green has to be earned by a gate that is capable of saying no.
+
+**3. The gates are governed too (the reflexive rule).**
+No new verification mechanism — a gate, a confidence signal, a scoring heuristic — is trusted on a
+one-off or irreproducible measurement. Its central claim must first clear the system's own empirical
+bar: framed as a hypothesis, supported by a *reproducible* experiment, passed through the Empirical
+Lab's gates. Until then it ships disabled or labelled exploratory, never as a gate. The system gates
+its own evolution. (See README §4.5. First instance: the confidence layer's confident-wrong bound,
+formalized in `bench/experiments/confidence_self_consistency.py` and asserted in
+`tests/test_confidence_experiment.py`.)
 
 ---
 

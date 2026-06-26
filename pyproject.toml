@@ -20,6 +20,7 @@ include = ["engine*", "orgs*", "hub*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+pythonpath = ["."]  # so tests can import bench/ (the formalized experiments), not just the installed packages
 
 [tool.mypy]
 python_version = "3.11"
