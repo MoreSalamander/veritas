@@ -172,3 +172,46 @@ experiment is security-scanned, run 3× by a real subprocess executor, and clear
 `reproducibility` + `supports-hypothesis` gates — asserted in `tests/test_confidence_experiment.py`.
 The confidence layer earned its place by passing the system it belongs to; the rate being **above
 zero** is why the tier ships *labelled*, never *verified*.
+
+---
+
+## Can a PROMPT change move the verified bar? (2026-06-26) — the bootstrap prerequisite
+
+**Question:** Veritas's own proposers run on system prompts (`SPEC_SYSTEM`, …). Before building a
+"prompt studio" that tunes them, measure the prerequisite: does a prompt delta produce a *real,
+reproducible* accept-rate signal through the unchanged gates — or just noise? `bench/promptbench.py`
+A/Bs named variants of `SPEC_SYSTEM` across a goal set, with a cosmetic (neutral) control and a vague
+(realistic-degradation) variant as guards. qwen-9b · **temp 0** (to isolate the prompt from sampling
+noise) · 3×.
+
+| variant | reverse | clamp | double | overall |
+|---|---|---|---|---|
+| baseline | 100% | 100% | 100% | **100%** |
+| cosmetic (meaning-preserving reword) | 0% | 0% | 100% | **33%** |
+| vague (drops schema + property guidance) | 0% | 0% | 0% | **0%** |
+
+**Findings:**
+
+1. **The signal is real and reproducible.** A realistic degradation took accept-rate 100% → 0% across
+   every goal, stable at temp 0. Prompt quality moves the verified bar — the bootstrap prerequisite
+   holds.
+
+2. **There is no "cosmetic" edit to an LLM — and that is the finding.** A reword a human reads as
+   identical (`"a precise software specification writer"` → `"a careful and precise author of software
+   specifications"`) *deterministically* flipped `reverse` and `clamp` from pass to fail (0/3 each, at
+   temp 0 — not sampling noise, a reproducible effect). Accept-rate tracks the prompt's exact tokens,
+   not its human-perceived quality. An earlier temp-0.2 run blamed this on variance; temp 0 proved it
+   real.
+
+3. **This strengthens the case for the studio, it doesn't weaken it.** The standalone "prompt polish"
+   tools judge a rewrite by *eyeballing* it. Finding #2 shows intuition is unreliable — the
+   harmless-looking reword was a 67-point regression. So the only honest way to change a proposer
+   prompt is to measure it against the gates (the reflexive rule, §4.5), which is exactly what a
+   prompt studio is.
+
+**Design constraints the data imposes (the spec for Slices 2–3):** measure at **temp 0** for a
+reproducible verdict; use a **goal suite, never one goal** (`vague`'s drop was robust across all
+goals, `cosmetic`'s was goal-specific — a single goal would mislead); **gate every candidate
+empirically** — there are no safe edits to reason about. **Verdict: GO** — the formal version is an
+Empirical Lab experiment (a prompt change ships only when its accept-rate gain reproduces on a
+held-out goal suite), then the studio UI on top.
