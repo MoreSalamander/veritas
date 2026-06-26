@@ -51,7 +51,9 @@ from orgs.planning import StepResult, execute_plan, gate_plan, propose_plan
 from orgs.registry import REGISTRY, OrgRun, get_org
 from orgs.research_studio.knowledge import Brief, build_brief
 from orgs.research_studio.report import ReportParseError, parse_report
+from orgs.software_studio import agents as software_agents
 from orgs.software_studio.builder import build as build_software
+from orgs.software_studio.tuning import GoalRun, TuningVerdict, VariantRun, spec_system
 from orgs.web_studio.aesthetics import aesthetic_gates
 from orgs.web_studio.browser import RenderResult
 from orgs.web_studio.create import Review, build_create_page
@@ -404,6 +406,12 @@ class BenchRequest(BaseModel):
     repeats: int = 1
 
 
+class TuneRequest(BaseModel):
+    candidate: str  # a candidate Spec proposer prompt to A/B against the live one
+    model: str = DEFAULT_MODEL
+    repeats: int = 1
+
+
 # A few quick function-shape goals — same build for every model, so the comparison is fair + fast.
 _BENCH_GOALS: list[tuple[str, str]] = [
     ("double", "a function that returns a number doubled"),
@@ -502,6 +510,86 @@ class BenchSession:
             self.results_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         except OSError:
             pass
+
+
+class TuneSession:
+    """A/Bs a candidate Spec prompt against the LIVE one over the bench goal suite, in the background.
+
+    The prompt studio's live engine — the same builds as the benchmark, but the *prompt* is the
+    variable (BenchSession varies the model). The verdict is decided by accept-rate through the
+    unchanged HARD gates, never by the prompt's wording (promptbench showed a human-"cosmetic" reword
+    was a 67-point regression). Long-running on local models; the UI confirms before starting. Note:
+    the override is a module global, so tune runs serialize with other builds — fine for the local hub.
+    """
+
+    def __init__(self, token: str, candidate: str, provider_for: Callable[[str], ModelProvider],
+                 model: str, repeats: int = 1) -> None:
+        self.token = token
+        self.candidate = candidate
+        self.provider_for = provider_for
+        self.model = model
+        self.repeats = repeats
+        self.baseline_prompt = software_agents.SPEC_SYSTEM  # the prompt in use, captured before any swap
+        self.lock = threading.Lock()
+        self.state: dict[str, Any] = {
+            "phase": "running", "total": 2 * len(_BENCH_GOALS) * repeats,
+            "done": 0, "current": None, "cells": [], "verdict": None, "error": None,
+            "model": model, "baseline_prompt": self.baseline_prompt, "candidate_prompt": candidate,
+        }
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            s = dict(self.state)
+            s["cells"] = list(self.state["cells"])
+            return s
+
+    def _cell(self, variant: str, label: str, goal: str) -> dict[str, Any]:
+        mem = MemoryStore(Path(tempfile.mkdtemp(prefix="veritas_tune_")))
+        t0 = time.perf_counter()
+        try:
+            res = build_software(goal, self.provider_for(self.model), mem, shape="function")
+            retries = len([e for e in res.activity if e.actor == "retry"])
+            return {"variant": variant, "goal": label, "accepted": res.accepted,
+                    "retries": retries, "time": round(time.perf_counter() - t0, 1)}
+        except Exception as exc:
+            return {"variant": variant, "goal": label, "accepted": False, "retries": 0,
+                    "time": round(time.perf_counter() - t0, 1), "error": f"{type(exc).__name__}"}
+
+    def _run(self) -> None:
+        try:
+            for variant, prompt in (("baseline", self.baseline_prompt), ("candidate", self.candidate)):
+                with spec_system(prompt):  # the swap IS the experiment; always restored
+                    for label, goal in _BENCH_GOALS:
+                        for _ in range(self.repeats):
+                            with self.lock:
+                                self.state["current"] = f"{variant} · {label}"
+                            cell = self._cell(variant, label, goal)
+                            with self.lock:
+                                self.state["cells"].append(cell)
+                                self.state["done"] += 1
+            with self.lock:
+                self.state["verdict"] = self._verdict(self.state["cells"])
+                self.state["current"] = None
+                self.state["phase"] = "done"
+        except Exception as exc:  # defensive — a cell already catches its own errors
+            with self.lock:
+                self.state["error"] = f"{type(exc).__name__}: {exc}"
+                self.state["phase"] = "done"
+
+    def _verdict(self, cells: list[dict[str, Any]]) -> dict[str, Any]:
+        def variant_run(name: str) -> VariantRun:
+            runs = [GoalRun(c["goal"], c["accepted"], c["retries"]) for c in cells if c["variant"] == name]
+            return VariantRun(name, runs)
+
+        v = TuningVerdict(variant_run("baseline"), variant_run("candidate"))
+        return {
+            "baseline_rate": round(v.baseline.accept_rate * 100),
+            "candidate_rate": round(v.candidate.accept_rate * 100),
+            "delta": round(v.delta * 100), "winner": v.winner, "improved": v.improved,
+        }
 
 
 _VOICES_CACHE: list[dict[str, str]] | None = None
@@ -1285,6 +1373,30 @@ def create_app(
     def bench_state(token: str) -> dict[str, Any]:
         sess = bench_sessions.get(token)
         return sess.snapshot() if sess else {"error": "unknown bench session"}
+
+    tune_sessions: dict[str, TuneSession] = {}
+
+    @app.get("/api/tune/baseline")
+    def tune_baseline() -> dict[str, str]:
+        """The Spec proposer prompt in use — the studio's starting point to edit into a candidate."""
+        return {"prompt": software_agents.SPEC_SYSTEM}
+
+    @app.post("/api/tune/start")
+    def tune_start(req: TuneRequest) -> dict[str, str]:
+        if not req.candidate.strip():
+            raise HTTPException(status_code=400, detail="candidate prompt is empty")
+        model = req.model if req.model in MODELS else DEFAULT_MODEL
+        token = uuid4().hex
+        sess = TuneSession(token, req.candidate, lambda m: injected_provider or _provider_for(m),
+                           model, repeats=max(1, min(req.repeats, 3)))
+        tune_sessions[token] = sess
+        sess.start()
+        return {"token": token}
+
+    @app.get("/api/tune/{token}")
+    def tune_state(token: str) -> dict[str, Any]:
+        sess = tune_sessions.get(token)
+        return sess.snapshot() if sess else {"error": "unknown tune session"}
 
     @app.get("/api/profile/production")
     def production_profile() -> dict[str, Any]:

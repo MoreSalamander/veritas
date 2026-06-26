@@ -5,6 +5,7 @@
       "name": "hub",
       "runtimeExecutable": ".venv/bin/python",
       "runtimeArgs": ["-m", "uvicorn", "hub.app:app", "--port", "8099"],
+      "env": { "VERITAS_DATA": "./hub_data" },
       "port": 8099
     },
     {

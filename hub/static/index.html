@@ -319,6 +319,19 @@
       <div class="row" style="margin-top:12px"><button id="benchgo">Run benchmark</button><span class="muted" id="benchest" style="font-size:12px"></span></div>
     </div>
     <div id="benchresult"></div>
+
+    <h2>Prompt Studio <span class="muted" style="text-transform:none;letter-spacing:0">— tune the org's own proposer prompt</span></h2>
+    <div class="panel">
+      <div class="muted" style="font-size:13px">Edit the Spec proposer's prompt, then prove the change the org's own way: an A/B against the live prompt over a goal suite, scored by <strong>accept-rate through the hard gates</strong> — never by how the prompt reads. (A measured fact: a human-"cosmetic" reword was once a 67-point regression. Intuition lies; the gate doesn't.)</div>
+      <div class="ungoverned" style="margin-top:12px">⚠ <strong>Held-out goals only.</strong> The suite below is fixed. If you wrote the candidate <em>against</em> these goals, a win is overfitting — the prompt analogue of grading your own work. A real improvement is one that wins on goals you didn't tune for.</div>
+      <div class="row" style="margin-top:12px"><select id="tunemodel"></select><span class="muted" id="tuneest" style="font-size:12px"></span></div>
+      <div class="subh">Live prompt (baseline)</div>
+      <textarea id="tunebaseline" readonly style="width:100%;height:120px;background:#0c1119;border:1px solid var(--line);color:var(--dim);padding:10px;border-radius:10px;font-family:var(--mono);font-size:12px"></textarea>
+      <div class="subh">Candidate <span class="muted" style="text-transform:none;letter-spacing:0">— your edit</span></div>
+      <textarea id="tunecandidate" style="width:100%;height:120px;background:#0c1119;border:1px solid var(--line);color:var(--ink);padding:10px;border-radius:10px;font-family:var(--mono);font-size:12px" placeholder="Edit the live prompt into a candidate to test…"></textarea>
+      <div class="row" style="margin-top:12px"><button id="tunego">Run A/B</button><button class="ghost" id="tunecopy">Start from live prompt</button></div>
+    </div>
+    <div id="tuneresult"></div>
   </section>
 
   <section id="models" class="hidden">
@@ -1027,6 +1040,66 @@ async function loadLabs() {
     `<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--dim)"><input type="checkbox" class="benchm" value="${esc(m.name)}" ${m.kind === 'ollama' ? 'checked' : ''}> ${esc(m.label)}${m.kind === 'claude' ? ' <span style="color:var(--amber)">($)</span>' : ''}</label>`).join('');
   $('#benchmodels').onchange = updateBenchEst;
   updateBenchEst();
+  initTune(models);
+}
+
+let TUNE_BASELINE = null;
+async function initTune(models) {
+  $('#tunemodel').innerHTML = models.filter(m => m.kind === 'ollama').map(m =>
+    `<option value="${esc(m.name)}"${m.name === 'gemma-12b' ? ' selected' : ''}>${esc(m.label)}</option>`).join('');
+  $('#tuneest').textContent = '6 builds — 2 prompts × 3 function goals (a few minutes, local & free)';
+  if (TUNE_BASELINE === null) { try { TUNE_BASELINE = (await api('/api/tune/baseline')).prompt || ''; } catch (e) { TUNE_BASELINE = ''; } }
+  $('#tunebaseline').value = TUNE_BASELINE;
+  $('#tunecopy').onclick = () => { $('#tunecandidate').value = TUNE_BASELINE; $('#tunecandidate').focus(); };
+  $('#tunego').onclick = runTune;
+}
+
+function renderTune(s) {
+  const pct = s.total ? Math.round(s.done / s.total * 100) : 0;
+  let html = `<div class="panel"><div class="row" style="justify-content:space-between">
+      <span>${s.phase === 'done' ? 'A/B complete' : 'Running…'}${s.current ? ' · <span class="mono">' + esc(s.current) + '</span>' : ''}</span>
+      <span class="mono muted">${s.done}/${s.total}</span></div>
+      <div class="bartrack" style="margin-top:8px"><span class="barfill" style="width:${pct}%"></span></div>`;
+  const v = s.verdict;
+  if (v) {
+    const verdictCls = v.improved ? 'pass' : (v.winner === 'tie' ? 'soft' : 'fail');
+    const verdictTxt = v.improved ? '✓ candidate wins — adopt it (if these goals were held out)'
+      : (v.winner === 'tie' ? '= tie — no measurable difference on this suite'
+      : '✗ candidate is worse — keep the live prompt');
+    html += `<div class="subh">Verdict — by accept-rate through the hard gates</div>
+      <div class="gverdict ${verdictCls}" style="font-size:14px;margin:4px 0 10px">${verdictTxt}</div>
+      <table style="width:100%;font-family:var(--mono);font-size:12.5px;border-collapse:collapse">
+        <tr style="color:var(--dim);text-align:left"><th>variant</th><th>accept-rate</th></tr>
+        <tr><td style="padding:3px 0">baseline (live)</td><td class="${v.baseline_rate >= 67 ? 'pass' : (v.baseline_rate > 0 ? 'soft' : 'fail')}">${v.baseline_rate}%</td></tr>
+        <tr><td style="padding:3px 0">candidate</td><td class="${v.candidate_rate >= 67 ? 'pass' : (v.candidate_rate > 0 ? 'soft' : 'fail')}">${v.candidate_rate}% <span class="muted">(${v.delta >= 0 ? '+' : ''}${v.delta} pts)</span></td></tr>
+      </table>
+      <div class="muted" style="margin-top:8px;font-size:11px">accept-rate = share of the suite that cleared every hard gate. The verdict is the gates', not the prompt's wording.</div>`;
+  }
+  $('#tuneresult').innerHTML = html + `</div>`;
+}
+
+async function pollTune(token) {
+  while (true) {
+    let s;
+    try { s = await api('/api/tune/' + token); } catch (e) { await sleep(900); continue; }
+    if (s.error) { $('#tuneresult').innerHTML = `<div class="panel"><span class="fail">${esc(s.error)}</span></div>`; break; }
+    renderTune(s);
+    if (s.phase === 'done') { $('#tunego').disabled = false; break; }
+    await sleep(700);
+  }
+}
+
+async function runTune() {
+  const candidate = $('#tunecandidate').value.trim();
+  if (!candidate) { alert('Edit the candidate prompt first (try "Start from live prompt").'); return; }
+  if (candidate === (TUNE_BASELINE || '').trim()) { if (!confirm('Candidate is identical to the live prompt — the A/B will tie. Run anyway?')) return; }
+  const model = $('#tunemodel').value;
+  if (!confirm(`Run the prompt A/B: 6 builds (2 prompts × 3 goals) on ${model}?\n\nLocal & free, but it takes a few minutes.`)) return;
+  $('#tunego').disabled = true;
+  $('#tuneresult').innerHTML = `<div class="panel muted"><span class="livedot"></span> starting…</div>`;
+  const start = await api('/api/tune/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({candidate, model, repeats: 1}) });
+  if (!start.token) { $('#tuneresult').innerHTML = `<div class="panel"><span class="fail">could not start</span></div>`; $('#tunego').disabled = false; return; }
+  pollTune(start.token);
 }
 
 function updateBenchEst() {
