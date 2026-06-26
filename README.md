@@ -160,6 +160,14 @@ clears the Empirical Lab's gates — confident-wrong rate **5.9%**, below the 10
 ship *labelled* but (being above zero) never *verified*. The confidence layer earned its place by
 passing the system it belongs to.
 
+**Second instance (the strange loop).** The org's own proposers run on prompts. Changing one is a
+verification-mechanism change, so it obeys the same rule: a measurement (`bench/promptbench.py`)
+showed accept-rate moves *reproducibly* with prompt quality — and that a human-"cosmetic" reword was a
+67-point regression, so prompt intuition can't be trusted, only the gate. That verdict is frozen into
+an experiment (`bench/experiments/prompt_accept_rate.py`) that clears the Empirical Lab's gates
+(`tests/test_prompt_experiment.py`): a proposer-prompt change is trusted only when its accept-rate
+gain reproduces on a goal suite. The org gates its own prompts the way it gates everything else.
+
 ---
 
 ## 5. The foundational insight
