@@ -84,6 +84,42 @@ def test_render_works_from_a_relative_data_dir(tmp_path, monkeypatch):
     assert OutputIntegrityGate(timeline.total).check(art).passed
 
 
+def _clip_assets(tmp_path, script, board, profile):
+    """Build an AssetSet whose shots carry REAL (scripted) video clips of a fixed 1.5 s — different
+    from the narration-driven slots so the publisher must both trim (beats with 2 shots → 1.0 s slots)
+    and freeze-pad (the 1-shot beat → a 2.0 s slot)."""
+    from orgs.production_studio.media import write_png, write_wav
+    from orgs.production_studio.production import script_beats
+    from orgs.production_studio.video import ScriptedVideoBackend
+    backend = ScriptedVideoBackend()
+    images = []
+    for i, shot in enumerate(board.shots):
+        cp = tmp_path / f"img_{i:03d}.mp4"
+        clip = backend.generate_clip("x", cp, seconds=1.5, fps=profile.fps,
+                                     width=profile.width, height=profile.height, seed=i)
+        png = tmp_path / f"img_{i:03d}.png"
+        write_png(png, clip.width, clip.height)
+        images.append({"shot_index": i, "beat_id": shot.beat_id, "path": str(png),
+                       "width": clip.width, "height": clip.height, "entity_refs": {},
+                       "clip": str(cp), "clip_duration": clip.duration})
+    audio = []
+    for b in script_beats(script):
+        wp = tmp_path / f"aud_{b.id}.wav"
+        write_wav(wp, 2.0)
+        audio.append({"beat_id": b.id, "path": str(wp), "duration": 2.0})
+    return parse_assets(json.dumps({"images": images, "audio": audio}))
+
+
+def test_real_clips_publish_with_motion_and_stay_in_sync(tmp_path):
+    script, board = parse_script(SCRIPT), parse_storyboard(STORYBOARD)
+    assets = _clip_assets(tmp_path, script, board, SMALL)
+    timeline = parse_timeline(Editor().assemble(board, assets))
+    art = PublisherAgent(FfmpegPublisher(), SMALL).propose(timeline, assets, tmp_path / "out.mp4")
+    # the cut used the real clips (trim + freeze-pad to each slot) and still conforms + matches the timeline
+    assert PublishFormatGate(SMALL).check(art).passed
+    assert OutputIntegrityGate(timeline.total).check(art).passed
+
+
 def test_full_production_publishes_six_stages(tmp_path):
     provider = ScriptedProvider(
         {"concept": CONCEPT, "scriptwriter": SCRIPT, "storyboard-artist": STORYBOARD})

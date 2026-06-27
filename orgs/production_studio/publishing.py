@@ -73,20 +73,19 @@ class FfmpegPublisher(Publisher):
         work = out_path.parent
         work.mkdir(parents=True, exist_ok=True)
 
-        # The concat demuxer resolves each `file` path relative to the LIST FILE's own directory,
-        # not the cwd — so we write basenames (assets are always siblings of the list here). Writing
-        # the full cwd-relative path doubled the prefix when the data dir was relative (e.g. the hub's
-        # ./hub_data), producing .../<id>/hub_data/productions/<id>/img.png and a missing-file error.
+        # Real motion when every shot has a generated clip; otherwise the held-still fallback. The
+        # timeline (narration-driven, sync-checked) is the authority either way — the video conforms.
+        clip_by_shot: dict[int, str] = {}
+        for im in assets.images:
+            if im.clip is not None:
+                clip_by_shot[im.shot_index] = im.clip
 
-        # video: a concat-demuxer list of images with per-clip durations (last image repeated so its
-        # duration takes effect — a known concat-demuxer requirement).
-        vlist = work / "_video.txt"
-        vlines = []
-        for c in timeline.clips:
-            vlines.append(f"file '{Path(c.image).name}'")
-            vlines.append(f"duration {c.duration}")
-        vlines.append(f"file '{Path(timeline.clips[-1].image).name}'")
-        vlist.write_text("\n".join(vlines), encoding="utf-8")
+        video = work / "_video.mp4"
+        audio = work / "_audio.m4a"
+        if all(c.shot_index in clip_by_shot for c in timeline.clips):
+            self._render_clip_video(timeline, clip_by_shot, profile, work, video)
+        else:
+            self._render_still_video(timeline, profile, work, video)
 
         # audio: each beat's narration once, in first-appearance order (a clip's audio is its beat's).
         alist = work / "_audio.txt"
@@ -98,16 +97,48 @@ class FfmpegPublisher(Publisher):
                 alines.append(f"file '{Path(c.audio).name}'")
         alist.write_text("\n".join(alines), encoding="utf-8")
 
-        video = work / "_video.mp4"
-        audio = work / "_audio.m4a"
-        # image-with-durations concat is variable-frame-rate; -r would contradict -vsync vfr, so the
-        # clip durations alone drive timing (the format gate checks codec/resolution, not fps).
-        _run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(vlist), "-vsync", "vfr",
-              "-vf", f"scale={profile.width}:{profile.height},format=yuv420p",
-              "-c:v", "libx264", str(video)])
         _run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(alist), "-c:a", "aac", str(audio)])
         _run(["ffmpeg", "-y", "-i", str(video), "-i", str(audio),
               "-c:v", "copy", "-c:a", "copy", "-shortest", str(out_path)])
+
+    def _render_still_video(self, timeline: Timeline, profile: PublishProfile,
+                            work: Path, video: Path) -> None:
+        # The concat demuxer resolves each `file` path relative to the LIST FILE's own directory, not
+        # the cwd — so we write basenames (assets are siblings of the list here). A full cwd-relative
+        # path doubled the prefix under a relative data dir (the hub's ./hub_data) and broke the render.
+        # Held-still video: a concat list of images with per-clip durations (last image repeated so its
+        # duration takes effect — a concat-demuxer requirement).
+        vlist = work / "_video.txt"
+        vlines = []
+        for c in timeline.clips:
+            vlines.append(f"file '{Path(c.image).name}'")
+            vlines.append(f"duration {c.duration}")
+        vlines.append(f"file '{Path(timeline.clips[-1].image).name}'")
+        vlist.write_text("\n".join(vlines), encoding="utf-8")
+        # image-with-durations concat is variable-frame-rate; -r would contradict -vsync vfr.
+        _run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(vlist), "-vsync", "vfr",
+              "-vf", f"scale={profile.width}:{profile.height},format=yuv420p",
+              "-c:v", "libx264", str(video)])
+
+    def _render_clip_video(self, timeline: Timeline, clip_by_shot: dict[int, str],
+                           profile: PublishProfile, work: Path, video: Path) -> None:
+        # Fit each real clip to its narration-driven slot: freeze-pad the last frame if the clip is
+        # shorter than the slot (tpad clone), trim with -t if longer, conforming fps/scale/pixfmt so the
+        # segments concat cleanly. tpad's stop_duration is set to the full slot (always enough); -t then
+        # cuts to exactly the slot length whether the source was shorter or longer.
+        segs = []
+        for idx, c in enumerate(timeline.clips):
+            seg = work / f"_seg_{idx:03d}.mp4"
+            _run(["ffmpeg", "-y", "-i", clip_by_shot[c.shot_index],
+                  "-vf", (f"fps={profile.fps},scale={profile.width}:{profile.height},"
+                          f"tpad=stop_mode=clone:stop_duration={c.duration},format=yuv420p"),
+                  "-t", f"{c.duration}", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(seg)])
+            segs.append(seg)
+        clist = work / "_clips.txt"
+        clist.write_text("\n".join(f"file '{s.name}'" for s in segs), encoding="utf-8")
+        # re-encode on concat (not copy) so any timebase differences between segments are normalized.
+        _run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(clist),
+              "-c:v", "libx264", "-pix_fmt", "yuv420p", str(video)])
 
 
 @dataclass
