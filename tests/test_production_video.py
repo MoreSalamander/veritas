@@ -25,10 +25,10 @@ from orgs.production_studio.assets import (
 )
 from orgs.production_studio.media import write_png
 from orgs.production_studio.production import parse_script, parse_storyboard
+from orgs.production_studio.tts import SilentTTSBackend
 from orgs.production_studio.video import ScriptedVideoBackend
 
 has_ffmpeg = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
-has_say = shutil.which("say") is not None
 
 SCRIPT = json.dumps({"scenes": [{"heading": "A", "beats": [
     {"narration": "Mia waves hello to the sleepy town below.", "entities": ["Mia"]},
@@ -93,9 +93,9 @@ def test_clip_integrity_fails_on_duration_mismatch(tmp_path):
 
 # --- LtxGenerator end to end (needs ffmpeg for video + `say` for narration) ---------------
 
-@pytest.mark.skipif(not (has_ffmpeg and has_say), reason="needs ffmpeg + macOS `say`")
+@pytest.mark.skipif(not has_ffmpeg, reason="needs ffmpeg/ffprobe")
 def test_ltx_generator_produces_verified_clips_and_frames(tmp_path):
-    gen = LtxGenerator(ScriptedVideoBackend(), width=64, height=64, seconds=1.0)
+    gen = LtxGenerator(ScriptedVideoBackend(), tts=SilentTTSBackend(), width=64, height=64, seconds=1.0)
     manifest = json.loads(gen.generate(parse_script(SCRIPT), parse_storyboard(STORYBOARD), tmp_path))
     script, board = parse_script(SCRIPT), parse_storyboard(STORYBOARD)
     # every shot carries a real clip AND a real extracted frame; both halves of the manifest are real

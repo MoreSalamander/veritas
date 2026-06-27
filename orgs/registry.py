@@ -28,9 +28,10 @@ from orgs.presets import (
     build_lesson,
     build_startup,
 )
-from orgs.production_studio.assets import AssetGenerator, LtxGenerator, SayGenerator, StubGenerator
+from orgs.production_studio.assets import AssetGenerator, LtxGenerator, StubGenerator
 from orgs.production_studio.pipeline import build_production
 from orgs.production_studio.publishing import FfmpegPublisher, Publisher
+from orgs.production_studio.tts import KokoroBackend, SayBackend, SilentTTSBackend, TTSBackend
 from orgs.production_studio.video import LocalLtxBackend
 from orgs.production_studio.roster import roster as production_roster
 from orgs.research_studio.pipeline import build_report
@@ -123,6 +124,24 @@ def _run_research(
     )
 
 
+def production_generator(voice: str | None = None) -> AssetGenerator:
+    """The best available production generator. Narration: high-quality Kokoro when its runtime is
+    configured (VERITAS_TTS_PYTHON or the LTX venv) > macOS `say` > silent. Visuals: real LTX video per
+    shot when VERITAS_LTX_PYTHON is set, else placeholder stills. Audio and video are independent
+    backends behind their own seams. (The `say`-voice param applies only on the say tier; Kokoro uses
+    its own high-quality default voice.)"""
+    kokoro = KokoroBackend.from_env()
+    tts: TTSBackend
+    if kokoro is not None:
+        tts = kokoro
+    elif shutil.which("say"):
+        tts = SayBackend(voice)
+    else:
+        tts = SilentTTSBackend()
+    ltx = LocalLtxBackend.from_env()
+    return LtxGenerator(ltx, tts=tts) if ltx is not None else StubGenerator(tts=tts)
+
+
 def _run_production(
     goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
 ) -> OrgRun:
@@ -134,17 +153,7 @@ def _run_production(
     publisher: Publisher | None = (
         FfmpegPublisher() if shutil.which("ffmpeg") and shutil.which("ffprobe") else None
     )
-    # Visuals: real LTX video per shot when a local LTX runtime is configured (VERITAS_LTX_PYTHON
-    # points at a 3.12 venv with torch+diffusers); else placeholder stills. Narration: real speech via
-    # macOS `say` when available, silent placeholder otherwise.
-    ltx = LocalLtxBackend.from_env() if shutil.which("say") else None
-    generator: AssetGenerator
-    if ltx is not None:
-        generator = LtxGenerator(ltx)
-    elif shutil.which("say"):
-        generator = SayGenerator()
-    else:
-        generator = StubGenerator()
+    generator = production_generator()
     result = build_production(
         goal, provider, memory,
         asset_generator=generator, asset_dir=work, publisher=publisher,

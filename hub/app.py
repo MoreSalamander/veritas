@@ -34,7 +34,6 @@ from hub.ingest import TranscriptFetcher, TranscriptUnavailable, YtDlpFetcher
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
 from engine.run import ActivityEntry, set_activity_listener
 from hub.store import RunStore, summarize
-from orgs.production_studio.assets import SayGenerator, StubGenerator
 from orgs.production_studio.pipeline import ProductionResult
 from orgs.production_studio.publishing import (
     FfmpegPublisher,
@@ -48,7 +47,7 @@ from orgs.production_studio.taste import (
     build_create_production,
 )
 from orgs.planning import StepResult, execute_plan, gate_plan, propose_plan
-from orgs.registry import REGISTRY, OrgRun, get_org
+from orgs.registry import REGISTRY, OrgRun, get_org, production_generator
 from orgs.research_studio.knowledge import Brief, build_brief
 from orgs.research_studio.report import ReportParseError, parse_report
 from orgs.software_studio import agents as software_agents
@@ -865,7 +864,7 @@ class ProductionCreateSession:
     def _run(self) -> None:
         set_activity_listener(lambda e: self.state["events"].append(_event(e)))
         try:
-            generator = SayGenerator(voice=self.voice) if shutil.which("say") else StubGenerator()  # real narration on macOS
+            generator = production_generator(self.voice)  # Kokoro > say > silent narration, LTX video when set
             res = build_create_production(
                 self.brief, self.provider, self.memory, review=self._review_fn,
                 asset_generator=generator, publisher=self.publisher,

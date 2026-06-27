@@ -25,7 +25,6 @@ from orgs.production_studio.media import (
     read_png_size,
     read_wav_duration,
     write_png,
-    write_wav,
 )
 from orgs.production_studio.production import (
     Beat,
@@ -33,10 +32,10 @@ from orgs.production_studio.production import (
     Script,
     Shot,
     Storyboard,
-    WORDS_PER_SECOND,
     _norm,
     script_beats,
 )
+from orgs.production_studio.tts import SayBackend, SilentTTSBackend, TTSBackend
 from orgs.production_studio.video import VideoBackend, VideoError, probe_clip, seed_for
 
 DEFAULT_WIDTH = 1280
@@ -142,9 +141,11 @@ class StubGenerator(AssetGenerator):
     and a real WAV per beat sized to its narration's runtime. Proves the integrity/coverage gates
     with zero dependencies; swap in a real engine behind AssetGenerator later."""
 
-    def __init__(self, width: int = DEFAULT_WIDTH, height: int = DEFAULT_HEIGHT) -> None:
+    def __init__(self, width: int = DEFAULT_WIDTH, height: int = DEFAULT_HEIGHT,
+                 tts: TTSBackend | None = None) -> None:
         self.width = width
         self.height = height
+        self.tts: TTSBackend = tts or SilentTTSBackend()
 
     @staticmethod
     def _shot_color(entities: list[str]) -> tuple[int, int, int]:
@@ -156,11 +157,9 @@ class StubGenerator(AssetGenerator):
         return tuple(sum(c[k] for c in cols) // len(cols) for k in range(3))  # type: ignore[return-value]
 
     def _write_audio(self, beat: Beat, path: Path) -> float:
-        """Silent placeholder sized to the narration's estimated runtime. Subclasses override to
-        produce real speech; the returned duration is what the manifest records."""
-        seconds = max(0.5, len(beat.narration.split()) / WORDS_PER_SECOND)
-        write_wav(path, seconds)
-        return round(seconds, 3)
+        """Synthesize the beat's narration through the TTS backend — silent by default, real speech
+        with a Say or Kokoro backend. The measured duration is what the manifest records."""
+        return self.tts.synth(beat.narration, path)
 
     def _write_image(self, shot: Shot, path: Path) -> ImageWrite:
         """Write the still for a shot. Subclasses override to render real video and extract a frame;
@@ -192,22 +191,13 @@ class StubGenerator(AssetGenerator):
 
 
 class SayGenerator(StubGenerator):
-    """Real spoken narration via macOS `say` (zero dependencies); visuals stay placeholder until an
-    image engine is wired behind the seam. The audio is genuine speech of each beat's narration, and
-    the manifest records its actual measured duration so the timeline stays in sync."""
+    """Stub visuals + real macOS `say` narration (the baseline voice). Kept for compatibility; the
+    registry now prefers Kokoro (high-quality neural TTS) via the TTS seam when its runtime is set."""
 
     def __init__(self, width: int = DEFAULT_WIDTH, height: int = DEFAULT_HEIGHT,
                  voice: str | None = None) -> None:
-        super().__init__(width, height)
+        super().__init__(width, height, tts=SayBackend(voice))
         self.voice = voice
-
-    def _write_audio(self, beat: Beat, path: Path) -> float:
-        argv = ["say", "-o", str(path), "--data-format=LEI16@22050"]
-        if self.voice:
-            argv += ["-v", self.voice]
-        argv.append(beat.narration.strip() or " ")
-        subprocess.run(argv, check=True, capture_output=True, timeout=120)
-        return round(read_wav_duration(path), 3)
 
 
 def _extract_frame(clip_path: Path, png_path: Path) -> None:
@@ -221,17 +211,18 @@ def _extract_frame(clip_path: Path, png_path: Path) -> None:
         raise VideoError(f"could not extract a frame from {clip_path.name}: {proc.stderr.strip()[-200:]}")
 
 
-class LtxGenerator(SayGenerator):
+class LtxGenerator(StubGenerator):
     """Real generated video per shot via a `VideoBackend` (LTX locally, or a cloud backend). Each shot
     becomes a short clip; its first frame is extracted as the PNG so the existing image contract stays
     honest (a real, decodable frame), and the clip + its measured duration are recorded in the manifest
-    for the clip-integrity gate and downstream editing. Narration is real speech (inherited from Say).
-    The seed is derived from the shot's entities so a recurring cast is rendered with a stable identity
-    request (the pixel-level guarantee is the perceptual gate, a later rung)."""
+    for the clip-integrity gate and downstream editing. Narration comes from the TTS backend (Kokoro or
+    Say). The seed is derived from the shot's entities so a recurring cast is rendered with a stable
+    identity request (the pixel-level guarantee is the perceptual gate, a later rung)."""
 
     def __init__(
         self,
         backend: VideoBackend,
+        tts: TTSBackend | None = None,
         width: int = LTX_VIDEO_WIDTH,
         height: int = LTX_VIDEO_HEIGHT,
         voice: str | None = None,
@@ -239,7 +230,7 @@ class LtxGenerator(SayGenerator):
         fps: int = 24,
         style: str = LTX_STYLE_SUFFIX,
     ) -> None:
-        super().__init__(width, height, voice)
+        super().__init__(width, height, tts=tts or SayBackend(voice))
         self.backend = backend
         self.seconds = seconds
         self.fps = fps
