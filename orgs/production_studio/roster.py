@@ -11,6 +11,7 @@ from orgs.production_studio.assets import (
     AssetConsistencyGate,
     AssetCoverageGate,
     AssetIntegrityGate,
+    ClipIntegrityGate,
 )
 from orgs.production_studio.editing import SequenceCoverageGate, TimelineIntegrityGate
 from orgs.production_studio.publishing import OutputIntegrityGate, PublishFormatGate
@@ -41,7 +42,8 @@ _GATES: list[tuple[type[Gate], str, str]] = [
     (StoryboardGroundingGate, "storyboard", "every shot anchors a real beat and shows only that beat's entities — no orphans, nothing invented"),
     (AssetCoverageGate, "assets", "every shot has an image and every beat has narration audio — nothing missing"),
     (AssetIntegrityGate, "assets", "every asset file is a real, decodable image/audio of the size/duration it claims"),
-    (AssetConsistencyGate, "assets", "each entity is drawn with one pinned reference across every shot — a character can't look different scene to scene"),
+    (AssetConsistencyGate, "assets", "each entity is requested with one pinned reference/seed across every shot — the production can't silently re-roll a character's identity (pixel match = the perceptual gate, a later rung)"),
+    (ClipIntegrityGate, "assets", "every shot's generated video clip decodes and its runtime matches the manifest (a no-op when only stills were produced)"),
     (SequenceCoverageGate, "timeline", "the cut contains every shot, exactly once, in storyboard order — nothing dropped or reordered"),
     (TimelineIntegrityGate, "timeline", "the cut is contiguous from zero (no gaps/overlaps) and each beat's screen time matches its narration audio — audio/visual in sync"),
     (PublishFormatGate, "output", "the rendered file matches the target profile — right container, codecs, and resolution (read back with ffprobe)"),

@@ -31,15 +31,27 @@ from orgs.production_studio.production import (
     Beat,
     ProductionParseError,
     Script,
+    Shot,
     Storyboard,
     WORDS_PER_SECOND,
     _norm,
     script_beats,
 )
+from orgs.production_studio.video import VideoBackend, VideoError, probe_clip, seed_for
 
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 720
 _DURATION_TOLERANCE = 0.2  # seconds: the on-disk audio must match its manifest duration this closely
+_CLIP_DURATION_TOLERANCE = 0.5  # seconds: a generated clip's runtime can drift this far from its claim
+
+# LTX video defaults, calibrated live on an M4 Pro / 24 GB: 768x512 fits with offload (the still
+# 1280x720 would OOM the video model), and a deterministic style suffix turns a terse shot description
+# into the detailed, sharpness-cued prompt LTX needs — verified that "sharp focus / bright / detailed"
+# yields a crisp subject where a vague prompt (or "shallow depth of field") renders soft and hazy.
+LTX_VIDEO_WIDTH = 768
+LTX_VIDEO_HEIGHT = 512
+LTX_STYLE_SUFFIX = ("sharp focus, highly detailed, vivid natural colors, bright natural lighting, "
+                    "photorealistic, smooth natural motion, cinematic")
 
 
 def reference_id(entity: str) -> str:
@@ -65,6 +77,19 @@ class ImageRef:
     width: int
     height: int
     entity_refs: dict[str, str] = field(default_factory=dict)  # entity -> the reference it was drawn with
+    clip: str | None = None          # the real video clip for this shot (None = still only)
+    clip_duration: float | None = None  # the clip's measured runtime, for the integrity gate
+
+
+@dataclass
+class ImageWrite:
+    """What a generator wrote for one shot — its dimensions, and optionally a video clip alongside the
+    still. The default path produces just a still; the LTX path produces a clip and extracts a frame."""
+
+    width: int
+    height: int
+    clip: str | None = None
+    clip_duration: float | None = None
 
 
 @dataclass
@@ -90,7 +115,9 @@ def parse_assets(payload: str) -> AssetSet:
     try:
         images = [ImageRef(int(i["shot_index"]), str(i["beat_id"]), str(i["path"]),
                            int(i["width"]), int(i["height"]),
-                           {str(k): str(v) for k, v in dict(i.get("entity_refs", {})).items()})
+                           {str(k): str(v) for k, v in dict(i.get("entity_refs", {})).items()},
+                           (str(i["clip"]) if i.get("clip") else None),
+                           (float(i["clip_duration"]) if i.get("clip_duration") is not None else None))
                   for i in obj.get("images", [])]
         audio = [AudioRef(str(a["beat_id"]), str(a["path"]), float(a["duration"]))
                  for a in obj.get("audio", [])]
@@ -135,15 +162,27 @@ class StubGenerator(AssetGenerator):
         write_wav(path, seconds)
         return round(seconds, 3)
 
+    def _write_image(self, shot: Shot, path: Path) -> ImageWrite:
+        """Write the still for a shot. Subclasses override to render real video and extract a frame;
+        the default is a solid-color PNG keyed to the shot's entities (consistency by construction)."""
+        write_png(path, self.width, self.height, self._shot_color(shot.entities))
+        return ImageWrite(self.width, self.height)
+
     def generate(self, script: Script, storyboard: Storyboard, out_dir: Path) -> str:
         out_dir.mkdir(parents=True, exist_ok=True)
         images = []
         for i, shot in enumerate(storyboard.shots):
             p = out_dir / f"img_{i:03d}.png"
-            write_png(p, self.width, self.height, self._shot_color(shot.entities))
-            images.append({"shot_index": i, "beat_id": shot.beat_id, "path": str(p),
-                           "width": self.width, "height": self.height,
-                           "entity_refs": {e: reference_id(e) for e in shot.entities}})
+            w = self._write_image(shot, p)
+            entry: dict[str, Any] = {
+                "shot_index": i, "beat_id": shot.beat_id, "path": str(p),
+                "width": w.width, "height": w.height,
+                "entity_refs": {e: reference_id(e) for e in shot.entities},
+            }
+            if w.clip is not None:
+                entry["clip"] = w.clip
+                entry["clip_duration"] = w.clip_duration
+            images.append(entry)
         audio = []
         for b in script_beats(script):
             p = out_dir / f"aud_{b.id}.wav"
@@ -169,6 +208,54 @@ class SayGenerator(StubGenerator):
         argv.append(beat.narration.strip() or " ")
         subprocess.run(argv, check=True, capture_output=True, timeout=120)
         return round(read_wav_duration(path), 3)
+
+
+def _extract_frame(clip_path: Path, png_path: Path) -> None:
+    """Pull the first frame of a clip into a PNG (ffmpeg) so the still contract stays honest — the
+    image the gates inspect is a real frame of the real generated video, not a separate render."""
+    proc = subprocess.run(
+        ["ffmpeg", "-y", "-i", str(clip_path), "-frames:v", "1", "-update", "1", str(png_path)],
+        capture_output=True, text=True, timeout=120,
+    )
+    if proc.returncode != 0:
+        raise VideoError(f"could not extract a frame from {clip_path.name}: {proc.stderr.strip()[-200:]}")
+
+
+class LtxGenerator(SayGenerator):
+    """Real generated video per shot via a `VideoBackend` (LTX locally, or a cloud backend). Each shot
+    becomes a short clip; its first frame is extracted as the PNG so the existing image contract stays
+    honest (a real, decodable frame), and the clip + its measured duration are recorded in the manifest
+    for the clip-integrity gate and downstream editing. Narration is real speech (inherited from Say).
+    The seed is derived from the shot's entities so a recurring cast is rendered with a stable identity
+    request (the pixel-level guarantee is the perceptual gate, a later rung)."""
+
+    def __init__(
+        self,
+        backend: VideoBackend,
+        width: int = LTX_VIDEO_WIDTH,
+        height: int = LTX_VIDEO_HEIGHT,
+        voice: str | None = None,
+        seconds: float = 2.0,
+        fps: int = 24,
+        style: str = LTX_STYLE_SUFFIX,
+    ) -> None:
+        super().__init__(width, height, voice)
+        self.backend = backend
+        self.seconds = seconds
+        self.fps = fps
+        self.style = style
+
+    def _write_image(self, shot: Shot, path: Path) -> ImageWrite:
+        clip_path = path.with_suffix(".mp4")
+        base = shot.description.strip() or " ".join(shot.entities) or "a scene"
+        prompt = f"{base}. {self.style}" if self.style else base
+        clip = self.backend.generate_clip(
+            prompt, clip_path,
+            seconds=self.seconds, fps=self.fps, width=self.width, height=self.height,
+            seed=seed_for(shot.entities),
+        )
+        _extract_frame(clip_path, path)  # the PNG is a real frame of the real clip
+        return ImageWrite(clip.width, clip.height, clip=str(clip_path), clip_duration=clip.duration)
 
 
 class AssetGeneratorAgent:
@@ -222,9 +309,11 @@ class AssetCoverageGate(Gate):
 
 
 class AssetConsistencyGate(Gate):
-    """HARD: each entity is drawn with ONE pinned reference across every shot it appears in — a
-    character can't look different scene to scene. This is the visual side of the org's referential
-    integrity. (Whether the reference itself is a *good* likeness is the human tier, not here.)"""
+    """HARD: each entity is REQUESTED with ONE pinned reference across every shot it appears in — the
+    same seed/reference is asked for each time, so the production can't silently re-roll a character's
+    identity scene to scene. This is the referential-integrity guarantee at the *request* level, which
+    is all metadata can prove. Whether the resulting PIXELS actually match (and whether the likeness is
+    *good*) is the perceptual gate and the human tier respectively — deliberately not claimed here."""
 
     name = "asset-consistency"
     determinism = Determinism.HARD
@@ -242,11 +331,46 @@ class AssetConsistencyGate(Gate):
                 names.setdefault(_norm(ent), ent)
         drifted = {ent: sorted(rs) for ent, rs in refs.items() if len(rs) > 1}
         if drifted:
-            shown = "; ".join(f"{names[ent]} drawn as {' vs '.join(rs)}" for ent, rs in drifted.items())
+            shown = "; ".join(f"{names[ent]} requested as {' vs '.join(rs)}" for ent, rs in drifted.items())
             return self._result(False, f"inconsistent entit{'y' if len(drifted) == 1 else 'ies'}: {shown}")
         return self._result(
-            True, f"all {len(refs)} recurring entit{'y' if len(refs) == 1 else 'ies'} drawn with a stable reference"
+            True,
+            f"all {len(refs)} recurring entit{'y' if len(refs) == 1 else 'ies'} requested with a stable "
+            f"reference (pixel match = the perceptual gate, a later rung)",
         )
+
+
+class ClipIntegrityGate(Gate):
+    """HARD: every shot that carries a generated clip points at a real, decodable video whose runtime
+    matches the manifest. Additive — shots with no clip (the stills-only stub/say path) aren't
+    constrained, so this gate tightens the bar exactly when real video is present and is a no-op
+    otherwise. (It trusts the file via ffprobe, not the generator's word.)"""
+
+    name = "clip-integrity"
+    determinism = Determinism.HARD
+
+    def check(self, artifact: Artifact) -> GateResult:
+        try:
+            assets = parse_assets(artifact.payload)
+        except ProductionParseError as exc:
+            return self._result(False, f"assets not usable: {exc}")
+        clips = [im for im in assets.images if im.clip]
+        if not clips:
+            return self._result(True, "no generated clips (stills only)")
+        problems: list[str] = []
+        for im in clips:
+            p = Path(im.clip or "")
+            try:
+                probed = probe_clip(p)
+            except VideoError as exc:
+                problems.append(str(exc))
+                continue
+            if im.clip_duration is not None and abs(probed.duration - im.clip_duration) > _CLIP_DURATION_TOLERANCE:
+                problems.append(f"{p.name}: is {probed.duration:.2f}s, manifest says {im.clip_duration:.2f}s")
+        if problems:
+            shown = "; ".join(problems[:6]) + (" …" if len(problems) > 6 else "")
+            return self._result(False, shown)
+        return self._result(True, f"all {len(clips)} generated clip(s) decode and match the manifest")
 
 
 class AssetIntegrityGate(Gate):

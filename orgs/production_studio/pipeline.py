@@ -29,6 +29,7 @@ from orgs.production_studio.assets import (
     AssetGenerator,
     AssetGeneratorAgent,
     AssetIntegrityGate,
+    ClipIntegrityGate,
     parse_assets,
 )
 from orgs.production_studio.editing import (
@@ -116,7 +117,7 @@ def build_production(
     asset_out = run.submit(
         asset_art,
         [AssetCoverageGate(script, storyboard), AssetIntegrityGate(),
-         AssetConsistencyGate(), ValidationGate()],
+         AssetConsistencyGate(), ClipIntegrityGate(), ValidationGate()],
     )
     outcomes.append(asset_out)
     if not asset_out.accepted:

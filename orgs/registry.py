@@ -28,9 +28,10 @@ from orgs.presets import (
     build_lesson,
     build_startup,
 )
-from orgs.production_studio.assets import AssetGenerator, SayGenerator, StubGenerator
+from orgs.production_studio.assets import AssetGenerator, LtxGenerator, SayGenerator, StubGenerator
 from orgs.production_studio.pipeline import build_production
 from orgs.production_studio.publishing import FfmpegPublisher, Publisher
+from orgs.production_studio.video import LocalLtxBackend
 from orgs.production_studio.roster import roster as production_roster
 from orgs.research_studio.pipeline import build_report
 from orgs.research_studio.roster import roster as research_roster
@@ -133,9 +134,17 @@ def _run_production(
     publisher: Publisher | None = (
         FfmpegPublisher() if shutil.which("ffmpeg") and shutil.which("ffprobe") else None
     )
-    # Real spoken narration via macOS `say` when available; silent placeholder otherwise. (Visuals
-    # stay placeholder until an image engine is wired behind the same seam.)
-    generator: AssetGenerator = SayGenerator() if shutil.which("say") else StubGenerator()
+    # Visuals: real LTX video per shot when a local LTX runtime is configured (VERITAS_LTX_PYTHON
+    # points at a 3.12 venv with torch+diffusers); else placeholder stills. Narration: real speech via
+    # macOS `say` when available, silent placeholder otherwise.
+    ltx = LocalLtxBackend.from_env() if shutil.which("say") else None
+    generator: AssetGenerator
+    if ltx is not None:
+        generator = LtxGenerator(ltx)
+    elif shutil.which("say"):
+        generator = SayGenerator()
+    else:
+        generator = StubGenerator()
     result = build_production(
         goal, provider, memory,
         asset_generator=generator, asset_dir=work, publisher=publisher,

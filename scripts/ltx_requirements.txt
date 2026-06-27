@@ -1,0 +1,22 @@
+# LTX runtime for scripts/ltx_runner.py — install into a SEPARATE Python 3.12 venv (NOT Veritas's
+# 3.14 venv, which can't install torch). Point Veritas at it with:
+#     export VERITAS_LTX_PYTHON=/path/to/this/venv/bin/python
+#
+# Verified working on an M4 Pro / 24 GB (MPS) rendering the Lightricks/LTX-Video 2B checkpoint with
+# enable_model_cpu_offload + VAE tiling. The 2B is the variant that fits 24 GB; the 13B-distilled
+# repo's transformer (~30 GB) does not.
+#
+# These four beyond torch+diffusers are the ones that bit on first run:
+#   - sentencepiece + protobuf  → the T5 text-encoder tokenizer (without them transformers misroutes
+#                                 to a tiktoken path and fails on spiece.model)
+#   - opencv-python-headless     → diffusers export_to_video writes the mp4 with cv2
+#   - accelerate                 → enable_model_cpu_offload (the 24 GB memory fit)
+
+torch>=2.3            # 2.12 verified; LTX MPS needs >=2.3
+diffusers>=0.32       # 0.38 verified; has LTXPipeline / LTXConditionPipeline
+transformers
+accelerate
+sentencepiece
+protobuf
+opencv-python-headless
+huggingface_hub
