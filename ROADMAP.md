@@ -481,10 +481,19 @@ Research took that number, never rescheduled).
         SHA-256 hashes, session expiry, path-safe ids, generic login error (no enumeration). Endpoints
         `POST /api/auth/{signup,login,logout}`. 11 tests incl. nothing-in-plaintext-at-rest + a wedge run
         under account auth + the HTTP flow. Suite 403 pass, mypy --strict clean.
-      - **P31c2b · Quotas / rate limits** ⏳ — per-tenant usage ledger + enforcement (429); also the
-        substrate billing reads from.
+      - **P31c2b · Quotas / rate limits** ✅ (2026-06-28) — `hub/quota.py`: a SQLite `QuotaStore` that is
+        TWO things in one ledger — a per-tenant RATE LIMITER (`check` refuses once a tenant spends its
+        rolling-window allowance → the wedge maps to HTTP 429) AND the BILLING SUBSTRATE (every run
+        recorded with time + outcome; `usage_for(tenant, since)` sums any period). Satisfies the wedge's
+        new `Meter` seam (`check`/`record`/`remaining`), injected like the others; `VERITAS_WEDGE_QUOTA`
+        (+`_WINDOW`) selects it, None ⇒ unmetered. Enforced AFTER the sandbox gate (isolation refusals
+        never spend quota). Endpoint `GET /api/wedge/usage` (auth-scoped, a tenant sees only its own).
+        Clock injectable ⇒ window-expiry tested without sleeping. 12 tests + a LIVE full chain through
+        real Docker: signup→login→run (accepted, remaining 0)→2nd run 429→usage ledger correct. Suite
+        415 pass, mypy --strict clean. **The wedge is now metered end-to-end.**
       - **Billing integration** ⏳ (deferred) — a real processor (Stripe/etc.) means real money, the
-        owner's keys, and an outward webhook; wired when chosen, not blind. c2b prepares the ground.
+        owner's keys, and an outward webhook; wired when chosen, not blind. c2b's ledger is the ground
+        it reads from — `usage_for(tenant, since=<period start>)` already returns the billable totals.
 
 ## Parallel / later tracks
 

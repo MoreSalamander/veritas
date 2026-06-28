@@ -42,6 +42,20 @@ class SandboxUnavailable(Exception):
     """Isolation is not active, so an untrusted run must NOT proceed. The wedge fails closed."""
 
 
+class QuotaExceeded(Exception):
+    """The tenant has spent its allowance for the current window — the run is refused (HTTP 429)."""
+
+
+@runtime_checkable
+class Meter(Protocol):
+    """The metering seam: count a tenant's runs, enforce a ceiling, and report what's left. The same
+    ledger a billing system reads. Optional — a local wedge runs without one (unlimited)."""
+
+    def check(self, tenant: str) -> None: ...        # raise QuotaExceeded if over the limit
+    def record(self, tenant: str, accepted: bool, goal: str) -> None: ...
+    def remaining(self, tenant: str) -> int: ...
+
+
 @runtime_checkable
 class Authenticator(Protocol):
     """The auth seam: turn an `Authorization` header into a tenant id, or raise `Unauthorized`. The
@@ -99,6 +113,7 @@ class WedgeResult:
     isolated: bool          # the run executed inside the sandbox
     persisted_at: str       # the tenant's data root — for the operator's audit, never another tenant's
     evidence: list[dict[str, Any]] = field(default_factory=list)  # the gate verdicts behind the decision
+    remaining: int | None = None  # runs left in the tenant's window, when a meter is attached
 
 
 def _evidence(result: Any) -> list[dict[str, Any]]:
@@ -129,6 +144,7 @@ class Wedge:
         *,
         sandbox_check: Callable[[], bool] = sandbox_active,
         memory_factory: Callable[[Path], MemoryStore] = default_memory_store,
+        meter: Meter | None = None,
     ) -> None:
         self.base = Path(base)
         self.provider_factory = provider_factory
@@ -137,6 +153,7 @@ class Wedge:
         # future executor-injection can tighten the promise. Default is the live sandbox check.
         self.sandbox_check = sandbox_check
         self.memory_factory = memory_factory
+        self.meter = meter  # None => unlimited (local); a QuotaStore => metered (hosted)
 
     def tenant_root(self, tenant: str) -> Path:
         if not _TENANT_RE.match(tenant):  # defense in depth; the token table already validated it
@@ -153,9 +170,15 @@ class Wedge:
             raise SandboxUnavailable(
                 "execution sandbox is not active; refusing to run untrusted code on the host"
             )
+        if self.meter is not None:
+            self.meter.check(tenant)                            # QuotaExceeded if over the window's limit
         root = self.tenant_root(tenant)
         memory = self.memory_factory(root / "software")         # per-tenant, isolated by path
         result = build_function(goal, self.provider_factory(), memory)
+        remaining: int | None = None
+        if self.meter is not None:
+            self.meter.record(tenant, result.accepted, goal)   # the run counts (and is billable)
+            remaining = self.meter.remaining(tenant)
         return WedgeResult(
             tenant=tenant,
             goal=goal,
@@ -164,4 +187,5 @@ class Wedge:
             isolated=True,
             persisted_at=str(root),
             evidence=_evidence(result),
+            remaining=remaining,
         )

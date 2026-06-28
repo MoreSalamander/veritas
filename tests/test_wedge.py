@@ -110,7 +110,7 @@ def test_http_status_and_submit(tmp_path, monkeypatch):
 
     status = client.get("/api/wedge/status").json()
     assert status == {"sandbox_active": True, "auth_configured": True,
-                      "accounts": False, "open": True}
+                      "accounts": False, "metered": False, "open": True}
 
     assert client.post("/api/wedge/submit", json={"goal": "add"}).status_code == 401  # no token
     ok = client.post("/api/wedge/submit", json={"goal": "add two numbers"},

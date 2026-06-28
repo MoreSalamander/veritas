@@ -32,7 +32,15 @@ from engine.artifact import Artifact
 from engine.executor import sandbox_active
 from engine.memory import MemoryRecord, MemoryStore, default_memory_store
 from hub.accounts import AccountStore, BadCredentials, EmailTaken, WeakCredentials
-from hub.wedge import Authenticator, SandboxUnavailable, Unauthorized, Wedge, WedgeAuth
+from hub.quota import QuotaStore
+from hub.wedge import (
+    Authenticator,
+    QuotaExceeded,
+    SandboxUnavailable,
+    Unauthorized,
+    Wedge,
+    WedgeAuth,
+)
 from hub.ingest import TranscriptFetcher, TranscriptUnavailable, YtDlpFetcher
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
 from engine.run import ActivityEntry, set_activity_listener
@@ -1227,6 +1235,8 @@ def create_app(
     accounts_on = os.environ.get("VERITAS_ACCOUNTS", "").lower() in ("1", "true", "yes", "on")
     accounts = AccountStore(base / "accounts.db") if accounts_on else None
     wedge_auth: Authenticator = accounts if accounts is not None else WedgeAuth.from_env()
+    # Per-tenant metering (P31c2b): a rate-limit ceiling AND the billable usage ledger. None = unmetered.
+    quota = QuotaStore.from_env(base / "usage.db")
 
     @app.post("/api/auth/signup")
     def auth_signup(req: AuthRequest) -> dict[str, str]:
@@ -1264,21 +1274,38 @@ def create_app(
         # "configured" = there's a way in: real accounts enabled, or a static token table populated.
         configured = accounts is not None or bool(getattr(wedge_auth, "tokens", None))
         return {"sandbox_active": sandboxed, "auth_configured": configured,
-                "accounts": accounts is not None, "open": sandboxed and configured}
+                "accounts": accounts is not None, "metered": quota is not None,
+                "open": sandboxed and configured}
 
     @app.post("/api/wedge/submit")
     def wedge_submit(
         req: WedgeRequest, authorization: str | None = Header(default=None)
     ) -> dict[str, Any]:
-        wedge = Wedge(base, lambda: injected_provider or _provider_for(req.model), wedge_auth)
+        wedge = Wedge(base, lambda: injected_provider or _provider_for(req.model),
+                      wedge_auth, meter=quota)
         try:
             res = wedge.submit(authorization=authorization, goal=req.goal)
         except Unauthorized as exc:
             raise HTTPException(status_code=401, detail=str(exc))
         except SandboxUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc))  # fail closed, surfaced honestly
+        except QuotaExceeded as exc:
+            raise HTTPException(status_code=429, detail=str(exc))  # metered out for this window
         return {"tenant": res.tenant, "goal": res.goal, "accepted": res.accepted,
-                "run_id": res.run_id, "isolated": res.isolated, "evidence": res.evidence}
+                "run_id": res.run_id, "isolated": res.isolated, "evidence": res.evidence,
+                "remaining": res.remaining}
+
+    @app.get("/api/wedge/usage")
+    def wedge_usage(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+        """A tenant's own usage — the honest record behind any future bill. Auth-scoped: a tenant sees
+        only its own numbers. 404-ish when the host is unmetered (nothing to report)."""
+        try:
+            tenant = wedge_auth.tenant_for(authorization)
+        except Unauthorized as exc:
+            raise HTTPException(status_code=401, detail=str(exc))
+        if quota is None:
+            return {"tenant": tenant, "metered": False}
+        return {"metered": True, **quota.usage_for(tenant)}
 
     # --- Create mode: verify=gate, create=annotate. The interview manufactures the checkable
     # criteria, the machine proves what it can, the human is the gate for feel. First home: Web. ---
