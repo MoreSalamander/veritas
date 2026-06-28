@@ -461,9 +461,18 @@ Research took that number, never rescheduled).
     P31c). Verified: recall-parity invariant (SQLite == filesystem ranking), durability across reopen,
     source-containment carried over, tenant isolation, and a real `build_function` persisting + recalling
     through the DB. 7 tests; filesystem stays the local default for inspectability.
-  - **P31c · The hosted wedge** ⏳ — wire the **Software** org to sandbox + DB + minimal auth; a stranger
-    submits a goal and the org runs it isolated, persisted, and gated. Auth / multi-tenancy / billing
-    follow this, not precede it.
+  - **P31c · The hosted wedge** — wire the **Software** org to sandbox + DB + minimal auth; a stranger
+    submits a goal and the org runs it isolated, persisted, and gated. Re-cut into:
+    - **P31c1 · The wedge proper** ✅ (2026-06-28) — `hub/wedge.py`: a bearer token → tenant id
+      (`WedgeAuth`), then a run that is ISOLATED (P31a sandbox), PERSISTED (P31b per-tenant DB at the
+      tenant's own path), and GATED (the Software pipeline). The load-bearing property is **fail
+      closed**: `sandbox_active()` is checked AFTER auth and BEFORE any model code runs — no live
+      sandbox ⇒ the submission is refused (HTTP 503), never executed on the host. Endpoints
+      `GET /api/wedge/status` (honest preflight) + `POST /api/wedge/submit` (401/503 mapped); tokens
+      from `VERITAS_WEDGE_TOKENS` (empty table ⇒ wedge closed, the safe default). 11 tests + a LIVE
+      run: real Docker sandbox, gates in containers, per-tenant SQLite written, accepted with evidence.
+    - **P31c2 · Real account system** ⏳ — signup/login, sessions, rate limits, billing. Product
+      plumbing; none of it changes whether the architecture holds. Multi-tenancy / billing follow here.
 
 ## Parallel / later tracks
 

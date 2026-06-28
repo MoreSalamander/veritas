@@ -23,13 +23,15 @@ from collections.abc import Callable
 from typing import Any, TypedDict
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from engine.artifact import Artifact
+from engine.executor import sandbox_active
 from engine.memory import MemoryRecord, MemoryStore, default_memory_store
+from hub.wedge import SandboxUnavailable, Unauthorized, Wedge, WedgeAuth
 from hub.ingest import TranscriptFetcher, TranscriptUnavailable, YtDlpFetcher
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
 from engine.run import ActivityEntry, set_activity_listener
@@ -139,6 +141,11 @@ class RunRequest(BaseModel):
     org: str = "software"
     model: str = DEFAULT_MODEL
     sources: list[str] = []  # pinned corpus for orgs that need it (Research); ignored otherwise
+
+
+class WedgeRequest(BaseModel):
+    goal: str
+    model: str = DEFAULT_MODEL
 
 
 class CommonsSourceRequest(BaseModel):
@@ -1204,6 +1211,35 @@ def create_app(
         summary = summarize(result, datetime.now(timezone.utc).isoformat(), model=req.model)
         runs.save(summary)
         return runs.get(summary.id) or {}
+
+    # --- The hosted wedge (P31c1): the one path open to someone OTHER than the author. A bearer
+    # token identifies a tenant; the run executes ISOLATED (sandbox) + PERSISTED (per-tenant memory)
+    # + GATED. It fails CLOSED — no live sandbox, no run — so an untrusted goal can never touch the
+    # host. The local endpoints above stay open (single-user); only this surface is authenticated. ---
+    wedge_auth = WedgeAuth.from_env()
+
+    @app.get("/api/wedge/status")
+    def wedge_status() -> dict[str, Any]:
+        """Honest preflight: is the wedge open? Isolation must be live AND a token table configured.
+        Returns no secrets — just whether a stranger's submission could be accepted right now."""
+        sandboxed = sandbox_active()
+        configured = bool(wedge_auth.tokens)
+        return {"sandbox_active": sandboxed, "auth_configured": configured,
+                "open": sandboxed and configured}
+
+    @app.post("/api/wedge/submit")
+    def wedge_submit(
+        req: WedgeRequest, authorization: str | None = Header(default=None)
+    ) -> dict[str, Any]:
+        wedge = Wedge(base, lambda: injected_provider or _provider_for(req.model), wedge_auth)
+        try:
+            res = wedge.submit(authorization=authorization, goal=req.goal)
+        except Unauthorized as exc:
+            raise HTTPException(status_code=401, detail=str(exc))
+        except SandboxUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc))  # fail closed, surfaced honestly
+        return {"tenant": res.tenant, "goal": res.goal, "accepted": res.accepted,
+                "run_id": res.run_id, "isolated": res.isolated, "evidence": res.evidence}
 
     # --- Create mode: verify=gate, create=annotate. The interview manufactures the checkable
     # criteria, the machine proves what it can, the human is the gate for feel. First home: Web. ---

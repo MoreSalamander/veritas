@@ -193,3 +193,11 @@ def default_executor() -> Executor:
     if mode in ("container", "docker") and ContainerExecutor.available():
         return ContainerExecutor()
     return LocalSubprocessExecutor()
+
+
+def sandbox_active() -> bool:
+    """True only when untrusted code is actually isolated in a container right now — the precondition
+    the hosted wedge FAILS CLOSED on. It re-decides live (env set AND the Docker daemon answering), so
+    if the sandbox was configured but the daemon is down, this reports False and a stranger's code is
+    refused rather than run on the host."""
+    return isinstance(default_executor(), ContainerExecutor)

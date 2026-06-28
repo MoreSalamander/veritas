@@ -18,6 +18,7 @@ from engine.executor import (
     Executor,
     LocalSubprocessExecutor,
     default_executor,
+    sandbox_active,
 )
 from engine.gate import Gate
 from engine.memory import (
@@ -42,6 +43,7 @@ __all__ = [
     "LocalSubprocessExecutor",
     "ContainerExecutor",
     "default_executor",
+    "sandbox_active",
     "ExecResult",
     "MemoryRecord",
     "MemoryStore",

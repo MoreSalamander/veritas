@@ -1,0 +1,150 @@
+"""P31c1 — the hosted wedge: the narrow path by which someone OTHER than the author runs Veritas.
+
+A stranger submits a goal; the Software org runs it ISOLATED (the sandboxed executor from P31a),
+PERSISTED (a per-tenant memory from P31b), and GATED (the same verification model the author uses).
+The wedge adds exactly the three things a single-user local hub never needed:
+
+  • an IDENTITY — a bearer token maps to a tenant id, so a run is attributable;
+  • per-tenant ISOLATION — each tenant's memory lives at its own path, so one tenant can never read
+    another's lessons or artifacts;
+  • a FAIL-CLOSED guard — if the execution sandbox is not actually active, the run is REFUSED, never
+    silently executed on the host. No isolation ⇒ no run. That is the load-bearing safety property.
+
+"Minimal auth" here is the floor that PROVES isolation, not a product: a static token→tenant table.
+Real accounts, sessions, rate limits, and billing are P31c2 — none of them change whether the
+architecture holds. This module is pure logic (no web framework) so it is unit-testable; the HTTP
+endpoints in hub/app.py are a thin shell over `Wedge.submit`.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
+
+from engine.executor import sandbox_active
+from engine.memory import MemoryStore, default_memory_store
+from engine.model import ModelProvider
+from orgs.software_studio.pipeline import build_function
+
+# A tenant id becomes a directory name, so it must be path-safe by construction (no separators, no
+# traversal). Tokens are operator-defined, but we validate anyway — defense in depth.
+_TENANT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+class Unauthorized(Exception):
+    """Missing or unrecognized bearer token — the request has no tenant identity."""
+
+
+class SandboxUnavailable(Exception):
+    """Isolation is not active, so an untrusted run must NOT proceed. The wedge fails closed."""
+
+
+@dataclass(frozen=True)
+class WedgeAuth:
+    """A static bearer-token → tenant-id table. The minimal identity floor (P31c1)."""
+
+    tokens: dict[str, str]
+
+    @classmethod
+    def from_env(cls, raw: str | None = None) -> "WedgeAuth":
+        """Parse VERITAS_WEDGE_TOKENS='tok_a:alice,tok_b:bob'. An EMPTY table means the wedge is
+        closed — every request is Unauthorized — which is the safe default for an unconfigured host."""
+        raw = raw if raw is not None else os.environ.get("VERITAS_WEDGE_TOKENS", "")
+        tokens: dict[str, str] = {}
+        for pair in raw.split(","):
+            token, _, tenant = pair.strip().partition(":")
+            token, tenant = token.strip(), tenant.strip()
+            if token and tenant and _TENANT_RE.match(tenant):
+                tokens[token] = tenant
+        return cls(tokens)
+
+    def tenant_for(self, authorization: str | None) -> str:
+        """Map an `Authorization: Bearer <token>` header (or a bare token) to a tenant id, or refuse."""
+        if not authorization:
+            raise Unauthorized("missing Authorization header")
+        header = authorization.strip()
+        token = header[7:].strip() if header[:7].lower() == "bearer " else header
+        tenant = self.tokens.get(token)
+        if not tenant:
+            raise Unauthorized("unrecognized token")
+        return tenant
+
+
+@dataclass
+class WedgeResult:
+    tenant: str
+    goal: str
+    accepted: bool
+    run_id: str
+    isolated: bool          # the run executed inside the sandbox
+    persisted_at: str       # the tenant's data root — for the operator's audit, never another tenant's
+    evidence: list[dict[str, Any]] = field(default_factory=list)  # the gate verdicts behind the decision
+
+
+def _evidence(result: Any) -> list[dict[str, Any]]:
+    """The gate trail behind the decision — what was checked and how it fell. This is the wedge's
+    honesty: the stranger sees not just accept/reject but the deterministic gates that decided it."""
+    outcome = getattr(result, "code_outcome", None) or getattr(result, "spec_outcome", None)
+    if outcome is None:
+        return []
+    return [
+        {
+            "gate": gr.gate_name,
+            "determinism": gr.determinism.value,
+            "passed": gr.passed,
+            "evidence": gr.evidence,
+        }
+        for gr in outcome.gate_results
+    ]
+
+
+class Wedge:
+    """The hosted submission service. `submit` is the whole public surface."""
+
+    def __init__(
+        self,
+        base: Path | str,
+        provider_factory: Callable[[], ModelProvider],
+        auth: WedgeAuth,
+        *,
+        sandbox_check: Callable[[], bool] = sandbox_active,
+        memory_factory: Callable[[Path], MemoryStore] = default_memory_store,
+    ) -> None:
+        self.base = Path(base)
+        self.provider_factory = provider_factory
+        self.auth = auth
+        # Injectable so tests can assert the fail-closed contract without a Docker daemon, and so a
+        # future executor-injection can tighten the promise. Default is the live sandbox check.
+        self.sandbox_check = sandbox_check
+        self.memory_factory = memory_factory
+
+    def tenant_root(self, tenant: str) -> Path:
+        if not _TENANT_RE.match(tenant):  # defense in depth; the token table already validated it
+            raise Unauthorized("invalid tenant id")
+        return self.base / "tenants" / tenant
+
+    def submit(self, *, authorization: str | None, goal: str) -> WedgeResult:
+        """Authenticate → verify isolation is live → run the Software org in the tenant's own memory.
+
+        Order matters: identity first (no anonymous runs), the sandbox guard SECOND and BEFORE any
+        model-authored code can execute (fail closed), the gated build last."""
+        tenant = self.auth.tenant_for(authorization)            # Unauthorized on a bad/absent token
+        if not self.sandbox_check():                            # FAIL CLOSED — no isolation, no run
+            raise SandboxUnavailable(
+                "execution sandbox is not active; refusing to run untrusted code on the host"
+            )
+        root = self.tenant_root(tenant)
+        memory = self.memory_factory(root / "software")         # per-tenant, isolated by path
+        result = build_function(goal, self.provider_factory(), memory)
+        return WedgeResult(
+            tenant=tenant,
+            goal=goal,
+            accepted=result.accepted,
+            run_id=result.run_id,
+            isolated=True,
+            persisted_at=str(root),
+            evidence=_evidence(result),
+        )
