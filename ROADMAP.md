@@ -445,13 +445,19 @@ Research took that number, never rescheduled).
   number is a deferred module-scale rung (codec / encode-decode with a `round_trip` property).
 
 - **P31 · Hosting** — *make it safe for someone other than the author to run* (reclaims the orphaned
-  Hosting). The one seam between "local demo" and "product": the gates **execute model-authored code**
-  in a local subprocess — an RCE surface the instant a second person submits a goal. Implement a
-  `SandboxedExecutor` (container / microVM) behind the existing `Executor` ABC, add DB-backed memory +
-  run history, and host **one wedge org** (recommended: Software — biggest market, clearest
-  verification, the trust angle is the differentiator). Auth / multi-tenancy / billing follow this, not
-  precede it. *Done: a stranger submits a goal to a hosted wedge and the org runs it isolated,
-  persisted, and gated.*
+  Hosting). The one seam between "local demo" and "product": the gates **execute model-authored code** —
+  an RCE surface the instant a second person submits a goal.
+  - **P31a · Sandboxed Executor** ✅ (2026-06-28) — `ContainerExecutor` behind the existing `Executor`
+    ABC: each execution runs in an ephemeral container (`--network none`, read-only root, tmpfs scratch,
+    memory/cpu/pids caps, non-root, `--cap-drop ALL`, `no-new-privileges`, `--rm`). `default_executor()`
+    is the single swap point (`VERITAS_SANDBOX=container`); the software gates use it. Verified LIVE
+    against Docker/Colima — isolation real (network/fs/memory) AND the invariant holds (sandboxed verdict
+    == local verdict). 8 live tests; full build runs its gates in containers.
+  - **P31b · DB-backed memory** ⏳ — a `MemoryStore` over SQLite/Postgres behind the existing interface
+    (filesystem stays for local; DB for hosting + the start of multi-tenant isolation).
+  - **P31c · The hosted wedge** ⏳ — wire the **Software** org to sandbox + DB + minimal auth; a stranger
+    submits a goal and the org runs it isolated, persisted, and gated. Auth / multi-tenancy / billing
+    follow this, not precede it.
 
 ## Parallel / later tracks
 
