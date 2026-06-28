@@ -20,7 +20,13 @@ from engine.executor import (
     default_executor,
 )
 from engine.gate import Gate
-from engine.memory import MemoryRecord, MemoryStore, format_lessons
+from engine.memory import (
+    MemoryRecord,
+    MemoryStore,
+    SqliteMemoryStore,
+    default_memory_store,
+    format_lessons,
+)
 from engine.run import ActivityEntry, Outcome, Phase, Run
 from engine.validation import ValidationGate
 
@@ -39,6 +45,8 @@ __all__ = [
     "ExecResult",
     "MemoryRecord",
     "MemoryStore",
+    "SqliteMemoryStore",
+    "default_memory_store",
     "format_lessons",
     "ActivityEntry",
     "Outcome",

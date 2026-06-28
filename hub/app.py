@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from engine.artifact import Artifact
-from engine.memory import MemoryRecord, MemoryStore
+from engine.memory import MemoryRecord, MemoryStore, default_memory_store
 from hub.ingest import TranscriptFetcher, TranscriptUnavailable, YtDlpFetcher
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
 from engine.run import ActivityEntry, set_activity_listener
@@ -992,13 +992,15 @@ def create_app(
 
     def org_memory(org_name: str) -> MemoryStore:
         if org_name not in memories:
-            memories[org_name] = MemoryStore(base / "memory" / org_name)
+            # default_memory_store picks SQLite when VERITAS_MEMORY=sqlite (hosting), else filesystem
+            # (local). Each org's own path keeps the per-tenant isolation either way (P31b).
+            memories[org_name] = default_memory_store(base / "memory" / org_name)
         return memories[org_name]
 
     # The Second Brain: one cross-org commons of curated source material, parallel to (never mixed
     # into) the per-org memories above. It is input, not produced output, so it lives under its own
     # root and shows in no org's view — only an org that opts in reads from it (P28).
-    commons = MemoryStore(base / "memory" / "commons")
+    commons = default_memory_store(base / "memory" / "commons")
 
     # Live run state, keyed by a one-shot token, so the UI can watch a run unfold
     # (Explain -> Synthesize -> Verify -> Persist) instead of only seeing the result.

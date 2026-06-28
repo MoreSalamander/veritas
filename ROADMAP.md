@@ -453,8 +453,14 @@ Research took that number, never rescheduled).
     is the single swap point (`VERITAS_SANDBOX=container`); the software gates use it. Verified LIVE
     against Docker/Colima — isolation real (network/fs/memory) AND the invariant holds (sandboxed verdict
     == local verdict). 8 live tests; full build runs its gates in containers.
-  - **P31b · DB-backed memory** ⏳ — a `MemoryStore` over SQLite/Postgres behind the existing interface
-    (filesystem stays for local; DB for hosting + the start of multi-tenant isolation).
+  - **P31b · DB-backed memory** ✅ (2026-06-28) — `SqliteMemoryStore` subclasses the existing `MemoryStore`,
+    overriding only STORAGE (`persist`/`load_all` → one `.db` file) and INHERITING retrieval untouched, so
+    `recall` ranks lessons identically whichever backend reads them. `default_memory_store()` is the single
+    swap point (`VERITAS_MEMORY=sqlite`); the hub's per-org memories + commons use it. Each tenant keeps its
+    own path → its own DB (the same isolation the filesystem store had; row-level sharing waits for auth in
+    P31c). Verified: recall-parity invariant (SQLite == filesystem ranking), durability across reopen,
+    source-containment carried over, tenant isolation, and a real `build_function` persisting + recalling
+    through the DB. 7 tests; filesystem stays the local default for inspectability.
   - **P31c · The hosted wedge** ⏳ — wire the **Software** org to sandbox + DB + minimal auth; a stranger
     submits a goal and the org runs it isolated, persisted, and gated. Auth / multi-tenancy / billing
     follow this, not precede it.

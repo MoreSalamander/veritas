@@ -11,7 +11,10 @@ past failure when a similar task starts) is Phase 3 — for now we persist hones
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -332,3 +335,98 @@ class MemoryStore:
             except Exception:
                 self._embed_cache[record.id] = []
         return self._embed_cache.get(record.id, [])
+
+
+class SqliteMemoryStore(MemoryStore):
+    """The same institutional memory, persisted to a single SQLite file instead of a tree of
+    markdown files — the hosting-grade backend that the filesystem store hands off to.
+
+    It is a *drop-in subclass*: it overrides only STORAGE (`persist`/`load_all`), and inherits
+    RETRIEVAL untouched. `recall` is built entirely on `load_all()` plus the embedder helpers, so
+    once a SQLite store returns the same `MemoryRecord` list, the org reads its memory and ranks
+    lessons identically — the verdict-parity invariant, the same one the sandboxed executor holds.
+
+    Multi-tenancy follows the model the hub already uses for the filesystem store: each tenant/org
+    gets its own path → its own `.db`, so two tenants can never read each other's memory. Row-level
+    isolation in one shared DB is a later step (it arrives with auth in P31c); file-per-tenant is the
+    honest floor and matches how isolation works today.
+    """
+
+    def __init__(self, base_path: Path | str, embedder: Embedder | None = None) -> None:
+        # We deliberately do NOT call super().__init__ — there is no markdown tree to create. We keep
+        # `.base` (registry.py reads it to find the data root) and the retrieval plumbing recall needs.
+        self.base = Path(base_path)
+        self.base.mkdir(parents=True, exist_ok=True)
+        self.db_path = self.base / "memory.db"
+        self.embedder = embedder
+        self._embed_cache = {}
+        with self._connect() as con:
+            con.execute(
+                "CREATE TABLE IF NOT EXISTS records ("
+                " id TEXT PRIMARY KEY,"
+                " category TEXT NOT NULL,"
+                " title TEXT NOT NULL,"
+                " body TEXT NOT NULL,"
+                " source_artifact_id TEXT,"
+                " tags TEXT NOT NULL,"          # JSON list
+                " provenance TEXT NOT NULL,"    # JSON dict
+                " created_at TEXT NOT NULL,"
+                " seq INTEGER)"                 # insertion order, for stable load_all ordering
+            )
+
+    def _connect(self) -> sqlite3.Connection:
+        # A short-lived connection per operation: simplest correct story under the hub's async
+        # single-process model, and SQLite already serializes writers / allows concurrent readers.
+        con = sqlite3.connect(self.db_path)
+        con.row_factory = sqlite3.Row
+        return con
+
+    def persist(self, record: MemoryRecord) -> Path:
+        # The exact containment contract the filesystem store enforces (P28): an unverified source
+        # record may enter the commons only while it stays labeled human-vouched with a real origin.
+        if record.category == "source":
+            if not record.provenance.get("url"):
+                raise ValueError("a source record needs a resolvable origin to persist")
+            if record.provenance.get("trust") != TRUST_VOUCHED or TRUST_VOUCHED not in record.tags:
+                raise ValueError("a source record must carry the human-vouched trust tag to persist")
+        with self._connect() as con:
+            row = con.execute("SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM records").fetchone()
+            con.execute(
+                "INSERT OR REPLACE INTO records"
+                " (id, category, title, body, source_artifact_id, tags, provenance, created_at, seq)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record.id, record.category, record.title, record.body,
+                    record.source_artifact_id, json.dumps(record.tags),
+                    json.dumps(record.provenance), record.created_at, row["n"],
+                ),
+            )
+        return self.db_path  # the persisted location, mirroring the filesystem store's return
+
+    def load_all(self) -> list[MemoryRecord]:
+        with self._connect() as con:
+            rows = con.execute("SELECT * FROM records ORDER BY seq").fetchall()
+        return [
+            MemoryRecord(
+                category=r["category"],
+                title=r["title"],
+                body=r["body"],
+                source_artifact_id=r["source_artifact_id"],
+                tags=json.loads(r["tags"]),
+                provenance=json.loads(r["provenance"]),
+                id=r["id"],
+                created_at=r["created_at"],
+            )
+            for r in rows
+        ]
+
+
+def default_memory_store(base_path: Path | str, embedder: Embedder | None = None) -> MemoryStore:
+    """The memory backend the whole system uses. A single SQLite file when VERITAS_MEMORY is set to
+    'sqlite' — the hosting default, where a tree of markdown files per tenant doesn't scale — else the
+    filesystem store for local dev and inspectability. One swap point, the same shape as
+    `default_executor`: set the env var and persistence moves to the DB, every caller unchanged."""
+    mode = os.environ.get("VERITAS_MEMORY", "").lower()
+    if mode in ("sqlite", "db"):
+        return SqliteMemoryStore(base_path, embedder=embedder)
+    return MemoryStore(base_path, embedder=embedder)
