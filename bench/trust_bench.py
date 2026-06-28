@@ -64,12 +64,31 @@ print("JUDGE_OK")
 '''
 
 
+def _defined_fn_name(code: str, preferred: str) -> str | None:
+    """The function the code actually defines — by BEHAVIOR, not a fixed name. Models rename freely
+    (gemma turned `negate` into `get_additive_inverse`); the judge must call whatever was defined, or
+    it falsely scores correct code as wrong. Prefer the task's name if present, else the last top-level
+    def (the entry point, after any helpers)."""
+    import ast
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return None
+    names = [n.name for n in tree.body if isinstance(n, ast.FunctionDef)]
+    if not names:
+        return None
+    return preferred if preferred in names else names[-1]
+
+
 def judge(code: str | None, task: TrustTask, executor: Executor) -> bool | None:
     """The independent oracle: run the candidate against the HIDDEN reference cases. True = correct,
     False = wrong/errored, None = nothing to judge. Cases travel as a JSON env var (injection-safe)."""
     if not code or not code.strip():
         return None
-    harness = _JUDGE_HARNESS.format(code=code, fn=task.fn_name)
+    fn = _defined_fn_name(code, task.fn_name)
+    if fn is None:
+        return False  # nothing callable was defined → not correct
+    harness = _JUDGE_HARNESS.format(code=code, fn=fn)
     env = {"TRUST_CASES": json.dumps(task.reference_cases), "PATH": os.environ.get("PATH", "")}
     res = executor.run(harness, env=env, timeout=10)
     if "JUDGE_OK" in res.stdout:
