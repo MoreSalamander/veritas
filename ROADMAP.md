@@ -208,21 +208,13 @@ The build chunk proved the thesis *works*; the next rungs make it **robust** and
     raises confidence not certainty. The only path to HARD for a value is an *independent
     second method* (differential testing), not more votes from the same kind of guesser.
     Verified live on Sonnet (unanimous re-derivation, high-confidence confirmation).
-- **P14 · Second org type** (Sep–Nov) — stand up an org with a **genuinely different
-  verification model** on the *unchanged* engine — e.g. a research/docs org gated by
-  citation integrity, claim-to-source grounding, and internal consistency (a topic with no
-  code to run). *Done: a non-software org runs on the same substrate — the reusability claim,
-  proven, not asserted.*
-- **P15 · Hub maturation** (Nov–Dec) — polish the app route; real run-history browsing,
-  per-run telemetry, and an audit view over institutional memory. *Done: start, watch, and
-  audit any run from the hub with nothing mocked.*
-- **P16 · Hosting** (Dec–Feb) — sandboxed Executor (real isolation for bigger/untrusted
-  builds) + DB-backed memory and run history. (The cloud model provider already landed
-  early, alongside the toggle.) *Done: a build runs isolated, persisted to a real store.*
-- **P17 · Bootstrap** (Feb–Apr) — point the proven org at building one real Veritas
-  component (a new gate or role) under its own gates. The strange loop, earned — and only
-  after it reliably builds ordinary apps. *Done: a Veritas part ships that the org built and
-  its own gates accepted.*
+> **⚠️ Superseded — see "Reality reshaped the plan" immediately below.** The original P14–P17
+> sketch (*Second org type · Hub maturation · Hosting · Bootstrap*) was overtaken by the build's
+> actual order. What shipped is recorded below as **P14 Web · P15 Languages · P16 Research ·
+> P17 Hub · P18 Bootstrap**. The one item that fell through the renumber — **Hosting** — was never
+> rescheduled; it is now **P31** (see *The road ahead — Real engines, proof, and hosting* at the
+> end of this file). This block is kept (not deleted) because the roadmap, like the system it
+> describes, is **append-only** — history is reconciled, never rewritten.
 
 ---
 
@@ -417,8 +409,48 @@ then the real engine is swapped behind the seam — the pattern that worked ever
 artifact + no gate): Civilization Simulator, AI Dungeon Master, Company Simulator. These belong to
 the the-house-always-wins / Memory Economy City thread, not here.
 
+## The road ahead — Real engines, proof, and hosting (P29→P31)
+
+P25 built the Production org **stub-first** and deferred the real generative engines behind its
+seams; **P29** delivers them. **P30** makes the thesis *legible*. **P31** makes the system
+*hostable* — and reclaims the long-orphaned "Hosting" (sketched as the original P16, bumped when
+Research took that number, never rescheduled).
+
+- **P29 · Real generative engines** — *verification unchanged; only the tool behind the seam
+  changes.* Swap the deterministic stubs for real local models, each behind its existing seam —
+  Veritas's Python 3.14 process drives a 3.12 ML venv by subprocess (it cannot import torch itself).
+  - **P29a · Video (LTX)** ✅ — LTX-Video 2B behind `VideoBackend` (`ltx_runner.py`, MPS,
+    cpu-offload + VAE tiling); `LtxGenerator` renders a real clip per shot, first frame extracted as
+    the still; `ClipIntegrityGate`; the publisher assembles real motion (trim / freeze-pad each clip
+    to its narration slot). *Done: a brief renders a real, gated, motion video end to end, locally.*
+  - **P29b · Narration (Kokoro)** ✅ — `TTSBackend` seam; Kokoro neural TTS (`kokoro_runner.py`,
+    `af_heart`) > macOS `say` > silent, chosen by `production_generator()` for both verify and create
+    paths. *Done: narration is high-quality neural speech, not robotic `say`.*
+  - **P29c · Perceptual identity gate (Rung 2)** ⏳ — today the consistency gate proves only that the
+    *same reference/seed was requested*; this makes the **pixels** provable: drive each shot via
+    image-to-video from one pinned reference still per entity (`LTXConditionPipeline`), then a gate
+    localizes + embeds the recurring entity across shots and asserts similarity. *Done: "the character
+    looks the same shot-to-shot" is machine-verified, not asserted — the thing incumbents fake.*
+
+- **P30 · Trust benchmark** — *make the moat legible.* The thesis ("reliability is architecture, not
+  model") is asserted but not yet *shown* to an outsider. Run a battery of tasks through Veritas vs. a
+  **bare-agent baseline** (same model, no gates) and measure the number that matters: how many
+  **plausible-but-wrong outputs the gates refuse that the baseline ships green**. Reuses the bench
+  harness + the Empirical org (whose verification model *is* reproducibility — running this benchmark
+  IS a Veritas experiment; another strange loop). *Done: a reproducible result + writeup showing the
+  deterministic floor catches a measurable class of failures the bare-agent stack ships.*
+
+- **P31 · Hosting** — *make it safe for someone other than the author to run* (reclaims the orphaned
+  Hosting). The one seam between "local demo" and "product": the gates **execute model-authored code**
+  in a local subprocess — an RCE surface the instant a second person submits a goal. Implement a
+  `SandboxedExecutor` (container / microVM) behind the existing `Executor` ABC, add DB-backed memory +
+  run history, and host **one wedge org** (recommended: Software — biggest market, clearest
+  verification, the trust angle is the differentiator). Auth / multi-tenancy / billing follow this, not
+  precede it. *Done: a stranger submits a goal to a hosted wedge and the org runs it isolated,
+  persisted, and gated.*
+
 ## Parallel / later tracks
 
-- **Hosting** — sandboxed Executor + DB-backed memory (local → shippable).
+- **Hosting** — folded into **P31** above (sandboxed Executor + DB-backed memory → shippable).
 - **More languages** — Rust / Ruby / C are a `Language` each.
 - **More bootstrap targets** — let the org build more of itself.
