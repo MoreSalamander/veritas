@@ -18,17 +18,17 @@ from engine.memory import MemoryStore
 from engine.model import ScriptedProvider
 from orgs.software_studio.pipeline import build_function
 from bench.trust_bench import judge
-from bench.trust_tasks import BATTERY, CATCHABLE, EASY, UNCATCHABLE, battery_tasks
+from bench.trust_tasks import BATTERY, CATCHABLE, EASY, HARD, UNCATCHABLE, battery_tasks
 
 EX = LocalSubprocessExecutor()
 
 
-def test_battery_has_all_three_tiers_including_the_honest_limit():
-    assert len(EASY) == 3 and len(CATCHABLE) == 4 and len(UNCATCHABLE) == 3
-    assert len(battery_tasks()) == len(BATTERY) == 10
+def test_battery_has_all_tiers_including_the_honest_limit():
+    assert len(EASY) == 3 and len(CATCHABLE) == 4 and len(UNCATCHABLE) == 3 and len(HARD) == 4
+    assert len(battery_tasks()) == len(BATTERY) == 14
     # the uncatchable tier MUST exist — its absence would make the benchmark propaganda
     assert any(e.tier == "uncatchable" for e in BATTERY)
-    assert all(e.task.catchable for e in CATCHABLE)
+    assert all(e.task.catchable for e in CATCHABLE + HARD)
     assert all(not e.task.catchable for e in UNCATCHABLE)
 
 
@@ -47,7 +47,7 @@ def _accepts(spec: str, code: str, tmp_path, n) -> bool:
     return build_function("t", provider, MemoryStore(tmp_path / f"m{n}")).accepted
 
 
-@pytest.mark.parametrize("entry", CATCHABLE, ids=[e.task.name for e in CATCHABLE])
+@pytest.mark.parametrize("entry", CATCHABLE + HARD, ids=[e.task.name for e in CATCHABLE + HARD])
 def test_catchable_label_is_real(entry, tmp_path):
     c = itertools.count()
     # the gate refuses the plausible-wrong impl…

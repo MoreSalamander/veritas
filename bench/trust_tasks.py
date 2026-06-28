@@ -148,7 +148,71 @@ UNCATCHABLE = [
     ),
 ]
 
-BATTERY: list[BatteryEntry] = EASY + CATCHABLE + UNCATCHABLE
+# --- HARD: catchable (reuses the proven properties) but hard enough to trip the model ----------
+# Each plausible_wrong is a CLASSIC bug (single-pass bubble, drop-first reverse, square-only
+# transpose, adjacent-only dedupe) — the kind a model actually ships — and each still violates an
+# oracle-free property, so the gate catches it. The goal: a regime where the model writes wrong code.
+HARD = [
+    BatteryEntry(
+        TrustTask("manual_sort",
+                  "sort a list of integers ascending; implement the algorithm yourself — do NOT use "
+                  "sorted(), .sort(), or any sorting library",
+                  "manual_sort", [([[3, 1, 2]], [1, 2, 3]), ([[5, 5, 1, 9, 0]], [0, 1, 5, 5, 9]),
+                                  ([[2, 1]], [1, 2])]),
+        "hard",
+        "def manual_sort(xs):\n    xs = list(xs)\n    for i in range(len(xs)):\n"
+        "        for j in range(len(xs) - 1 - i):\n            if xs[j] > xs[j + 1]:\n"
+        "                xs[j], xs[j + 1] = xs[j + 1], xs[j]\n    return xs\n",
+        "def manual_sort(xs):\n    xs = list(xs)\n    for j in range(len(xs) - 1):\n"
+        "        if xs[j] > xs[j + 1]:\n            xs[j], xs[j + 1] = xs[j + 1], xs[j]\n    return xs\n",
+        _spec("manual_sort", "sort ascending without builtins", "def manual_sort(xs)",
+              [{"args": [[3, 1, 2]], "expected": [1, 2, 3]}],
+              [{"kind": "invariant", "invariant": "sorted_ascending", "inputs": [[[3, 1, 2]], [[5, 5, 1, 9, 0]]]},
+               {"kind": "invariant", "invariant": "is_permutation_of_input", "inputs": [[[3, 1, 2]], [[5, 5, 1, 9, 0]]]}]),
+    ),
+    BatteryEntry(
+        TrustTask("manual_reverse",
+                  "reverse a list; do NOT use slicing [::-1], reversed(), or .reverse()",
+                  "manual_reverse", [([[1, 2, 3]], [3, 2, 1]), ([[1, 2, 3, 4]], [4, 3, 2, 1]), ([[7]], [7])]),
+        "hard",
+        "def manual_reverse(xs):\n    result = []\n    for i in range(len(xs) - 1, -1, -1):\n"
+        "        result.append(xs[i])\n    return result\n",
+        "def manual_reverse(xs):\n    result = []\n    for i in range(len(xs) - 1, 0, -1):\n"
+        "        result.append(xs[i])\n    return result\n",  # off-by-one: drops the first element
+        _spec("manual_reverse", "reverse without builtins", "def manual_reverse(xs)",
+              [{"args": [[1, 2, 3]], "expected": [3, 2, 1]}],
+              [{"kind": "involution", "inputs": [[[1, 2, 3]], [[1, 2, 3, 4]]]}]),
+    ),
+    BatteryEntry(
+        TrustTask("transpose",
+                  "transpose a matrix given as a list of rows (the row and column counts may differ)",
+                  "transpose", [([[[1, 2], [3, 4]]], [[1, 3], [2, 4]]),
+                                ([[[1, 2, 3], [4, 5, 6]]], [[1, 4], [2, 5], [3, 6]])]),
+        "hard",
+        "def transpose(m):\n    return [list(col) for col in zip(*m)]\n",
+        "def transpose(m):\n    n = len(m)\n    return [[m[j][i] for j in range(n)] for i in range(n)]\n",  # square-only
+        _spec("transpose", "transpose a matrix", "def transpose(m)",
+              [{"args": [[[1, 2], [3, 4]]], "expected": [[1, 3], [2, 4]]}],
+              [{"kind": "involution", "inputs": [[[[1, 2, 3], [4, 5, 6]]]]}]),  # non-square: catches square-only
+    ),
+    BatteryEntry(
+        TrustTask("manual_dedupe",
+                  "remove duplicate values keeping first-seen order; track seen values yourself "
+                  "without using set() or dict()",
+                  "manual_dedupe", [([[1, 2, 1, 3, 2]], [1, 2, 3]), ([[5, 5, 5]], [5]), ([[1, 2, 3]], [1, 2, 3])]),
+        "hard",
+        "def manual_dedupe(xs):\n    result = []\n    for x in xs:\n        if x not in result:\n"
+        "            result.append(x)\n    return result\n",
+        "def manual_dedupe(xs):\n    result = []\n    for i, x in enumerate(xs):\n"
+        "        if i == 0 or x != xs[i - 1]:\n            result.append(x)\n    return result\n",  # adjacent-only
+        _spec("manual_dedupe", "dedupe preserving order without set/dict", "def manual_dedupe(xs)",
+              [{"args": [[1, 2, 1, 3, 2]], "expected": [1, 2, 3]}],
+              [{"kind": "invariant", "invariant": "elements_unique", "inputs": [[[1, 2, 1, 3, 2]]]},
+               {"kind": "idempotent", "inputs": [[[1, 2, 1]]]}]),
+    ),
+]
+
+BATTERY: list[BatteryEntry] = EASY + CATCHABLE + UNCATCHABLE + HARD
 
 
 def battery_tasks() -> list[TrustTask]:
