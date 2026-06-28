@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Veritas — submit a goal, watch it verified</title>
+<style>
+  :root {
+    --bg: #0a0e14; --panel: #111722; --line: #1e2733; --ink: #e6edf3;
+    --dim: #8b98a9; --cyan: #22d3ee; --green: #34d399; --red: #f87171; --amber: #fbbf24;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: system-ui, sans-serif; line-height: 1.5;
+         display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 0 18px 80px; }
+  .wrap { width: 100%; max-width: 680px; }
+  header { padding: 40px 0 8px; }
+  .logo { font-weight: 800; letter-spacing: 1px; font-size: 22px; }
+  .logo b { color: var(--cyan); }
+  .tagline { color: var(--dim); font-size: 14px; margin-top: 6px; }
+  .thesis { color: var(--dim); font-size: 12.5px; margin-top: 10px; max-width: 560px; }
+  .thesis b { color: var(--ink); font-weight: 600; }
+
+  .statusbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 6px; }
+  .chip { font-family: var(--mono); font-size: 11px; padding: 4px 9px; border-radius: 6px;
+          border: 1px solid var(--line); color: var(--dim); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #3a4a5a; }
+  .dot.on { background: var(--green); } .dot.off { background: var(--red); }
+  .chip.on { color: var(--green); border-color: rgba(52,211,153,.3); }
+  .chip.off { color: var(--red); border-color: rgba(248,113,113,.35); }
+
+  .banner { border-radius: 10px; padding: 12px 15px; font-size: 13px; margin: 14px 0; display: none; }
+  .banner.warn { border: 1px solid var(--amber); background: rgba(251,191,36,.07); color: var(--amber); }
+  .banner.err { border: 1px solid var(--red); background: rgba(248,113,113,.08); color: #f4b3b3; }
+  .banner.show { display: block; }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+           padding: 18px 20px; margin: 14px 0; }
+  h2 { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--dim);
+       margin: 0 0 14px; font-weight: 600; }
+  label { display: block; font-size: 12px; color: var(--dim); margin: 0 0 5px; }
+  input, textarea { width: 100%; background: #0c1119; border: 1px solid var(--line); color: var(--ink);
+         padding: 11px 13px; border-radius: 9px; font-size: 14px; font-family: inherit; margin-bottom: 12px; }
+  textarea { min-height: 90px; resize: vertical; }
+  .field-mono input { font-family: var(--mono); font-size: 12.5px; }
+  .btns { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  button { background: var(--cyan); color: #04222a; border: 0; padding: 11px 18px; border-radius: 9px;
+           font-weight: 700; cursor: pointer; font-size: 14px; }
+  button.ghost { background: transparent; color: var(--cyan); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: wait; }
+  .who { font-size: 12.5px; color: var(--dim); margin-left: auto; }
+  .who b { color: var(--ink); }
+  .hint { color: var(--dim); font-size: 12px; margin-top: 2px; }
+  .hidden { display: none; }
+  code { color: var(--cyan); font-family: var(--mono); font-size: 12.5px; }
+
+  /* the verdict + gate ledger — trust made visible */
+  .verdict { font-size: 18px; font-weight: 800; letter-spacing: .5px; margin: 4px 0 4px;
+             display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .verdict.shipped { color: var(--green); } .verdict.rejected { color: var(--red); }
+  .verdict .sub { font-weight: 500; font-size: 12.5px; color: var(--dim); letter-spacing: 0; }
+  .gates { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-top: 12px; }
+  .gate { padding: 10px 13px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12.5px; }
+  .gate:last-child { border-bottom: 0; }
+  .gate.hard { background: rgba(34,211,238,.035); }
+  .gate.soft { opacity: .65; }
+  .grow { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .tier { font-size: 9.5px; letter-spacing: .5px; padding: 1px 5px; border-radius: 4px;
+          border: 1px solid var(--line); margin-left: 6px; color: var(--dim); }
+  .gate.hard .tier { color: var(--cyan); border-color: rgba(34,211,238,.4); }
+  .gv { font-weight: 700; white-space: nowrap; }
+  .gv.pass { color: var(--green); } .gv.fail { color: var(--red); }
+  .gev { color: var(--dim); font-size: 11.5px; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+  .meta { font-family: var(--mono); font-size: 11.5px; color: var(--dim); margin-top: 12px;
+          display: flex; gap: 14px; flex-wrap: wrap; }
+  .spin { display: inline-block; }
+  footer { color: var(--dim); font-size: 12px; margin-top: 26px; text-align: center; }
+  footer a { color: var(--cyan); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">my<b>·</b>AI<b>·</b>stro <span style="color:var(--dim);font-weight:400">/ Veritas</span></div>
+    <div class="tagline">Submit a goal. Watch it built, verified, and shipped — or honestly refused.</div>
+    <div class="thesis">Veritas treats the model as a <b>proposal engine</b> and a deterministic
+      scaffold as the <b>decision engine</b>. Your code runs <b>isolated</b> in a throwaway sandbox,
+      and only ships if it passes the gates below. <b>Reliability is architecture, not a vibe.</b></div>
+    <div class="statusbar" id="statusbar"></div>
+  </header>
+
+  <div class="banner" id="banner"></div>
+
+  <!-- AUTH -->
+  <section class="panel" id="authPanel">
+    <h2 id="authTitle">Sign in</h2>
+
+    <!-- accounts mode -->
+    <div id="accountForms">
+      <label>Email</label>
+      <input id="email" type="email" autocomplete="username" placeholder="you@example.com" />
+      <label>Password</label>
+      <input id="password" type="password" autocomplete="current-password" placeholder="at least 8 characters" />
+      <div class="btns">
+        <button id="loginBtn">Log in</button>
+        <button id="signupBtn" class="ghost">Create account</button>
+      </div>
+    </div>
+
+    <!-- static-token mode -->
+    <div id="tokenForm" class="hidden field-mono">
+      <label>Access token</label>
+      <input id="token" type="text" placeholder="paste the token your host gave you" />
+      <div class="btns"><button id="tokenBtn">Use token</button></div>
+      <div class="hint">This host uses static tokens, not accounts.</div>
+    </div>
+  </section>
+
+  <!-- SUBMIT -->
+  <section class="panel hidden" id="appPanel">
+    <div class="grow" style="margin-bottom:14px">
+      <h2 style="margin:0">Build a function</h2>
+      <span class="who" id="whoami"></span>
+    </div>
+    <label>Describe the function you want Veritas to build and verify</label>
+    <textarea id="goal" placeholder="e.g. reverse a string &nbsp;·&nbsp; add two numbers &nbsp;·&nbsp; check if a number is prime"></textarea>
+    <div class="btns">
+      <button id="submitBtn">Submit &amp; verify</button>
+      <button id="logoutBtn" class="ghost">Log out</button>
+      <span class="who" id="usage"></span>
+    </div>
+  </section>
+
+  <!-- RESULT -->
+  <section class="panel hidden" id="resultPanel">
+    <div id="result"></div>
+  </section>
+
+  <footer>
+    The same engine, run by anyone — <a href="/">open the full hub →</a>
+  </footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const TOKEN_KEY = "veritas_wedge_token";
+let STATUS = { accounts: false };
+
+const getToken = () => localStorage.getItem(TOKEN_KEY) || "";
+const setToken = (t) => t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY);
+
+async function api(path, { method = "GET", body, auth = false } = {}) {
+  const headers = {};
+  if (body) headers["Content-Type"] = "application/json";
+  if (auth && getToken()) headers["Authorization"] = "Bearer " + getToken();
+  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  let data = {};
+  try { data = await res.json(); } catch (_) {}
+  return { ok: res.ok, status: res.status, data };
+}
+
+function banner(msg, kind = "warn") {
+  const b = $("banner");
+  if (!msg) { b.className = "banner"; return; }
+  b.textContent = msg;
+  b.className = "banner show " + kind;
+}
+
+function chip(label, on, offLabel) {
+  const cls = on ? "chip on" : "chip off";
+  const dot = on ? "dot on" : "dot off";
+  return `<span class="${cls}"><span class="${dot}"></span>${on ? label : (offLabel || label)}</span>`;
+}
+
+async function refreshStatus() {
+  const { ok, data } = await api("/api/wedge/status");
+  if (!ok) return;
+  STATUS = data;
+  $("statusbar").innerHTML =
+    chip("sandbox isolated", data.sandbox_active, "sandbox OFFLINE") +
+    chip(data.accounts ? "accounts" : "token access", data.auth_configured, "no access configured") +
+    (data.metered ? chip("metered", true) : `<span class="chip">unmetered</span>`);
+
+  // pick the auth UI for this host
+  $("accountForms").classList.toggle("hidden", !data.accounts);
+  $("tokenForm").classList.toggle("hidden", data.accounts);
+  $("authTitle").textContent = data.accounts ? "Sign in" : "Enter access token";
+
+  if (!data.sandbox_active) {
+    banner("This host's execution sandbox is offline, so submissions are paused — Veritas refuses to run untrusted code without isolation (it fails closed). Try again later.", "warn");
+  } else if (!data.auth_configured) {
+    banner("This host has no access configured yet.", "warn");
+  } else {
+    banner("");
+  }
+}
+
+function showApp(tenant) {
+  $("authPanel").classList.add("hidden");
+  $("appPanel").classList.remove("hidden");
+  $("whoami").innerHTML = tenant ? `signed in as <b>${tenant}</b>` : "signed in";
+  refreshUsage();
+}
+function showAuth() {
+  $("appPanel").classList.add("hidden");
+  $("resultPanel").classList.add("hidden");
+  $("authPanel").classList.remove("hidden");
+}
+
+async function refreshUsage() {
+  if (!STATUS.metered) { $("usage").textContent = ""; return; }
+  const { ok, data } = await api("/api/wedge/usage", { auth: true });
+  if (ok && data.metered) $("usage").innerHTML = `<b>${data.remaining}</b>/${data.limit} runs left`;
+}
+
+async function doLogin() {
+  const email = $("email").value.trim(), password = $("password").value;
+  if (!email || !password) return banner("Enter an email and password.", "err");
+  const { ok, status, data } = await api("/api/auth/login", { method: "POST", body: { email, password } });
+  if (!ok) return banner(status === 401 ? "Invalid email or password." : (data.detail || "Login failed."), "err");
+  setToken(data.token); banner(""); await afterAuth();
+}
+
+async function doSignup() {
+  const email = $("email").value.trim(), password = $("password").value;
+  if (!email || !password) return banner("Enter an email and password.", "err");
+  const { ok, status, data } = await api("/api/auth/signup", { method: "POST", body: { email, password } });
+  if (!ok) {
+    if (status === 409) return banner("That email already has an account — try logging in.", "err");
+    return banner(data.detail || "Sign-up failed.", "err");
+  }
+  banner("Account created — logging you in…", "warn");
+  await doLogin();
+}
+
+async function useToken() {
+  const t = $("token").value.trim();
+  if (!t) return banner("Paste your access token.", "err");
+  setToken(t); banner(""); await afterAuth();
+}
+
+// validate the stored token by asking for our own (auth-scoped) usage
+async function afterAuth() {
+  const { ok, status, data } = await api("/api/wedge/usage", { auth: true });
+  if (ok) { showApp(data.tenant); }
+  else if (status === 401) { setToken(""); showAuth(); banner("Session expired — please sign in again.", "warn"); }
+  else { showApp(); }
+}
+
+async function submit() {
+  const goal = $("goal").value.trim();
+  if (!goal) return banner("Describe a function first.", "err");
+  $("submitBtn").disabled = true; $("submitBtn").textContent = "Verifying…";
+  $("resultPanel").classList.add("hidden");
+  const { ok, status, data } = await api("/api/wedge/submit", { method: "POST", auth: true, body: { goal } });
+  $("submitBtn").disabled = false; $("submitBtn").textContent = "Submit & verify";
+
+  if (!ok) {
+    if (status === 401) { setToken(""); showAuth(); return banner("Please sign in again.", "warn"); }
+    if (status === 429) return banner(data.detail || "You've used your run allowance for now.", "warn");
+    if (status === 503) return banner(data.detail || "The sandbox is offline; submissions are paused.", "warn");
+    return banner(data.detail || "Something went wrong running your goal.", "err");
+  }
+  banner("");
+  renderResult(data);
+  refreshUsage();
+}
+
+function renderResult(r) {
+  const shipped = r.accepted;
+  const gates = (r.evidence || []).map(g => {
+    const hard = (g.determinism || "").toLowerCase() === "hard";
+    const pass = g.passed;
+    return `<div class="gate ${hard ? "hard" : "soft"}">
+      <div class="grow">
+        <span>${g.gate}<span class="tier">${hard ? "HARD" : "SOFT"}</span></span>
+        <span class="gv ${pass ? "pass" : "fail"}">${pass ? "PASS ✓" : "FAIL ✗"}</span>
+      </div>
+      ${g.evidence ? `<div class="gev">${escapeHtml(g.evidence)}</div>` : ""}
+    </div>`;
+  }).join("");
+
+  const passed = (r.evidence || []).filter(g => g.passed).length;
+  $("result").innerHTML = `
+    <div class="verdict ${shipped ? "shipped" : "rejected"}">
+      ${shipped ? "SHIPPED" : "REJECTED"}
+      <span class="sub">${shipped
+        ? `verified — ${passed} gate${passed === 1 ? "" : "s"} held`
+        : "the gates refused it; nothing unverified ships"}</span>
+    </div>
+    <div class="gates">${gates || `<div class="gate"><span class="gev">no gate trail returned</span></div>`}</div>
+    <div class="meta">
+      ${r.isolated ? `<span>🛡 ran isolated in a sandbox</span>` : ""}
+      ${r.remaining != null && r.remaining >= 0 ? `<span>${r.remaining} runs left</span>` : ""}
+      <span>run ${r.run_id || "—"}</span>
+    </div>`;
+  $("resultPanel").classList.remove("hidden");
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+$("loginBtn").onclick = doLogin;
+$("signupBtn").onclick = doSignup;
+$("tokenBtn").onclick = useToken;
+$("logoutBtn").onclick = async () => { await api("/api/auth/logout", { method: "POST", auth: true }); setToken(""); showAuth(); };
+$("submitBtn").onclick = submit;
+$("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+$("goal").addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(); });
+
+(async function init() {
+  await refreshStatus();
+  if (getToken()) await afterAuth(); else showAuth();
+})();
+</script>
+</body>
+</html>

@@ -1586,6 +1586,14 @@ def create_app(
         # Never cache the shell: the UI iterates fast and a stale index is pure confusion.
         return FileResponse(_STATIC / "index.html", headers={"Cache-Control": "no-store"})
 
+    @app.get("/wedge")
+    @app.get("/try")
+    def wedge_page() -> FileResponse:
+        # The public storefront (P31c face): sign in -> submit a goal -> watch it run isolated and
+        # see the gate ledger. Talks only to /api/auth/* and /api/wedge/*; a stranger never reaches
+        # the full dashboard. Served at both /wedge and /try.
+        return FileResponse(_STATIC / "wedge.html", headers={"Cache-Control": "no-store"})
+
     @app.get("/about")
     def about() -> FileResponse:
         # The standalone explainer (docs/about.html) served in-hub too — one file, two homes.

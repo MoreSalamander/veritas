@@ -118,6 +118,18 @@ def test_http_status_and_submit(tmp_path, monkeypatch):
     assert ok.status_code == 200 and ok.json()["accepted"] and ok.json()["tenant"] == "alice"
 
 
+def test_wedge_page_is_served(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from hub.app import create_app
+
+    client = TestClient(create_app(data_dir=tmp_path, provider=_provider()))
+    for path in ("/wedge", "/try"):
+        r = client.get(path)
+        assert r.status_code == 200
+        assert "/api/wedge/submit" in r.text and "/api/auth/login" in r.text  # the storefront wiring
+
+
 def test_http_fails_closed_with_503(tmp_path, monkeypatch):
     from engine.executor import LocalSubprocessExecutor
     from fastapi.testclient import TestClient
