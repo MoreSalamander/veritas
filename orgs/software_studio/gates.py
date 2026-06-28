@@ -21,7 +21,7 @@ import os
 from typing import Any
 
 from engine.artifact import Artifact, Determinism, GateResult
-from engine.executor import Executor, LocalSubprocessExecutor
+from engine.executor import Executor, default_executor
 from engine.gate import Gate
 from orgs.software_studio.oracle import VotingOracle
 from orgs.software_studio.properties import (
@@ -60,7 +60,7 @@ print("OK", len(_cases), "cases")
 """
 
 
-_DEFAULT_EXECUTOR = LocalSubprocessExecutor()
+_DEFAULT_EXECUTOR = default_executor()  # container when VERITAS_SANDBOX=container, else local
 
 
 def run_properties(
