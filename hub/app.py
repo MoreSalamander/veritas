@@ -31,7 +31,8 @@ from pydantic import BaseModel
 from engine.artifact import Artifact
 from engine.executor import sandbox_active
 from engine.memory import MemoryRecord, MemoryStore, default_memory_store
-from hub.wedge import SandboxUnavailable, Unauthorized, Wedge, WedgeAuth
+from hub.accounts import AccountStore, BadCredentials, EmailTaken, WeakCredentials
+from hub.wedge import Authenticator, SandboxUnavailable, Unauthorized, Wedge, WedgeAuth
 from hub.ingest import TranscriptFetcher, TranscriptUnavailable, YtDlpFetcher
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
 from engine.run import ActivityEntry, set_activity_listener
@@ -146,6 +147,11 @@ class RunRequest(BaseModel):
 class WedgeRequest(BaseModel):
     goal: str
     model: str = DEFAULT_MODEL
+
+
+class AuthRequest(BaseModel):
+    email: str
+    password: str
 
 
 class CommonsSourceRequest(BaseModel):
@@ -1216,16 +1222,49 @@ def create_app(
     # token identifies a tenant; the run executes ISOLATED (sandbox) + PERSISTED (per-tenant memory)
     # + GATED. It fails CLOSED — no live sandbox, no run — so an untrusted goal can never touch the
     # host. The local endpoints above stay open (single-user); only this surface is authenticated. ---
-    wedge_auth = WedgeAuth.from_env()
+    # The auth seam (P31c2): real accounts when VERITAS_ACCOUNTS is on, else the static env tokens
+    # (P31c1) so local/tests are unchanged. Both satisfy Authenticator, so the wedge never knows which.
+    accounts_on = os.environ.get("VERITAS_ACCOUNTS", "").lower() in ("1", "true", "yes", "on")
+    accounts = AccountStore(base / "accounts.db") if accounts_on else None
+    wedge_auth: Authenticator = accounts if accounts is not None else WedgeAuth.from_env()
+
+    @app.post("/api/auth/signup")
+    def auth_signup(req: AuthRequest) -> dict[str, str]:
+        if accounts is None:
+            raise HTTPException(status_code=503, detail="accounts are not enabled on this host")
+        try:
+            tenant = accounts.signup(req.email, req.password)
+        except WeakCredentials as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except EmailTaken as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        return {"tenant": tenant}
+
+    @app.post("/api/auth/login")
+    def auth_login(req: AuthRequest) -> dict[str, str]:
+        if accounts is None:
+            raise HTTPException(status_code=503, detail="accounts are not enabled on this host")
+        try:
+            token = accounts.login(req.email, req.password)
+        except BadCredentials as exc:
+            raise HTTPException(status_code=401, detail=str(exc))  # generic — no account enumeration
+        return {"token": token}
+
+    @app.post("/api/auth/logout")
+    def auth_logout(authorization: str | None = Header(default=None)) -> dict[str, bool]:
+        if accounts is not None:
+            accounts.logout(authorization)
+        return {"ok": True}  # idempotent, and a no-op when accounts are off
 
     @app.get("/api/wedge/status")
     def wedge_status() -> dict[str, Any]:
         """Honest preflight: is the wedge open? Isolation must be live AND a token table configured.
         Returns no secrets — just whether a stranger's submission could be accepted right now."""
         sandboxed = sandbox_active()
-        configured = bool(wedge_auth.tokens)
+        # "configured" = there's a way in: real accounts enabled, or a static token table populated.
+        configured = accounts is not None or bool(getattr(wedge_auth, "tokens", None))
         return {"sandbox_active": sandboxed, "auth_configured": configured,
-                "open": sandboxed and configured}
+                "accounts": accounts is not None, "open": sandboxed and configured}
 
     @app.post("/api/wedge/submit")
     def wedge_submit(

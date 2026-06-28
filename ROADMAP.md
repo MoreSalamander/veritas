@@ -471,8 +471,20 @@ Research took that number, never rescheduled).
       `GET /api/wedge/status` (honest preflight) + `POST /api/wedge/submit` (401/503 mapped); tokens
       from `VERITAS_WEDGE_TOKENS` (empty table ⇒ wedge closed, the safe default). 11 tests + a LIVE
       run: real Docker sandbox, gates in containers, per-tenant SQLite written, accepted with evidence.
-    - **P31c2 · Real account system** ⏳ — signup/login, sessions, rate limits, billing. Product
-      plumbing; none of it changes whether the architecture holds. Multi-tenancy / billing follow here.
+    - **P31c2 · Real account system** — re-cut into accounts (now), quotas (next), billing (deferred):
+      - **P31c2a · Accounts + sessions** ✅ (2026-06-28) — `hub/accounts.py`: a SQLite `AccountStore`
+        (users + sessions) replacing c1's static env tokens with self-service identity. signup/login/
+        logout; a session token resolves to a tenant id via the SAME `tenant_for` seam, so the wedge is
+        unchanged and a user simply IS a tenant (c1 isolation carries over). New `Authenticator` Protocol
+        makes `WedgeAuth` (static) and `AccountStore` (DB) interchangeable; `VERITAS_ACCOUNTS=1` selects.
+        Security by construction: scrypt + per-user salt, `hmac.compare_digest`, tokens stored only as
+        SHA-256 hashes, session expiry, path-safe ids, generic login error (no enumeration). Endpoints
+        `POST /api/auth/{signup,login,logout}`. 11 tests incl. nothing-in-plaintext-at-rest + a wedge run
+        under account auth + the HTTP flow. Suite 403 pass, mypy --strict clean.
+      - **P31c2b · Quotas / rate limits** ⏳ — per-tenant usage ledger + enforcement (429); also the
+        substrate billing reads from.
+      - **Billing integration** ⏳ (deferred) — a real processor (Stripe/etc.) means real money, the
+        owner's keys, and an outward webhook; wired when chosen, not blind. c2b prepares the ground.
 
 ## Parallel / later tracks
 

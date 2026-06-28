@@ -22,7 +22,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol, runtime_checkable
 
 from engine.executor import sandbox_active
 from engine.memory import MemoryStore, default_memory_store
@@ -40,6 +40,24 @@ class Unauthorized(Exception):
 
 class SandboxUnavailable(Exception):
     """Isolation is not active, so an untrusted run must NOT proceed. The wedge fails closed."""
+
+
+@runtime_checkable
+class Authenticator(Protocol):
+    """The auth seam: turn an `Authorization` header into a tenant id, or raise `Unauthorized`. The
+    static `WedgeAuth` (env tokens, P31c1) and the DB-backed `AccountStore` (real accounts, P31c2)
+    are interchangeable behind it — the wedge never learns which one it holds."""
+
+    def tenant_for(self, authorization: str | None) -> str: ...
+
+
+def parse_bearer(authorization: str | None) -> str | None:
+    """Pull the raw token out of an `Authorization: Bearer <token>` header (or accept a bare token).
+    Shared so every authenticator strips the scheme the same way."""
+    if not authorization:
+        return None
+    header = authorization.strip()
+    return header[7:].strip() if header[:7].lower() == "bearer " else header
 
 
 @dataclass(frozen=True)
@@ -63,10 +81,9 @@ class WedgeAuth:
 
     def tenant_for(self, authorization: str | None) -> str:
         """Map an `Authorization: Bearer <token>` header (or a bare token) to a tenant id, or refuse."""
-        if not authorization:
+        token = parse_bearer(authorization)
+        if not token:
             raise Unauthorized("missing Authorization header")
-        header = authorization.strip()
-        token = header[7:].strip() if header[:7].lower() == "bearer " else header
         tenant = self.tokens.get(token)
         if not tenant:
             raise Unauthorized("unrecognized token")
@@ -108,7 +125,7 @@ class Wedge:
         self,
         base: Path | str,
         provider_factory: Callable[[], ModelProvider],
-        auth: WedgeAuth,
+        auth: Authenticator,
         *,
         sandbox_check: Callable[[], bool] = sandbox_active,
         memory_factory: Callable[[Path], MemoryStore] = default_memory_store,
