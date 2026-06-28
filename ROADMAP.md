@@ -432,13 +432,17 @@ Research took that number, never rescheduled).
     localizes + embeds the recurring entity across shots and asserts similarity. *Done: "the character
     looks the same shot-to-shot" is machine-verified, not asserted — the thing incumbents fake.*
 
-- **P30 · Trust benchmark** — *make the moat legible.* The thesis ("reliability is architecture, not
-  model") is asserted but not yet *shown* to an outsider. Run a battery of tasks through Veritas vs. a
-  **bare-agent baseline** (same model, no gates) and measure the number that matters: how many
-  **plausible-but-wrong outputs the gates refuse that the baseline ships green**. Reuses the bench
-  harness + the Empirical org (whose verification model *is* reproducibility — running this benchmark
-  IS a Veritas experiment; another strange loop). *Done: a reproducible result + writeup showing the
-  deterministic floor catches a measurable class of failures the bare-agent stack ships.*
+- **P30 · Trust benchmark** ✅ BANKED (2026-06-28, findings: `bench/TRUST_FINDINGS.md`) — *make the
+  moat legible.* Two contestants (same model, gates vs none) judged by an INDEPENDENT oracle; a
+  tier-validated 14-task battery; full-pipeline + gate-isolation experiments; everything reproducible.
+  **Outcome (honest, not the staged win):** (1) the win *mechanism* is proven (given wrong code, the
+  deterministic gate refuses the exact code bare ships); (2) the win *rate* is ~0 on single functions
+  for local 9–12B models — they don't make catchable single-function errors, so there's nothing to
+  catch; (3) the architecture is **cost-free** (0 false-ship, 0 over-refusal across 14×2×2) — its
+  measurable benefit appears at the model's CEILING (composition/module scale), not below it; (4) the
+  benchmark **debugged the engine** — found & fixed a real 30%→0% over-refusal (an errored property gate
+  was treated as a violation) and a harness artifact (judge by AST-defined fn name). The non-zero win
+  number is a deferred module-scale rung (codec / encode-decode with a `round_trip` property).
 
 - **P31 · Hosting** — *make it safe for someone other than the author to run* (reclaims the orphaned
   Hosting). The one seam between "local demo" and "product": the gates **execute model-authored code**
