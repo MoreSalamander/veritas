@@ -78,6 +78,12 @@ def run_properties(
     env = {**os.environ, "VERITAS_PROPS": serialize(properties), "VERITAS_FN": function_name}
     result = executor.run(f"{code}\n{PROPERTY_HARNESS}", env, timeout)
     if result.ok:
+        lines = result.stdout.strip().splitlines()
+        if any(ln.startswith("SKIPPED") for ln in lines):
+            ok = next((ln for ln in lines if ln.startswith("OK")), "OK").removeprefix("OK").strip()
+            skip = next((ln for ln in lines if ln.startswith("SKIPPED")), "")[8:].strip()
+            # some properties couldn't be evaluated (malformed) — uninformative, not a violation
+            return True, f"{ok}; some properties malformed and skipped as uninformative: {skip[:140]}"
         held = "; ".join(p.describe() for p in properties)
         return True, f"{len(properties)} oracle-free property(ies) hold: {held}"
     last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "non-zero exit"

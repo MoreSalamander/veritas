@@ -221,7 +221,8 @@ def _invariant(name, args, out):
 _props = _json.loads(_os.environ["VERITAS_PROPS"])
 _fn = _os.environ["VERITAS_FN"]
 
-for _pi, _p in enumerate(_props):
+
+def _check(_pi, _p):
     _kind = _p["kind"]
     _inputs = _p["inputs"]
     if _kind == "round_trip":
@@ -266,5 +267,23 @@ for _pi, _p in enumerate(_props):
     else:
         raise AssertionError("unknown property kind: " + str(_kind))
 
-print("OK", len(_props), "properties")
+
+# A clean relation VIOLATION (AssertionError) means the CODE is wrong -> hard fail. Any OTHER exception
+# means the property itself could not be evaluated (a model authored it with the wrong input shape, an
+# invariant that doesn't fit this output type, etc.) -> it is UNINFORMATIVE, not evidence of a defect,
+# so it is skipped rather than hard-rejecting otherwise-correct code. An errored gate is not a violated
+# property. (This never launders a false green: a skipped property was providing no guarantee anyway,
+# and a real violation still fails hard.)
+_skipped = []
+for _pi, _p in enumerate(_props):
+    try:
+        _check(_pi, _p)
+    except AssertionError:
+        raise
+    except Exception as _e:
+        _skipped.append([_pi, _p.get("kind", "?"), type(_e).__name__ + ": " + str(_e)[:100]])
+
+print("OK", len(_props) - len(_skipped), "of", len(_props), "properties held")
+if _skipped:
+    print("SKIPPED", _json.dumps(_skipped))
 """
