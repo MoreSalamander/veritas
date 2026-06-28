@@ -116,6 +116,26 @@ def run_veritas(task: TrustTask, provider: ModelProvider, memory: MemoryStore) -
     return Trial(shipped=res.accepted, code=code)
 
 
+def run_gate_isolation(spec_json: str, task: TrustTask, provider: ModelProvider,
+                       parent_id: str = "iso") -> tuple[Trial, Trial]:
+    """The clean experiment: both contestants get the SAME correct spec AND the SAME single code
+    proposal — only the gates differ. The model writes the implementation once; the bare agent ships
+    that exact code ungated, Veritas runs the spec's hard gates over it. Removes the property-authoring
+    confound (the spec, with its catching property, is given) so the result isolates the gates alone."""
+    from orgs.software_studio.agents import DeveloperAgent
+    from orgs.software_studio.gates import PropertyGate, SyntaxGate
+    from orgs.software_studio.spec import parse_spec
+
+    spec = parse_spec(spec_json)
+    art = DeveloperAgent(provider).propose(spec, parent_id=parent_id)  # one proposal, shared
+    code = art.payload
+    bare = Trial(shipped=True, code=code)  # ship the proposal ungated
+    hard_pass = (SyntaxGate(spec.function_name).check(art).passed
+                 and PropertyGate(spec.function_name, spec.properties).check(art).passed)
+    veritas = Trial(shipped=hard_pass, code=code)  # the SAME code, now gated
+    return bare, veritas
+
+
 def classify(task: TrustTask, trial: Trial, executor: Executor) -> Verdict:
     correct = judge(trial.code, task, executor)
     if trial.shipped:

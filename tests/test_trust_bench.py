@@ -21,6 +21,7 @@ from bench.trust_bench import (
     judge,
     run_bare,
     run_battery,
+    run_gate_isolation,
     run_veritas,
 )
 
@@ -80,6 +81,23 @@ def test_correct_code_both_ship(tmp_path):
     assert classify(SORT_TASK, run_bare(SORT_TASK, provider), EX) == Verdict.SHIPPED_CORRECT
     assert classify(SORT_TASK, run_veritas(SORT_TASK, provider, MemoryStore(tmp_path / "m")), EX) \
         == Verdict.SHIPPED_CORRECT
+
+
+# --- gate isolation: same spec AND same code; only the gates differ ----------------------------
+
+def test_gate_isolation_isolates_the_gates():
+    provider = ScriptedProvider({"developer": WRONG_SORT})
+    bare, veritas = run_gate_isolation(SORT_SPEC, SORT_TASK, provider)
+    assert bare.code == veritas.code == WRONG_SORT          # one shared proposal…
+    assert classify(SORT_TASK, bare, EX) == Verdict.SHIPPED_WRONG     # …bare ships it…
+    assert classify(SORT_TASK, veritas, EX) == Verdict.REFUSED_GOOD   # …the gate alone refuses it
+
+
+def test_gate_isolation_correct_code_both_ship():
+    provider = ScriptedProvider({"developer": GOOD_SORT})
+    bare, veritas = run_gate_isolation(SORT_SPEC, SORT_TASK, provider)
+    assert classify(SORT_TASK, bare, EX) == Verdict.SHIPPED_CORRECT
+    assert classify(SORT_TASK, veritas, EX) == Verdict.SHIPPED_CORRECT
 
 
 def test_uncatchable_value_error_both_false_ship(tmp_path):

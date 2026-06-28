@@ -20,19 +20,38 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from engine.executor import LocalSubprocessExecutor
 from engine.memory import MemoryStore
 from engine.model import ModelProvider
 from bench.run_bench import MODELS  # reuses the .env load + provider factories
-from bench.trust_bench import BatteryResult, run_battery
-from bench.trust_tasks import battery_tasks
+from bench.trust_bench import BatteryResult, Report, classify, run_battery, run_gate_isolation
+from bench.trust_tasks import BATTERY, battery_tasks
 
 
-def run_model(factory, repeats: int = 1, mem_root: str | None = None) -> list[BatteryResult]:
-    """Run the whole battery `repeats` times through one model (a fresh provider per repeat)."""
+def run_battery_isolation(provider: ModelProvider) -> BatteryResult:
+    """Gate-isolation: same spec, same single code proposal per task — only the gates differ."""
+    ex = LocalSubprocessExecutor()
+    out = BatteryResult(Report("bare-agent"), Report("veritas"))
+    for e in BATTERY:
+        bare_t, ver_t = run_gate_isolation(e.reference_spec, e.task, provider)
+        bv, vv = classify(e.task, bare_t, ex), classify(e.task, ver_t, ex)
+        out.bare.add(bv)
+        out.veritas.add(vv)
+        out.records.append((e.task.name, e.task.catchable, bv, vv))
+    return out
+
+
+def run_model(factory, repeats: int = 1, mem_root: str | None = None,
+              isolated: bool = False) -> list[BatteryResult]:
+    """Run the whole battery `repeats` times through one model (a fresh provider per repeat).
+    `isolated` runs the gate-isolation experiment (same spec + code, gates on vs off)."""
     base = Path(mem_root or tempfile.mkdtemp(prefix="trust_"))
     out: list[BatteryResult] = []
     for r in range(repeats):
         provider: ModelProvider = factory()
+        if isolated:
+            out.append(run_battery_isolation(provider))
+            continue
         items = [(t, provider) for t in battery_tasks()]
         counter = itertools.count()
         out.append(run_battery(items, lambda: MemoryStore(base / f"r{r}_{next(counter)}")))
@@ -92,6 +111,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Run the trust benchmark.")
     ap.add_argument("--models", default="gemma-12b")
     ap.add_argument("--repeats", type=int, default=1)
+    ap.add_argument("--isolated", action="store_true",
+                    help="gate-isolation: same spec + code proposal, gates on vs off (isolates the gates)")
     ap.add_argument("--out", default="bench/TRUST_RESULTS.md")
     args = ap.parse_args()
 
@@ -101,8 +122,9 @@ def main() -> int:
         return 1
     summaries = []
     for k in keys:
-        print(f"running {k} x{args.repeats}…", flush=True)
-        summaries.append(summarize(k, run_model(MODELS[k], args.repeats)))
+        mode = "gate-isolation" if args.isolated else "full-pipeline"
+        print(f"running {k} x{args.repeats} ({mode})…", flush=True)
+        summaries.append(summarize(k, run_model(MODELS[k], args.repeats, isolated=args.isolated)))
     md = format_markdown(summaries)
     Path(args.out).write_text(md, encoding="utf-8")
     print("\n" + md)
