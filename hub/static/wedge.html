@@ -153,8 +153,8 @@
 
     <!-- accounts mode -->
     <div id="accountForms">
-      <label>Email</label>
-      <input id="email" type="email" autocomplete="username" placeholder="you@example.com" />
+      <label>Username</label>
+      <input id="username" type="text" autocomplete="username" placeholder="pick a username" />
       <label>Password</label>
       <input id="password" type="password" autocomplete="current-password" placeholder="at least 8 characters" />
       <div class="btns">
@@ -303,19 +303,19 @@ async function refreshUsage() {
 }
 
 async function doLogin() {
-  const email = $("email").value.trim(), password = $("password").value;
-  if (!email || !password) return banner("Enter an email and password.", "err");
-  const { ok, status, data } = await api("/api/auth/login", { method: "POST", body: { email, password } });
-  if (!ok) return banner(status === 401 ? "Invalid email or password." : (data.detail || "Login failed."), "err");
+  const username = $("username").value.trim(), password = $("password").value;
+  if (!username || !password) return banner("Enter a username and password.", "err");
+  const { ok, status, data } = await api("/api/auth/login", { method: "POST", body: { username, password } });
+  if (!ok) return banner(status === 401 ? "Invalid username or password." : (data.detail || "Login failed."), "err");
   setToken(data.token); banner(""); await afterAuth();
 }
 
 async function doSignup() {
-  const email = $("email").value.trim(), password = $("password").value;
-  if (!email || !password) return banner("Enter an email and password.", "err");
-  const { ok, status, data } = await api("/api/auth/signup", { method: "POST", body: { email, password } });
+  const username = $("username").value.trim(), password = $("password").value;
+  if (!username || !password) return banner("Enter a username and password.", "err");
+  const { ok, status, data } = await api("/api/auth/signup", { method: "POST", body: { username, password } });
   if (!ok) {
-    if (status === 409) return banner("That email already has an account — try logging in.", "err");
+    if (status === 409) return banner("That username is taken — try logging in.", "err");
     return banner(data.detail || "Sign-up failed.", "err");
   }
   banner("Account created — logging you in…", "warn");

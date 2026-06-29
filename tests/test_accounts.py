@@ -14,7 +14,7 @@ from datetime import timedelta
 import pytest
 
 from engine.model import ScriptedProvider
-from hub.accounts import AccountStore, BadCredentials, EmailTaken, WeakCredentials
+from hub.accounts import AccountStore, BadCredentials, UsernameTaken, WeakCredentials
 from hub.wedge import Unauthorized, Wedge
 
 
@@ -26,47 +26,47 @@ def _store(tmp_path, **kw) -> AccountStore:
 
 def test_signup_returns_a_path_safe_tenant_id(tmp_path):
     from hub.wedge import _TENANT_RE
-    uid = _store(tmp_path).signup("Alice@Example.com", "hunter2hunter")
+    uid = _store(tmp_path).signup("Alice_99", "hunter2hunter")
     assert _TENANT_RE.match(uid)  # a user id is always a valid tenant directory
 
 
-def test_duplicate_email_is_rejected_case_insensitively(tmp_path):
+def test_duplicate_username_is_rejected_case_insensitively(tmp_path):
     s = _store(tmp_path)
-    s.signup("a@b.com", "password1")
-    with pytest.raises(EmailTaken):
-        s.signup("A@B.com", "password2")  # normalized to the same address
+    s.signup("alice", "password1")
+    with pytest.raises(UsernameTaken):
+        s.signup("Alice", "password2")  # normalized to the same handle
 
 
 def test_weak_credentials_are_refused(tmp_path):
     s = _store(tmp_path)
     with pytest.raises(WeakCredentials):
-        s.signup("not-an-email", "password1")
+        s.signup("ab", "password1")        # too short / not a valid username
     with pytest.raises(WeakCredentials):
-        s.signup("a@b.com", "short")
+        s.signup("alice", "short")         # password under the minimum
 
 
 # --- login / sessions ------------------------------------------------------------------------
 
 def test_login_issues_a_token_that_resolves_to_the_tenant(tmp_path):
     s = _store(tmp_path)
-    uid = s.signup("a@b.com", "password1")
-    token = s.login("a@b.com", "password1")
+    uid = s.signup("alice", "password1")
+    token = s.login("alice", "password1")
     assert s.tenant_for(f"Bearer {token}") == uid
 
 
-def test_wrong_password_and_unknown_email_both_raise_badcredentials(tmp_path):
+def test_wrong_password_and_unknown_username_both_raise_badcredentials(tmp_path):
     s = _store(tmp_path)
-    s.signup("a@b.com", "password1")
+    s.signup("alice", "password1")
     with pytest.raises(BadCredentials):
-        s.login("a@b.com", "wrongpassword")
+        s.login("alice", "wrongpassword")
     with pytest.raises(BadCredentials):
-        s.login("ghost@b.com", "password1")  # indistinguishable from a wrong password
+        s.login("ghost", "password1")  # indistinguishable from a wrong password
 
 
 def test_logout_revokes_the_session(tmp_path):
     s = _store(tmp_path)
-    s.signup("a@b.com", "password1")
-    token = s.login("a@b.com", "password1")
+    s.signup("alice", "password1")
+    token = s.login("alice", "password1")
     s.logout(f"Bearer {token}")
     with pytest.raises(Unauthorized):
         s.tenant_for(f"Bearer {token}")
@@ -74,8 +74,8 @@ def test_logout_revokes_the_session(tmp_path):
 
 def test_expired_session_is_rejected(tmp_path):
     s = _store(tmp_path, session_ttl=timedelta(seconds=-1))  # already expired on issue
-    s.signup("a@b.com", "password1")
-    token = s.login("a@b.com", "password1")
+    s.signup("alice", "password1")
+    token = s.login("alice", "password1")
     with pytest.raises(Unauthorized):
         s.tenant_for(f"Bearer {token}")
 
@@ -92,8 +92,8 @@ def test_unknown_and_missing_tokens_are_unauthorized(tmp_path):
 
 def test_password_and_token_are_never_stored_in_plaintext(tmp_path):
     s = _store(tmp_path)
-    s.signup("a@b.com", "sup3rSecretPW")
-    token = s.login("a@b.com", "sup3rSecretPW")
+    s.signup("alice", "sup3rSecretPW")
+    token = s.login("alice", "sup3rSecretPW")
     blob = (tmp_path / "accounts.db").read_bytes()
     assert b"sup3rSecretPW" not in blob          # password hashed (scrypt)
     assert token.encode() not in blob            # only the SHA-256 of the token is stored
@@ -106,8 +106,8 @@ def test_wedge_runs_under_account_auth(tmp_path):
                        "signature": "def add(a, b)",
                        "cases": [{"args": [1, 2], "expected": 3}]})
     s = _store(tmp_path / "acct")
-    uid = s.signup("dev@b.com", "password1")
-    token = s.login("dev@b.com", "password1")
+    uid = s.signup("devuser", "password1")
+    token = s.login("devuser", "password1")
 
     provider = lambda: ScriptedProvider({"spec": spec, "developer": "def add(a, b):\n    return a + b\n"})
     wedge = Wedge(tmp_path / "data", provider, s, sandbox_check=lambda: True)  # AccountStore as auth
@@ -133,11 +133,11 @@ def test_http_auth_flow(tmp_path, monkeypatch):
     client = TestClient(create_app(data_dir=tmp_path, provider=provider))
 
     assert client.get("/api/wedge/status").json()["accounts"] is True
-    assert client.post("/api/auth/signup", json={"email": "a@b.com", "password": "password1"}).status_code == 200
-    assert client.post("/api/auth/signup", json={"email": "a@b.com", "password": "password2"}).status_code == 409
-    assert client.post("/api/auth/login", json={"email": "a@b.com", "password": "nope"}).status_code == 401
+    assert client.post("/api/auth/signup", json={"username": "alice", "password": "password1"}).status_code == 200
+    assert client.post("/api/auth/signup", json={"username": "alice", "password": "password2"}).status_code == 409
+    assert client.post("/api/auth/login", json={"username": "alice", "password": "nope"}).status_code == 401
 
-    token = client.post("/api/auth/login", json={"email": "a@b.com", "password": "password1"}).json()["token"]
+    token = client.post("/api/auth/login", json={"username": "alice", "password": "password1"}).json()["token"]
     r = client.post("/api/wedge/submit", json={"goal": "add two numbers"},
                     headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200 and r.json()["accepted"]

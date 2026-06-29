@@ -31,7 +31,7 @@ from pydantic import BaseModel
 from engine.artifact import Artifact
 from engine.executor import sandbox_active
 from engine.memory import MemoryRecord, MemoryStore, default_memory_store
-from hub.accounts import AccountStore, BadCredentials, EmailTaken, WeakCredentials
+from hub.accounts import AccountStore, BadCredentials, UsernameTaken, WeakCredentials
 from hub.quota import QuotaStore
 from hub.wedge import (
     Authenticator,
@@ -158,7 +158,7 @@ class WedgeRequest(BaseModel):
 
 
 class AuthRequest(BaseModel):
-    email: str
+    username: str
     password: str
 
 
@@ -1263,10 +1263,10 @@ def create_app(
         if accounts is None:
             raise HTTPException(status_code=503, detail="accounts are not enabled on this host")
         try:
-            tenant = accounts.signup(req.email, req.password)
+            tenant = accounts.signup(req.username, req.password)
         except WeakCredentials as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        except EmailTaken as exc:
+        except UsernameTaken as exc:
             raise HTTPException(status_code=409, detail=str(exc))
         return {"tenant": tenant}
 
@@ -1275,7 +1275,7 @@ def create_app(
         if accounts is None:
             raise HTTPException(status_code=503, detail="accounts are not enabled on this host")
         try:
-            token = accounts.login(req.email, req.password)
+            token = accounts.login(req.username, req.password)
         except BadCredentials as exc:
             raise HTTPException(status_code=401, detail=str(exc))  # generic — no account enumeration
         return {"token": token}

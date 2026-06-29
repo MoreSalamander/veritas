@@ -33,7 +33,9 @@ from hub.wedge import Unauthorized, parse_bearer
 
 # A user id becomes a tenant directory, so it must satisfy the wedge's tenant rule by construction.
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Login handle. We never send mail, so a username IS the identifier — just a unique handle + a format
+# rule. 3–32 chars, starts alphanumeric, then letters/digits/dot/underscore/hyphen.
+_USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{2,31}$")
 _MIN_PASSWORD = 8
 
 # scrypt work factors. 128*n*r ≈ 16 MiB at n=2**14 — deliberately costly to brute-force, cheap once.
@@ -41,16 +43,16 @@ _SCRYPT = dict(n=2**14, r=8, p=1, dklen=32, maxmem=132 * 1024 * 1024)
 _SESSION_TTL = timedelta(days=7)
 
 
-class EmailTaken(Exception):
-    """Signup with an email that already has an account."""
+class UsernameTaken(Exception):
+    """Signup with a username that already has an account."""
 
 
 class WeakCredentials(Exception):
-    """A malformed email or a password under the minimum length — rejected before any account exists."""
+    """A malformed username or a password under the minimum length — rejected before any account exists."""
 
 
 class BadCredentials(Exception):
-    """Login with an unknown email or a wrong password. Deliberately indistinguishable (no
+    """Login with an unknown username or a wrong password. Deliberately indistinguishable (no
     account enumeration): the caller cannot tell which of the two it was."""
 
 
@@ -97,12 +99,13 @@ class AccountStore:
 
     # --- signup / login / logout ---------------------------------------------------------------
 
-    def signup(self, email: str, password: str) -> str:
+    def signup(self, username: str, password: str) -> str:
         """Create an account; returns the new user id (= tenant id). Refuses a weak credential
-        before writing anything, and a duplicate email."""
-        email = email.strip().lower()
-        if not _EMAIL_RE.match(email):
-            raise WeakCredentials("a valid email is required")
+        before writing anything, and a duplicate username. (The DB column is still named `email` —
+        an internal legacy name kept so a deployed DB needs no migration; it just holds the username.)"""
+        username = username.strip().lower()
+        if not _USERNAME_RE.match(username):
+            raise WeakCredentials("a valid username is required (3–32 chars: letters, digits, . _ -)")
         if len(password) < _MIN_PASSWORD:
             raise WeakCredentials(f"password must be at least {_MIN_PASSWORD} characters")
         user_id = "u" + secrets.token_hex(8)  # path-safe, matches the tenant rule by construction
@@ -111,25 +114,25 @@ class AccountStore:
             with self._connect() as con:
                 con.execute(
                     "INSERT INTO users (id, email, pw_hash, pw_salt, created_at) VALUES (?, ?, ?, ?, ?)",
-                    (user_id, email, _hash_password(password, salt), salt, _now().isoformat()),
+                    (user_id, username, _hash_password(password, salt), salt, _now().isoformat()),
                 )
-        except sqlite3.IntegrityError as exc:  # the UNIQUE(email) constraint
-            raise EmailTaken("an account with that email already exists") from exc
+        except sqlite3.IntegrityError as exc:  # the UNIQUE(username) constraint
+            raise UsernameTaken("that username is already taken") from exc
         return user_id
 
-    def login(self, email: str, password: str) -> str:
+    def login(self, username: str, password: str) -> str:
         """Verify credentials and issue a session token (the only time the plaintext token exists).
-        Wrong email and wrong password are indistinguishable to the caller."""
-        email = email.strip().lower()
+        Wrong username and wrong password are indistinguishable to the caller."""
+        username = username.strip().lower()
         with self._connect() as con:
             row = con.execute(
-                "SELECT id, pw_hash, pw_salt FROM users WHERE email = ?", (email,)
+                "SELECT id, pw_hash, pw_salt FROM users WHERE email = ?", (username,)
             ).fetchone()
-        # Always run a hash so timing doesn't reveal whether the email exists.
+        # Always run a hash so timing doesn't reveal whether the username exists.
         salt = row["pw_salt"] if row else secrets.token_bytes(16)
         expected = row["pw_hash"] if row else b"\x00" * 32
         if not hmac.compare_digest(_hash_password(password, salt), expected) or row is None:
-            raise BadCredentials("invalid email or password")
+            raise BadCredentials("invalid username or password")
         token = secrets.token_urlsafe(32)
         now = _now()
         with self._connect() as con:
