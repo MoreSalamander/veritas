@@ -494,6 +494,16 @@ Research took that number, never rescheduled).
       - **Billing integration** ⏳ (deferred) — a real processor (Stripe/etc.) means real money, the
         owner's keys, and an outward webhook; wired when chosen, not blind. c2b's ledger is the ground
         it reads from — `usage_for(tenant, since=<period start>)` already returns the billable totals.
+    - **P31c · Face + deploy kit** ✅ (2026-06-28) — the wedge becomes a place you can send people.
+      `hub/static/wedge.html` (served at `/wedge` + `/try`): a standalone storefront — adapts to
+      `/api/wedge/status`, shows the fail-closed banner, renders the gate ledger behind each verdict.
+      `VERITAS_PUBLIC=1` adds a middleware that serves ONLY the wedge (admin surface 404s) — the
+      host-agnostic exposure control. `VERITAS_MODEL` makes the hosted default model a Claude tier.
+      Fly.io kit in `deploy/fly/` (Dockerfile + start.sh DinD + fly.toml + runbook): a Fly Machine is a
+      microVM, so dockerd runs inside it and `ContainerExecutor` is reused unchanged; the microVM is the
+      hard boundary, the per-run container defense-in-depth. Persistent Volume for the DBs. NOT yet
+      deployed — the user runs `fly deploy`. (Fallback if DinD is blocked: a plain VM, or a future
+      `FlyMachineExecutor` spawning a microVM per run.)
 
 ## Parallel / later tracks
 

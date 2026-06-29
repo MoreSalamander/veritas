@@ -19,12 +19,12 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any, TypedDict
 from uuid import uuid4
 
-from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -94,7 +94,7 @@ MODELS: dict[str, ModelSpec] = {
     "opus": {"label": "Claude Opus", "cost": "~6–13¢/build", "kind": "claude", "id": "claude-opus-4-8", "think": False},
 }
 
-DEFAULT_MODEL = "gemma-12b"
+DEFAULT_MODEL = os.environ.get("VERITAS_MODEL", "gemma-12b")  # hosted (Claude-only) sets e.g. "sonnet"
 
 # Honest, measured capability notes — what each model reliably CLEARS, from the project's own
 # benchmark runs. (Milestone 5 wires these to live bench results; until then they're the findings.)
@@ -1045,6 +1045,23 @@ def create_app(
         return ProductionProfileStore(base / "profiles" / "production.json")
 
     app = FastAPI(title="Veritas Hub")
+
+    # Public exposure (P31c hosting): when VERITAS_PUBLIC is set, the hub serves ONLY the wedge — its
+    # storefront + the auth/wedge APIs. Every other route (the admin dashboard, /api/runs, the commons,
+    # etc.) is unauthenticated and must never face the internet, so it 404s. This is the host-agnostic
+    # control (a VM could also gate it at the reverse proxy; on Fly there is no proxy, so we do it here).
+    if os.environ.get("VERITAS_PUBLIC", "").lower() in ("1", "true", "yes", "on"):
+        _PUBLIC_PREFIXES = ("/api/wedge/", "/api/auth/")
+        _PUBLIC_EXACT = {"/wedge", "/try"}
+
+        @app.middleware("http")
+        async def _wedge_only(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+            path = request.url.path
+            if path == "/":
+                return RedirectResponse("/wedge")
+            if path in _PUBLIC_EXACT or path.startswith(_PUBLIC_PREFIXES):
+                return await call_next(request)
+            return JSONResponse({"detail": "not found"}, status_code=404)
 
     @app.get("/api/orgs")
     def list_orgs() -> list[dict[str, Any]]:

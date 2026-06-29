@@ -17,9 +17,10 @@ exact class of bug that actually breaks UIs.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from playwright.sync_api import ConsoleMessage, sync_playwright
+if TYPE_CHECKING:  # playwright is a Web-Studio-only dep; importing it lazily keeps the hub (and the
+    from playwright.sync_api import ConsoleMessage  # hosted wedge) importable without a browser installed
 
 
 @dataclass
@@ -103,6 +104,8 @@ class BrowserExecutor:
         def _on_console(msg: ConsoleMessage) -> None:
             if msg.type == "error":
                 console_errors.append(msg.text)
+
+        from playwright.sync_api import sync_playwright  # lazy: only when a page is actually rendered
 
         try:
             with sync_playwright() as p:

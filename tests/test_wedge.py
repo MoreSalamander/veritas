@@ -130,6 +130,25 @@ def test_wedge_page_is_served(tmp_path):
         assert "/api/wedge/submit" in r.text and "/api/auth/login" in r.text  # the storefront wiring
 
 
+def test_public_mode_exposes_only_the_wedge(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from hub.app import create_app
+
+    monkeypatch.setenv("VERITAS_PUBLIC", "1")
+    client = TestClient(create_app(data_dir=tmp_path, provider=_provider()))
+
+    # the wedge surface is reachable
+    assert client.get("/api/wedge/status").status_code == 200
+    assert client.get("/wedge").status_code == 200
+    # root redirects to the storefront, not the admin dashboard
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code == 307 and r.headers["location"] == "/wedge"
+    # the admin/unauthenticated surface is sealed off
+    for blocked in ("/api/runs", "/api/dashboard", "/api/commons", "/about"):
+        assert client.get(blocked).status_code == 404, blocked
+
+
 def test_http_fails_closed_with_503(tmp_path, monkeypatch):
     from engine.executor import LocalSubprocessExecutor
     from fastapi.testclient import TestClient

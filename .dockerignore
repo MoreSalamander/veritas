@@ -1,0 +1,15 @@
+# Keep the build context lean and free of local state/secrets.
+.venv/
+**/__pycache__/
+*.pyc
+.git/
+.pytest_cache/
+.mypy_cache/
+hub_data/
+hub/static/productions/
+.demo_memory/
+*.bak
+*.bak.*
+docs/
+bench/
+tests/
