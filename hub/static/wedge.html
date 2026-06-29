@@ -299,7 +299,8 @@ function showAuth() {
 async function refreshUsage() {
   if (!STATUS.metered) { $("usage").textContent = ""; return; }
   const { ok, data } = await api("/api/wedge/usage", { auth: true });
-  if (ok && data.metered) $("usage").innerHTML = `<b>${data.remaining}</b>/${data.limit} runs left`;
+  if (ok && data.unlimited) $("usage").innerHTML = `<b>unlimited</b> runs`;
+  else if (ok && data.metered) $("usage").innerHTML = `<b>${data.remaining}</b>/${data.limit} runs left`;
 }
 
 async function doLogin() {
@@ -482,7 +483,7 @@ function renderResult(r) {
     ${bts}
     <div class="meta">
       ${r.isolated ? `<span>🛡 ran isolated in a sandbox</span>` : ""}
-      ${r.remaining != null && r.remaining >= 0 ? `<span>${r.remaining} runs left</span>` : ""}
+      ${r.remaining === -1 ? `<span>unlimited runs</span>` : (r.remaining != null && r.remaining >= 0 ? `<span>${r.remaining} runs left</span>` : "")}
       <span>run ${r.run_id || "—"}</span>
     </div>`;
   $("resultPanel").classList.remove("hidden");

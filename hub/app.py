@@ -1302,7 +1302,8 @@ def create_app(
         req: WedgeRequest, authorization: str | None = Header(default=None)
     ) -> dict[str, Any]:
         wedge = Wedge(base, lambda: injected_provider or _provider_for(req.model),
-                      wedge_auth, meter=quota)
+                      wedge_auth, meter=quota,
+                      unlimited_check=accounts.is_unlimited if accounts is not None else None)
         try:
             res = wedge.submit(authorization=authorization, goal=req.goal)
         except Unauthorized as exc:
@@ -1343,7 +1344,8 @@ def create_app(
             "done": False, "result": None, "error": None,
         }
         wedge = Wedge(base, lambda: injected_provider or _provider_for(req.model),
-                      wedge_auth, meter=quota)
+                      wedge_auth, meter=quota,
+                      unlimited_check=accounts.is_unlimited if accounts is not None else None)
 
         def worker() -> None:
             # The listener is a ContextVar, so this thread's events never bleed into another run's.
@@ -1380,6 +1382,8 @@ def create_app(
             tenant = wedge_auth.tenant_for(authorization)
         except Unauthorized as exc:
             raise HTTPException(status_code=401, detail=str(exc))
+        if accounts is not None and accounts.is_unlimited(tenant):
+            return {"tenant": tenant, "metered": True, "unlimited": True}
         if quota is None:
             return {"tenant": tenant, "metered": False}
         return {"metered": True, **quota.usage_for(tenant)}

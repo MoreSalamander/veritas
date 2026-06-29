@@ -148,6 +148,7 @@ class Wedge:
         sandbox_check: Callable[[], bool] = sandbox_active,
         memory_factory: Callable[[Path], MemoryStore] = default_memory_store,
         meter: Meter | None = None,
+        unlimited_check: Callable[[str], bool] | None = None,
     ) -> None:
         self.base = Path(base)
         self.provider_factory = provider_factory
@@ -157,6 +158,8 @@ class Wedge:
         self.sandbox_check = sandbox_check
         self.memory_factory = memory_factory
         self.meter = meter  # None => unlimited (local); a QuotaStore => metered (hosted)
+        # Returns True for tenants exempt from the quota (owner / unlimited accounts) — they skip the meter.
+        self.unlimited_check = unlimited_check
 
     def tenant_root(self, tenant: str) -> Path:
         if not _TENANT_RE.match(tenant):  # defense in depth; the token table already validated it
@@ -173,7 +176,8 @@ class Wedge:
             raise SandboxUnavailable(
                 "execution sandbox is not active; refusing to run untrusted code on the host"
             )
-        if self.meter is not None:
+        exempt = self.unlimited_check is not None and self.unlimited_check(tenant)  # owner / unlimited
+        if self.meter is not None and not exempt:
             self.meter.check(tenant)                            # QuotaExceeded if over the window's limit
         root = self.tenant_root(tenant)
         memory = self.memory_factory(root / "software")         # per-tenant, isolated by path
@@ -195,9 +199,11 @@ class Wedge:
             except (json.JSONDecodeError, TypeError):
                 spec = None
         remaining: int | None = None
-        if self.meter is not None:
+        if self.meter is not None and not exempt:
             self.meter.record(tenant, result.accepted, goal)   # the run counts (and is billable)
             remaining = self.meter.remaining(tenant)
+        elif exempt:
+            remaining = -1  # sentinel: unlimited (the page shows "unlimited" instead of a countdown)
         return WedgeResult(
             tenant=tenant,
             goal=goal,

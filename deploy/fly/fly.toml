@@ -16,6 +16,7 @@ primary_region = "iad"           # <- pick a region near you (fly platform regio
   VERITAS_MODEL = "sonnet"        # hosted default model: haiku | sonnet | opus
   VERITAS_WEDGE_QUOTA = "20"      # runs per tenant per window (rate limit + billing ledger)
   VERITAS_WEDGE_QUOTA_WINDOW = "86400"
+  VERITAS_WEDGE_UNLIMITED = "owner"  # comma-separated usernames exempt from the quota (your account)
   VERITAS_DATA = "/data"          # all state lives on the Volume below
 
 [http_service]

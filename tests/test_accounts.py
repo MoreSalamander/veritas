@@ -116,6 +116,34 @@ def test_wedge_runs_under_account_auth(tmp_path):
     assert (tmp_path / "data" / "tenants" / uid).exists()  # isolated under the account's own id
 
 
+def test_unlimited_username_bypasses_the_quota(tmp_path):
+    from hub.quota import QuotaPolicy, QuotaStore
+    from hub.wedge import QuotaExceeded
+
+    spec = json.dumps({"function_name": "add", "description": "add two numbers",
+                       "signature": "def add(a, b)", "cases": [{"args": [1, 2], "expected": 3}]})
+    provider = lambda: ScriptedProvider({"spec": spec, "developer": "def add(a, b):\n    return a + b\n"})
+
+    s = _store(tmp_path / "acct", unlimited={"owner"})
+    owner = s.signup("owner", "password1")
+    plain = s.signup("plain", "password1")
+    assert s.is_unlimited(owner) and not s.is_unlimited(plain)
+
+    meter = QuotaStore(tmp_path / "q", QuotaPolicy(limit=1))
+    wedge = Wedge(tmp_path / "data", provider, s, sandbox_check=lambda: True, meter=meter,
+                  unlimited_check=s.is_unlimited)
+
+    otok = s.login("owner", "password1")
+    for _ in range(4):  # well past the limit of 1 — never blocked
+        r = wedge.submit(authorization=f"Bearer {otok}", goal="add two numbers")
+        assert r.accepted and r.remaining == -1   # -1 = unlimited
+
+    ptok = s.login("plain", "password1")           # a normal account is still capped
+    assert wedge.submit(authorization=f"Bearer {ptok}", goal="add two numbers").accepted
+    with pytest.raises(QuotaExceeded):
+        wedge.submit(authorization=f"Bearer {ptok}", goal="add two numbers")
+
+
 # --- HTTP: signup -> login -> submit, end to end ----------------------------------------------
 
 def test_http_auth_flow(tmp_path, monkeypatch):

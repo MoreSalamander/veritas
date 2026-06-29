@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import re
 import secrets
 import sqlite3
@@ -71,10 +72,19 @@ def _hash_token(token: str) -> str:
 class AccountStore:
     """SQLite-backed users + sessions. Implements `tenant_for`, so it IS an `Authenticator`."""
 
-    def __init__(self, db_path: Path | str, session_ttl: timedelta = _SESSION_TTL) -> None:
+    def __init__(
+        self, db_path: Path | str, session_ttl: timedelta = _SESSION_TTL,
+        unlimited: set[str] | None = None,
+    ) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.session_ttl = session_ttl
+        # Usernames exempt from the run quota (the owner / unlimited accounts). From
+        # VERITAS_WEDGE_UNLIMITED ("alice,owner") unless passed explicitly. Lowercased to match storage.
+        if unlimited is None:
+            raw = os.environ.get("VERITAS_WEDGE_UNLIMITED", "")
+            unlimited = {u.strip().lower() for u in raw.split(",") if u.strip()}
+        self.unlimited = unlimited
         with self._connect() as con:
             con.execute(
                 "CREATE TABLE IF NOT EXISTS users ("
@@ -171,3 +181,11 @@ class AccountStore:
         if not _ID_RE.match(user_id):  # defense in depth; ids are generated path-safe
             raise Unauthorized("invalid tenant id")
         return str(user_id)
+
+    def is_unlimited(self, tenant_id: str) -> bool:
+        """True when this tenant's username is on the unlimited list — its runs bypass the quota."""
+        if not self.unlimited:
+            return False
+        with self._connect() as con:
+            row = con.execute("SELECT email FROM users WHERE id = ?", (tenant_id,)).fetchone()
+        return bool(row) and row["email"] in self.unlimited
