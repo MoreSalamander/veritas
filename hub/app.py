@@ -1308,6 +1308,16 @@ def create_app(
             raise HTTPException(status_code=503, detail=str(exc))  # fail closed, surfaced honestly
         except QuotaExceeded as exc:
             raise HTTPException(status_code=429, detail=str(exc))  # metered out for this window
+        except Exception:
+            # A model hiccup or an unbuildable request must not show a scary generic error. The gritty
+            # detail is in the server logs (for the operator); the visitor gets an honest, actionable
+            # message. The wedge builds single VERIFIABLE functions — not GUI/interactive apps.
+            raise HTTPException(
+                status_code=502,
+                detail=("Couldn't complete that build. Veritas here builds single, testable functions "
+                        "— try something like 'reverse a string' or 'calculate compound interest'. "
+                        "GUI or interactive apps (e.g. a Tkinter window) aren't supported on this endpoint."),
+            )
         return {"tenant": res.tenant, "goal": res.goal, "accepted": res.accepted,
                 "run_id": res.run_id, "isolated": res.isolated, "code": res.code,
                 "evidence": res.evidence, "remaining": res.remaining}
