@@ -28,6 +28,29 @@
   .aboutbody p { color: var(--dim); font-size: 13px; line-height: 1.6; margin: 0 0 11px; }
   .aboutbody b { color: var(--ink); font-weight: 600; }
 
+  /* immersive: a living backdrop + cinematic reveals (motion with meaning, not noise) */
+  .ambient { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  .ambient .glow { position: absolute; top: -30%; left: 50%; transform: translateX(-50%);
+                   width: 960px; height: 760px;
+                   background: radial-gradient(ellipse at center, rgba(232,196,104,.07), transparent 66%);
+                   animation: breathe 11s ease-in-out infinite; }
+  .ambient .scan { position: absolute; left: 0; right: 0; height: 200px; top: -200px;
+                   background: linear-gradient(to bottom, transparent, rgba(232,196,104,.04), transparent);
+                   animation: scan 16s linear infinite; }
+  @keyframes breathe { 0%,100% { opacity: .65; } 50% { opacity: 1; } }
+  @keyframes scan { to { top: 100%; } }
+  @keyframes verdictIn { from { opacity: 0; transform: translateY(9px); letter-spacing: 8px; }
+                         to { opacity: 1; transform: none; letter-spacing: 1.5px; } }
+  .verdict { animation: verdictIn .6s cubic-bezier(.2,.85,.25,1) both; }
+  @keyframes rowIn { from { opacity: 0; transform: translateX(-9px); } to { opacity: 1; transform: none; } }
+  .gate { animation: rowIn .45s ease both; }
+  @keyframes wipeIn { from { clip-path: inset(0 0 100% 0); opacity: .35; }
+                      to { clip-path: inset(0 0 0 0); opacity: 1; } }
+  .codewrap, .bts { animation: wipeIn .55s ease both; }
+  @media (prefers-reduced-motion: reduce) {
+    .ambient .scan, .ambient .glow, .verdict, .gate, .codewrap, .bts { animation: none; }
+  }
+
   .statusbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 6px; }
   .chip { font-family: var(--mono); font-size: 11px; padding: 4px 9px; border-radius: 6px;
           border: 1px solid var(--line); color: var(--dim); display: flex; align-items: center; gap: 6px; }
@@ -140,6 +163,7 @@
 </style>
 </head>
 <body>
+<div class="ambient" aria-hidden="true"><div class="glow"></div><div class="scan"></div></div>
 <div class="wrap">
   <header>
     <div class="logo">VERI<b>TAS</b> <span style="color:var(--dim);font-weight:400">Dynamics</span></div>
@@ -455,10 +479,10 @@ function setHold(v) {
 
 function renderResult(r) {
   const shipped = r.accepted;
-  const gates = (r.evidence || []).map(g => {
+  const gates = (r.evidence || []).map((g, i) => {
     const hard = (g.determinism || "").toLowerCase() === "hard";
     const pass = g.passed;
-    return `<div class="gate ${hard ? "hard" : "soft"}">
+    return `<div class="gate ${hard ? "hard" : "soft"}" style="animation-delay:${(0.25 + i * 0.14).toFixed(2)}s">
       <div class="grow">
         <span>${g.gate}<span class="tier">${hard ? "HARD" : "SOFT"}</span></span>
         <span class="gv ${pass ? "pass" : "fail"}">${pass ? "PASS ✓" : "FAIL ✗"}</span>
@@ -502,7 +526,7 @@ function renderResult(r) {
         : "the gates refused it; nothing unverified ships"}</span>
     </div>
     <div class="gates">${gates || `<div class="gate"><span class="gev">no gate trail returned</span></div>`}</div>
-    ${r.code ? `<div class="codewrap">
+    ${r.code ? `<div class="codewrap" style="animation-delay:${(0.45 + (r.evidence || []).length * 0.14).toFixed(2)}s">
         <div class="clabel">${shipped ? "the function it built" : "the attempt (refused)"}</div>
         <pre class="code">${escapeHtml(r.code)}</pre>
       </div>` : ""}
