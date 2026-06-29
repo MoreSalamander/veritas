@@ -1320,7 +1320,7 @@ def create_app(
             )
         return {"tenant": res.tenant, "goal": res.goal, "accepted": res.accepted,
                 "run_id": res.run_id, "isolated": res.isolated, "code": res.code,
-                "evidence": res.evidence, "remaining": res.remaining}
+                "spec": res.spec, "evidence": res.evidence, "remaining": res.remaining}
 
     @app.get("/api/wedge/usage")
     def wedge_usage(authorization: str | None = Header(default=None)) -> dict[str, Any]:

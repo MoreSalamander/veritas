@@ -72,6 +72,23 @@
   .gv { font-weight: 700; white-space: nowrap; }
   .gv.pass { color: var(--green); } .gv.fail { color: var(--red); }
   .gev { color: var(--dim); font-size: 11.5px; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+  /* one-click example chips */
+  .suggests { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 14px; }
+  .suggest { background: #0c1119; border: 1px solid var(--line); color: var(--dim);
+             padding: 7px 11px; border-radius: 8px; font-size: 12.5px; cursor: pointer; transition: .12s; }
+  .suggest:hover { border-color: var(--cyan); color: var(--ink); }
+  .suggest .star { color: var(--cyan); }
+
+  /* behind-the-scenes: the contract the model had to satisfy */
+  .bts { margin-top: 14px; border: 1px solid var(--line); border-radius: 10px; }
+  .bts summary { cursor: pointer; padding: 10px 13px; font-size: 12.5px; color: var(--cyan); user-select: none; }
+  .btsbody { padding: 0 13px 12px; }
+  .btsnote { color: var(--dim); font-size: 12px; margin: 4px 0 11px; line-height: 1.5; }
+  .btsnote b { color: var(--ink); }
+  .btsrow { display: flex; gap: 12px; font-size: 12.5px; margin: 7px 0; align-items: baseline; }
+  .btsrow .k { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+               min-width: 118px; flex-shrink: 0; }
+
   .codewrap { margin-top: 14px; }
   .codewrap .clabel { font-size: 11px; letter-spacing: .5px; text-transform: uppercase;
                       color: var(--dim); margin-bottom: 6px; }
@@ -131,6 +148,8 @@
     </div>
     <label>Describe the function you want Veritas to build and verify</label>
     <textarea id="goal" placeholder="e.g. reverse a string &nbsp;·&nbsp; add two numbers &nbsp;·&nbsp; check if a number is prime"></textarea>
+    <div class="muted" style="margin:2px 0 6px">Or click an example to build &amp; verify it (<span class="star" style="color:var(--cyan)">✦</span> = watch the property gate prove it for <i>all</i> inputs):</div>
+    <div class="suggests" id="suggests"></div>
     <div class="btns">
       <button id="submitBtn">Submit &amp; verify</button>
       <button id="logoutBtn" class="ghost">Log out</button>
@@ -202,10 +221,34 @@ async function refreshStatus() {
   }
 }
 
+// One-click examples. `show:true` marks the ones with an oracle-free PROPERTY the gate proves for all inputs.
+const SUGGESTIONS = [
+  { g: "reverse a string" },
+  { g: "check whether a number is prime" },
+  { g: "convert Celsius to Fahrenheit" },
+  { g: "count the words in a sentence" },
+  { g: "return the nth Fibonacci number" },
+  { g: "calculate monthly mortgage payment from principal, rate, and term" },
+  { g: "sort a list of numbers", show: true },
+  { g: "reverse a list", show: true },
+  { g: "normalize the whitespace in a string", show: true },
+  { g: "remove duplicates from a list", show: true },
+];
+
+function renderSuggests() {
+  $("suggests").innerHTML = SUGGESTIONS.map((s, i) =>
+    `<span class="suggest" data-i="${i}">${s.show ? '<span class="star">✦</span> ' : ''}${escapeHtml(s.g)}</span>`
+  ).join("");
+  document.querySelectorAll(".suggest").forEach(el => {
+    el.onclick = () => { $("goal").value = SUGGESTIONS[+el.dataset.i].g; submit(); };  // select AND run
+  });
+}
+
 function showApp(tenant) {
   $("authPanel").classList.add("hidden");
   $("appPanel").classList.remove("hidden");
   $("whoami").innerHTML = tenant ? `signed in as <b>${tenant}</b>` : "signed in";
+  renderSuggests();
   refreshUsage();
 }
 function showAuth() {
@@ -288,6 +331,32 @@ function renderResult(r) {
   }).join("");
 
   const passed = (r.evidence || []).filter(g => g.passed).length;
+
+  // Behind the scenes: the contract Veritas extracted from the goal BEFORE writing code.
+  let bts = "";
+  const spec = r.spec;
+  if (spec) {
+    const fn = spec.function_name || "f";
+    const sig = spec.signature || (fn + "(…)");
+    const props = (spec.properties || []).map(p => typeof p === "string" ? p : (p.kind || "property"));
+    const cases = (spec.cases || []).slice(0, 4).map(c => {
+      const args = (c.args || []).map(a => JSON.stringify(a)).join(", ");
+      return `${fn}(${args}) → ${JSON.stringify(c.expected)}`;
+    });
+    bts = `<details class="bts">
+      <summary>Behind the scenes — the contract it had to satisfy</summary>
+      <div class="btsbody">
+        <p class="btsnote">Before writing a line, Veritas turned your goal into a <b>checkable contract</b>.
+          The code then had to satisfy it: the <b>properties</b> are proven for <i>every</i> input (HARD,
+          they decide); the example cases only advise.</p>
+        <div class="btsrow"><span class="k">signature</span><code>${escapeHtml(sig)}</code></div>
+        ${props.length ? `<div class="btsrow"><span class="k">properties · HARD</span><span>${props.map(escapeHtml).join(", ")}</span></div>` : ""}
+        ${cases.length ? `<div class="btsrow"><span class="k">example cases · soft</span><span class="mono">${cases.map(escapeHtml).join("<br>")}</span></div>` : ""}
+        <div class="btsrow"><span class="k">run id</span><span class="mono">${escapeHtml(r.run_id || "—")}</span></div>
+      </div>
+    </details>`;
+  }
+
   $("result").innerHTML = `
     <div class="verdict ${shipped ? "shipped" : "rejected"}">
       ${shipped ? "SHIPPED" : "REJECTED"}
@@ -300,6 +369,7 @@ function renderResult(r) {
         <div class="clabel">${shipped ? "the function it built" : "the attempt (refused)"}</div>
         <pre class="code">${escapeHtml(r.code)}</pre>
       </div>` : ""}
+    ${bts}
     <div class="meta">
       ${r.isolated ? `<span>🛡 ran isolated in a sandbox</span>` : ""}
       ${r.remaining != null && r.remaining >= 0 ? `<span>${r.remaining} runs left</span>` : ""}

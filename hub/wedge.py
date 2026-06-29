@@ -18,6 +18,7 @@ endpoints in hub/app.py are a thin shell over `Wedge.submit`.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass, field
@@ -113,6 +114,7 @@ class WedgeResult:
     isolated: bool          # the run executed inside the sandbox
     persisted_at: str       # the tenant's data root — for the operator's audit, never another tenant's
     code: str = ""          # the function the org built (the actual deliverable, shown on SHIPPED)
+    spec: dict[str, Any] | None = None  # the contract extracted from the goal BEFORE any code — the "why"
     evidence: list[dict[str, Any]] = field(default_factory=list)  # the gate verdicts behind the decision
     remaining: int | None = None  # runs left in the tenant's window, when a meter is attached
 
@@ -182,6 +184,16 @@ class Wedge:
         outcome = getattr(result, "code_outcome", None)
         if outcome is not None and getattr(outcome, "artifact", None) is not None:
             code = outcome.artifact.payload
+        # The spec is the contract the org committed to BEFORE writing code — the heart of the thesis
+        # ("no synthesis before the constraints are real"). Surfacing it is the behind-the-scenes view.
+        spec: dict[str, Any] | None = None
+        spec_outcome = getattr(result, "spec_outcome", None)
+        if spec_outcome is not None and getattr(spec_outcome, "artifact", None) is not None:
+            try:
+                loaded = json.loads(spec_outcome.artifact.payload)
+                spec = loaded if isinstance(loaded, dict) else None
+            except (json.JSONDecodeError, TypeError):
+                spec = None
         remaining: int | None = None
         if self.meter is not None:
             self.meter.record(tenant, result.accepted, goal)   # the run counts (and is billable)
@@ -194,6 +206,7 @@ class Wedge:
             isolated=True,
             persisted_at=str(root),
             code=code,
+            spec=spec,
             evidence=_evidence(result),
             remaining=remaining,
         )
