@@ -151,6 +151,35 @@ def test_public_mode_exposes_only_the_wedge(tmp_path, monkeypatch):
         assert client.get(blocked).status_code == 404, blocked
 
 
+def test_streaming_submit_emits_trace_then_result(tmp_path, monkeypatch):
+    import time
+
+    from engine.executor import ContainerExecutor
+    from fastapi.testclient import TestClient
+
+    from hub.app import create_app
+
+    monkeypatch.setattr("engine.executor.default_executor", lambda: ContainerExecutor())
+    monkeypatch.setenv("VERITAS_WEDGE_TOKENS", "tok_alice:alice")
+    client = TestClient(create_app(data_dir=tmp_path, provider=_provider()))
+    hdr = {"Authorization": "Bearer tok_alice"}
+
+    assert client.post("/api/wedge/submit/start", json={"goal": "x"}).status_code == 401  # anon refused
+    token = client.post("/api/wedge/submit/start", json={"goal": "add two numbers"}, headers=hdr).json()["token"]
+
+    state = {}
+    for _ in range(100):  # poll the live trace until the background build finishes
+        state = client.get(f"/api/wedge/submit/progress/{token}").json()
+        if state.get("done"):
+            break
+        time.sleep(0.1)
+
+    assert state["done"] and not state["error"]
+    assert len(state["events"]) >= 1                       # the run streamed steps as it worked
+    res = state["result"]
+    assert res["accepted"] and "def add" in res["code"] and res["spec"]["function_name"] == "add"
+
+
 def test_http_fails_closed_with_503(tmp_path, monkeypatch):
     from engine.executor import LocalSubprocessExecutor
     from fastapi.testclient import TestClient

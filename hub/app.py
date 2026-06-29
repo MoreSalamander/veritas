@@ -1254,6 +1254,9 @@ def create_app(
     wedge_auth: Authenticator = accounts if accounts is not None else WedgeAuth.from_env()
     # Per-tenant metering (P31c2b): a rate-limit ceiling AND the billable usage ledger. None = unmetered.
     quota = QuotaStore.from_env(base / "usage.db")
+    # Live-trace buffers for streamed wedge runs, keyed by a one-shot token (the same shape the
+    # dashboard uses): the page polls and watches the spec + gates light up as the build flows.
+    wedge_progress: dict[str, dict[str, Any]] = {}
 
     @app.post("/api/auth/signup")
     def auth_signup(req: AuthRequest) -> dict[str, str]:
@@ -1321,6 +1324,53 @@ def create_app(
         return {"tenant": res.tenant, "goal": res.goal, "accepted": res.accepted,
                 "run_id": res.run_id, "isolated": res.isolated, "code": res.code,
                 "spec": res.spec, "evidence": res.evidence, "remaining": res.remaining}
+
+    @app.post("/api/wedge/submit/start")
+    def wedge_submit_start(
+        req: WedgeRequest, authorization: str | None = Header(default=None)
+    ) -> dict[str, str]:
+        """Kick off a wedge build in the background and return a token to watch it by — the same
+        live-trace pattern the dashboard uses, so the page can show the spec + gates as they happen."""
+        try:
+            wedge_auth.tenant_for(authorization)  # fail fast on an anonymous caller (clean 401)
+        except Unauthorized as exc:
+            raise HTTPException(status_code=401, detail=str(exc))
+        token = uuid4().hex
+        wedge_progress[token] = {
+            "events": [{"phase": "explain", "actor": "run",
+                        "message": "received — turning your goal into a checkable contract…",
+                        "duration_ms": 0.0, "at": datetime.now(timezone.utc).isoformat()}],
+            "done": False, "result": None, "error": None,
+        }
+        wedge = Wedge(base, lambda: injected_provider or _provider_for(req.model),
+                      wedge_auth, meter=quota)
+
+        def worker() -> None:
+            # The listener is a ContextVar, so this thread's events never bleed into another run's.
+            set_activity_listener(lambda e: wedge_progress[token]["events"].append(_event(e)))
+            try:
+                res = wedge.submit(authorization=authorization, goal=req.goal)
+                wedge_progress[token]["result"] = {
+                    "tenant": res.tenant, "goal": res.goal, "accepted": res.accepted,
+                    "run_id": res.run_id, "isolated": res.isolated, "code": res.code,
+                    "spec": res.spec, "evidence": res.evidence, "remaining": res.remaining}
+            except (SandboxUnavailable, QuotaExceeded, Unauthorized) as exc:
+                wedge_progress[token]["error"] = str(exc)
+            except Exception:
+                wedge_progress[token]["error"] = (
+                    "Couldn't complete that build. Veritas here builds single, testable functions "
+                    "— try 'reverse a string'. GUI or interactive apps aren't supported on this endpoint.")
+            finally:
+                wedge_progress[token]["done"] = True
+                set_activity_listener(None)
+
+        threading.Thread(target=worker, daemon=True).start()
+        return {"token": token}
+
+    @app.get("/api/wedge/submit/progress/{token}")
+    def wedge_submit_progress(token: str) -> dict[str, Any]:
+        """Poll a streamed run: the events so far, plus the final result (or error) once done."""
+        return wedge_progress.get(token) or {"error": "unknown token", "done": True}
 
     @app.get("/api/wedge/usage")
     def wedge_usage(authorization: str | None = Header(default=None)) -> dict[str, Any]:
