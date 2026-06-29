@@ -82,6 +82,7 @@ def test_fail_closed_is_checked_after_auth(tmp_path):
 def test_good_submission_runs_gated_and_persists_to_the_tenant(tmp_path):
     res = _wedge(tmp_path).submit(authorization="Bearer tok_alice", goal="add two numbers")
     assert res.accepted and res.isolated and res.tenant == "alice"
+    assert "def add" in res.code                              # the built function is returned, not just a verdict
     assert any(g["passed"] for g in res.evidence)             # the gate trail is surfaced
     assert (tmp_path / "tenants" / "alice" / "software").exists()  # persisted under the tenant root
 

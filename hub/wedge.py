@@ -112,6 +112,7 @@ class WedgeResult:
     run_id: str
     isolated: bool          # the run executed inside the sandbox
     persisted_at: str       # the tenant's data root — for the operator's audit, never another tenant's
+    code: str = ""          # the function the org built (the actual deliverable, shown on SHIPPED)
     evidence: list[dict[str, Any]] = field(default_factory=list)  # the gate verdicts behind the decision
     remaining: int | None = None  # runs left in the tenant's window, when a meter is attached
 
@@ -175,6 +176,12 @@ class Wedge:
         root = self.tenant_root(tenant)
         memory = self.memory_factory(root / "software")         # per-tenant, isolated by path
         result = build_function(goal, self.provider_factory(), memory)
+        # The deliverable itself — the code the org wrote and the gates cleared. Without this, "SHIPPED"
+        # is a verdict with nothing behind it; with it, the tenant gets the verified function back.
+        code = ""
+        outcome = getattr(result, "code_outcome", None)
+        if outcome is not None and getattr(outcome, "artifact", None) is not None:
+            code = outcome.artifact.payload
         remaining: int | None = None
         if self.meter is not None:
             self.meter.record(tenant, result.accepted, goal)   # the run counts (and is billable)
@@ -186,6 +193,7 @@ class Wedge:
             run_id=result.run_id,
             isolated=True,
             persisted_at=str(root),
+            code=code,
             evidence=_evidence(result),
             remaining=remaining,
         )

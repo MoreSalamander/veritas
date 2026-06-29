@@ -2,11 +2,11 @@
 # Copy this to the repo root (or run `fly deploy -c deploy/fly/fly.toml`). Rename `app` to something
 # unique to your Fly org. ANTHROPIC_API_KEY is NOT here — set it with `fly secrets set` (see README).
 
-app = "veritas-wedge"            # <- change to a name unique on Fly
+app = "veritas-dynamics-software"   # lowercase only; becomes <name>.fly.dev
 primary_region = "iad"           # <- pick a region near you (fly platform regions)
 
 [build]
-  dockerfile = "deploy/fly/Dockerfile"
+  dockerfile = "Dockerfile"   # resolved relative to THIS file's folder (deploy/fly/)
 
 [env]
   VERITAS_SANDBOX = "container"   # untrusted code runs in throwaway containers; the wedge fails closed

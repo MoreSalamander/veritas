@@ -72,6 +72,12 @@
   .gv { font-weight: 700; white-space: nowrap; }
   .gv.pass { color: var(--green); } .gv.fail { color: var(--red); }
   .gev { color: var(--dim); font-size: 11.5px; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+  .codewrap { margin-top: 14px; }
+  .codewrap .clabel { font-size: 11px; letter-spacing: .5px; text-transform: uppercase;
+                      color: var(--dim); margin-bottom: 6px; }
+  pre.code { background: #0c1119; border: 1px solid var(--line); border-radius: 10px;
+             padding: 13px 15px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px;
+             color: var(--ink); white-space: pre; margin: 0; line-height: 1.5; }
   .meta { font-family: var(--mono); font-size: 11.5px; color: var(--dim); margin-top: 12px;
           display: flex; gap: 14px; flex-wrap: wrap; }
   .spin { display: inline-block; }
@@ -290,6 +296,10 @@ function renderResult(r) {
         : "the gates refused it; nothing unverified ships"}</span>
     </div>
     <div class="gates">${gates || `<div class="gate"><span class="gev">no gate trail returned</span></div>`}</div>
+    ${r.code ? `<div class="codewrap">
+        <div class="clabel">${shipped ? "the function it built" : "the attempt (refused)"}</div>
+        <pre class="code">${escapeHtml(r.code)}</pre>
+      </div>` : ""}
     <div class="meta">
       ${r.isolated ? `<span>🛡 ran isolated in a sandbox</span>` : ""}
       ${r.remaining != null && r.remaining >= 0 ? `<span>${r.remaining} runs left</span>` : ""}

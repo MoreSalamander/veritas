@@ -1309,8 +1309,8 @@ def create_app(
         except QuotaExceeded as exc:
             raise HTTPException(status_code=429, detail=str(exc))  # metered out for this window
         return {"tenant": res.tenant, "goal": res.goal, "accepted": res.accepted,
-                "run_id": res.run_id, "isolated": res.isolated, "evidence": res.evidence,
-                "remaining": res.remaining}
+                "run_id": res.run_id, "isolated": res.isolated, "code": res.code,
+                "evidence": res.evidence, "remaining": res.remaining}
 
     @app.get("/api/wedge/usage")
     def wedge_usage(authorization: str | None = Header(default=None)) -> dict[str, Any]:
