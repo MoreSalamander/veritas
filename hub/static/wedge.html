@@ -22,6 +22,11 @@
   .tagline { color: var(--dim); font-size: 14px; margin-top: 6px; }
   .thesis { color: var(--dim); font-size: 12.5px; margin-top: 10px; max-width: 560px; }
   .thesis b { color: var(--ink); font-weight: 600; }
+  .about { margin-top: 12px; max-width: 600px; }
+  .about summary { cursor: pointer; color: var(--gold); font-size: 12.5px; user-select: none; }
+  .aboutbody { margin-top: 8px; }
+  .aboutbody p { color: var(--dim); font-size: 13px; line-height: 1.6; margin: 0 0 11px; }
+  .aboutbody b { color: var(--ink); font-weight: 600; }
 
   .statusbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 6px; }
   .chip { font-family: var(--mono); font-size: 11px; padding: 4px 9px; border-radius: 6px;
@@ -41,7 +46,7 @@
   h2 { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--dim);
        margin: 0 0 14px; font-weight: 600; }
   label { display: block; font-size: 12px; color: var(--dim); margin: 0 0 5px; }
-  input, textarea { width: 100%; background: #0c1119; border: 1px solid var(--line); color: var(--ink);
+  input, textarea { width: 100%; background: #101116; border: 1px solid var(--line); color: var(--ink);
          padding: 11px 13px; border-radius: 9px; font-size: 14px; font-family: inherit; margin-bottom: 12px; }
   textarea { min-height: 90px; resize: vertical; }
   .field-mono input { font-family: var(--mono); font-size: 12.5px; }
@@ -76,7 +81,7 @@
   .gev { color: var(--dim); font-size: 11.5px; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
   /* one-click example chips */
   .suggests { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 14px; }
-  .suggest { background: #0c1119; border: 1px solid var(--line); color: var(--dim);
+  .suggest { background: #101116; border: 1px solid var(--line); color: var(--dim);
              padding: 7px 11px; border-radius: 8px; font-size: 12.5px; cursor: pointer; transition: .12s; }
   .suggest:hover { border-color: var(--gold); color: var(--ink); }
   .suggest .star { color: var(--gold); }
@@ -124,7 +129,7 @@
   .codewrap { margin-top: 14px; }
   .codewrap .clabel { font-size: 11px; letter-spacing: .5px; text-transform: uppercase;
                       color: var(--dim); margin-bottom: 6px; }
-  pre.code { background: #0c1119; border: 1px solid var(--line); border-radius: 10px;
+  pre.code { background: #101116; border: 1px solid var(--line); border-radius: 10px;
              padding: 13px 15px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px;
              color: var(--ink); white-space: pre; margin: 0; line-height: 1.5; }
   .meta { font-family: var(--mono); font-size: 11.5px; color: var(--dim); margin-top: 12px;
@@ -139,9 +144,30 @@
   <header>
     <div class="logo">VERI<b>TAS</b> <span style="color:var(--dim);font-weight:400">Dynamics</span></div>
     <div class="tagline">Submit a goal. Watch it built, verified, and shipped — or honestly refused.</div>
-    <div class="thesis">Veritas treats the model as a <b>proposal engine</b> and a deterministic
-      scaffold as the <b>decision engine</b>. Your code runs <b>isolated</b> in a throwaway sandbox,
-      and only ships if it passes the gates below. <b>Reliability is architecture, not a vibe.</b></div>
+    <div class="thesis">This is one doorway into <b>Veritas Dynamics</b> — a framework that builds software
+      the way a careful engineer would: the model proposes, deterministic gates decide, and nothing
+      ships unproven. Here that means a single, verified function — the smallest place the idea shows
+      itself whole. <b>Reliability is architecture, not a vibe.</b></div>
+    <details class="about">
+      <summary>What is this — and what is it part of?</summary>
+      <div class="aboutbody">
+        <p>Veritas treats a language model as a <b>proposal engine</b> and a deterministic scaffold as
+          the <b>decision engine</b>. The model is never trusted on its word. Its code only ships if it
+          survives gates that check real <b>properties</b> — that a sort returns a sorted permutation of
+          its input, that reversing a list twice gives back the original — facts that must hold for
+          <i>every</i> input, not just the one example the model happened to pick.</p>
+        <p>The same architecture isn't limited to functions. The engine underneath — an artifact that has
+          to earn trust, a gate that decides, a memory that learns from what it accepted and what it
+          refused — also drives organizations that verify <b>web pages</b> (rendered and checked, not
+          eyeballed), <b>research</b> (every claim cited to a source), and <b>produced media</b> (every
+          stage traced to the last). This page exposes one of them, the code builder, and exposes it
+          safely: your work runs isolated in a throwaway sandbox, and your account and usage are yours alone.</p>
+        <p>Veritas Dynamics is the capstone of the <b>MoreSalamander</b> studio — a study in building
+          software organizations that are trustworthy <i>by construction</i> rather than by inspection.
+          What you're holding is its smallest visible slice: proof that the loop works, in your hands,
+          in a few seconds.</p>
+      </div>
+    </details>
     <div class="statusbar" id="statusbar"></div>
   </header>
 
