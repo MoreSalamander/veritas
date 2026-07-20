@@ -22,6 +22,7 @@ from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome
 from orgs.empirical_lab.pipeline import build_experiment
 from orgs.empirical_lab.roster import roster as empirical_roster
+from orgs.crypto_hunter.roster import roster as crypto_hunter_roster
 from orgs.presets import (
     build_article,
     build_game,
@@ -203,6 +204,15 @@ def _run_composition(
                   result.informed_by, result.run_id, result.activity)
 
 
+def _run_crypto_hunter_bridge(
+    goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
+) -> OrgRun:
+    # Deferred import: the bridge imports OrgRun from this module.
+    from orgs.crypto_hunter.bridge import run_crypto_hunter
+
+    return run_crypto_hunter(goal, provider, memory, sources)
+
+
 REGISTRY: dict[str, OrgType] = {
     "software": OrgType(
         name="software",
@@ -323,6 +333,21 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a roguelike about pirates",
         build=lambda g, p, m, sources=None: _run_composition(build_game, "game", g, p, m),
         roster=None,
+    ),
+    "crypto_hunter": OrgType(
+        name="crypto_hunter",
+        title="Crypto Hunter AI",
+        description="The flagship external org: an army of frontier agents hunts crypto "
+        "earning opportunities on the live web; one deterministic fail-closed gate decides "
+        "what may be trusted. Lives in its own repo (~/MoreSalamander/crypto-hunter).",
+        input_noun="a hunt goal (or nothing — it runs its daily cycle)",
+        produces="gate-verified opportunities, a ranked digest, and a daily mission",
+        verified_by="the scaffold gate: scam list, official allowlist, RDAP source validity, "
+        "multi-source confirmation, contract check, credible-scam-report check — all HARD, "
+        "fail-closed; debate stances are transcript, never verdict",
+        goal_hint="run today's hunt",
+        build=_run_crypto_hunter_bridge,
+        roster=crypto_hunter_roster,
     ),
 }
 

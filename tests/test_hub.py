@@ -91,7 +91,7 @@ def test_orgs_endpoint_lists_registry(tmp_path):
     client = _client(tmp_path)
     orgs = client.get("/api/orgs").json()
     assert {o["name"] for o in orgs} == {"software", "web", "research", "production", "empirical",
-                                         "newsroom", "education", "startup", "game"}
+                                         "newsroom", "education", "startup", "game", "crypto_hunter"}
     assert all(o["input_noun"] and o["produces"] and o["verified_by"] for o in orgs)
 
 
