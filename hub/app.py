@@ -41,6 +41,8 @@ from hub.wedge import (
     Wedge,
     WedgeAuth,
 )
+from hub.background_session import BackgroundSession
+from hub.expiring_store import ExpiringRegistry
 from hub.ingest import TranscriptFetcher, TranscriptUnavailable, YtDlpFetcher
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
 from engine.run import ActivityEntry, set_activity_listener
@@ -457,26 +459,22 @@ def _bench_aggregate(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-class BenchSession:
+class BenchSession(BackgroundSession):
     """Runs a models x goals matrix in the background (each build isolated, no cross-run learning),
     streaming per-cell progress. Long-running and (for cloud models) costly — the UI confirms first."""
 
     def __init__(self, token: str, models: list[str],
                  provider_for: Callable[[str], ModelProvider], repeats: int = 1,
                  results_path: Path | None = None) -> None:
-        self.token = token
+        super().__init__(token)
         self.models = models
         self.provider_for = provider_for
         self.repeats = repeats
         self.results_path = results_path  # where to persist the summary so Models notes go live
-        self.lock = threading.Lock()
         self.state: dict[str, Any] = {
             "phase": "running", "total": len(models) * len(_BENCH_GOALS) * repeats,
             "done": 0, "current": None, "cells": [], "summary": None, "error": None,
         }
-
-    def start(self) -> None:
-        threading.Thread(target=self._run, daemon=True).start()
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -532,7 +530,7 @@ class BenchSession:
             pass
 
 
-class TuneSession:
+class TuneSession(BackgroundSession):
     """A/Bs a candidate Spec prompt against the LIVE one over the bench goal suite, in the background.
 
     The prompt studio's live engine — the same builds as the benchmark, but the *prompt* is the
@@ -544,21 +542,17 @@ class TuneSession:
 
     def __init__(self, token: str, candidate: str, provider_for: Callable[[str], ModelProvider],
                  model: str, repeats: int = 1) -> None:
-        self.token = token
+        super().__init__(token)
         self.candidate = candidate
         self.provider_for = provider_for
         self.model = model
         self.repeats = repeats
         self.baseline_prompt = software_agents.SPEC_SYSTEM  # the prompt in use, captured before any swap
-        self.lock = threading.Lock()
         self.state: dict[str, Any] = {
             "phase": "running", "total": 2 * len(_BENCH_GOALS) * repeats,
             "done": 0, "current": None, "cells": [], "verdict": None, "error": None,
             "model": model, "baseline_prompt": self.baseline_prompt, "candidate_prompt": candidate,
         }
-
-    def start(self) -> None:
-        threading.Thread(target=self._run, daemon=True).start()
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -716,7 +710,7 @@ def _create_trust(rendered: RenderResult, spec: CreateSpec) -> dict[str, Any]:
     return {"machine": machine, "model": [], "human": "pending"}
 
 
-class CreateSession:
+class CreateSession(BackgroundSession):
     """Drives the unchanged create-mode engine (interview -> build_create_page) from a background
     thread. The engine's `answer` and `review` callbacks block on threading Events; the human
     supplies them over HTTP, so a synchronous local loop becomes a turn-based web conversation
@@ -724,12 +718,11 @@ class CreateSession:
 
     def __init__(self, token: str, goal: str, model: str, provider: ModelProvider,
                  memory: MemoryStore, profile_store: ProfileStore) -> None:
-        self.token = token
+        super().__init__(token)
         self.goal = goal
         self.provider = provider
         self.memory = memory
         self.profile_store = profile_store
-        self.lock = threading.Lock()
         self.state: dict[str, Any] = {
             "phase": "interviewing", "goal": goal, "model": model,
             "question": None, "transcript": [], "spec": None,
@@ -740,9 +733,6 @@ class CreateSession:
         self._answer_val = ""
         self._review = threading.Event()
         self._review_val = Review(False)
-
-    def start(self) -> None:
-        threading.Thread(target=self._run, daemon=True).start()
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -757,10 +747,6 @@ class CreateSession:
     def provide_review(self, approved: bool, feedback: str) -> None:
         self._review_val = Review(approved, feedback)
         self._review.set()
-
-    def _set(self, **fields: Any) -> None:
-        with self.lock:
-            self.state.update(fields)
 
     def _answer_fn(self, question: str) -> str:
         self._set(phase="interviewing", question=question)
@@ -832,7 +818,7 @@ class CreateSession:
             self._set(phase="done", error=f"{type(exc).__name__}: {exc}")
 
 
-class ProductionCreateSession:
+class ProductionCreateSession(BackgroundSession):
     """Create mode for a production. Runs the whole chain (the machine floor); when it ships, a human
     judges the cut over HTTP (the review callback blocks on an Event). Approve → human-approved record
     + the style profile compounds; request changes → the brief is amended and it re-runs."""
@@ -840,7 +826,7 @@ class ProductionCreateSession:
     def __init__(self, token: str, brief: str, model: str, provider: ModelProvider,
                  memory: MemoryStore, productions_root: Path, profile_store: ProductionProfileStore,
                  publisher: Publisher | None, voice: str | None = None) -> None:
-        self.token = token
+        super().__init__(token)
         self.brief = brief
         self.provider = provider
         self.memory = memory
@@ -848,7 +834,6 @@ class ProductionCreateSession:
         self.profile_store = profile_store
         self.publisher = publisher
         self.voice = voice
-        self.lock = threading.Lock()
         self.state: dict[str, Any] = {
             "phase": "producing", "brief": brief, "model": model, "events": [],
             "video_url": None, "trust": None, "iteration": 0, "result": None, "error": None,
@@ -856,20 +841,12 @@ class ProductionCreateSession:
         self._review = threading.Event()
         self._review_val = ProdReview(False)
 
-    def start(self) -> None:
-        threading.Thread(target=self._run, daemon=True).start()
-
-    def snapshot(self) -> dict[str, Any]:
-        with self.lock:
-            return dict(self.state)
+    # snapshot()/_set() are inherited as-is from BackgroundSession — this session's
+    # state has no nested mutable field that needs a deeper copy than the default.
 
     def provide_review(self, approved: bool, feedback: str) -> None:
         self._review_val = ProdReview(approved, feedback)
         self._review.set()
-
-    def _set(self, **fields: Any) -> None:
-        with self.lock:
-            self.state.update(fields)
 
     def _review_fn(self, result: ProductionResult) -> ProdReview:
         with self.lock:
@@ -909,7 +886,7 @@ class ProductionCreateSession:
             set_activity_listener(None)
 
 
-class PlanSession:
+class PlanSession(BackgroundSession):
     """The Plan tab — cross-org planning over HTTP. A daemon thread proposes a runnable plan
     (gate-checked, self-correcting), then blocks on the human (review Event): approve runs the
     plan step-by-step through each org's gates; refine folds feedback in and re-plans. Mirrors the
@@ -918,13 +895,12 @@ class PlanSession:
     def __init__(self, token: str, request: str, model: str, provider: ModelProvider,
                  memory_for: Callable[[str], MemoryStore],
                  record_run: Callable[[OrgRun, str], dict[str, Any]]) -> None:
-        self.token = token
+        super().__init__(token)
         self.request = request
         self.model = model
         self.provider = provider
         self.memory_for = memory_for
         self.record_run = record_run
-        self.lock = threading.Lock()
         self.state: dict[str, Any] = {
             "phase": "planning",  # planning | reviewing | executing | done
             "request": request, "model": model,
@@ -934,21 +910,13 @@ class PlanSession:
         self._review = threading.Event()
         self._review_val: tuple[bool, str, list[list[str]]] = (False, "", [])
 
-    def start(self) -> None:
-        threading.Thread(target=self._run, daemon=True).start()
-
-    def snapshot(self) -> dict[str, Any]:
-        with self.lock:
-            return dict(self.state)
+    # snapshot() is inherited as-is from BackgroundSession — no nested mutable
+    # field here needs a deeper copy than the default shallow one.
 
     def provide_review(self, approved: bool, feedback: str,
                        sources: list[list[str]] | None = None) -> None:
         self._review_val = (approved, feedback, sources or [])
         self._review.set()
-
-    def _set(self, **fields: Any) -> None:
-        with self.lock:
-            self.state.update(fields)
 
     def _on_step(self, _index: int, sr: StepResult) -> None:
         run_dict = self.record_run(sr.run, self.model)  # summarize + save → shows in that studio too
@@ -1025,12 +993,14 @@ def create_app(
 
     # Live run state, keyed by a one-shot token, so the UI can watch a run unfold
     # (Explain -> Synthesize -> Verify -> Persist) instead of only seeing the result.
-    progress: dict[str, dict[str, Any]] = {}
+    # ExpiringRegistry (not a plain dict) so a long-running hosted process doesn't
+    # accumulate one entry per run forever — see hub/expiring_store.py.
+    progress: ExpiringRegistry[dict[str, Any]] = ExpiringRegistry()
 
     # Create-mode sessions (the interview/build conversation), keyed by token.
-    create_sessions: dict[str, CreateSession] = {}
-    produce_sessions: dict[str, ProductionCreateSession] = {}
-    plan_sessions: dict[str, PlanSession] = {}
+    create_sessions: ExpiringRegistry[CreateSession] = ExpiringRegistry()
+    produce_sessions: ExpiringRegistry[ProductionCreateSession] = ExpiringRegistry()
+    plan_sessions: ExpiringRegistry[PlanSession] = ExpiringRegistry()
 
     def _record_run(org_run: OrgRun, model: str) -> dict[str, Any]:
         # Persist a plan step's run like any other, so it also shows up in that studio's history.
@@ -1256,7 +1226,7 @@ def create_app(
     quota = QuotaStore.from_env(base / "usage.db")
     # Live-trace buffers for streamed wedge runs, keyed by a one-shot token (the same shape the
     # dashboard uses): the page polls and watches the spec + gates light up as the build flows.
-    wedge_progress: dict[str, dict[str, Any]] = {}
+    wedge_progress: ExpiringRegistry[dict[str, Any]] = ExpiringRegistry()
 
     @app.post("/api/auth/signup")
     def auth_signup(req: AuthRequest) -> dict[str, str]:
@@ -1509,7 +1479,7 @@ def create_app(
         return {"ok": True}
 
     # --- Knowledge mode: answer from the model's own knowledge, FLAG the uncertain. Soft, never green. ---
-    brief_progress: dict[str, dict[str, Any]] = {}
+    brief_progress: ExpiringRegistry[dict[str, Any]] = ExpiringRegistry()
 
     @app.post("/api/brief/start")
     def brief_start(req: BriefRequest) -> dict[str, str]:
@@ -1540,7 +1510,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="no brief for this token (it may have expired)")
         return HTMLResponse(_brief_document_html(prog["brief"]), headers={"Cache-Control": "no-store"})
 
-    bench_sessions: dict[str, BenchSession] = {}
+    bench_sessions: ExpiringRegistry[BenchSession] = ExpiringRegistry()
 
     @app.post("/api/bench/start")
     def bench_start(req: BenchRequest) -> dict[str, str]:
@@ -1558,7 +1528,7 @@ def create_app(
         sess = bench_sessions.get(token)
         return sess.snapshot() if sess else {"error": "unknown bench session"}
 
-    tune_sessions: dict[str, TuneSession] = {}
+    tune_sessions: ExpiringRegistry[TuneSession] = ExpiringRegistry()
 
     @app.get("/api/tune/baseline")
     def tune_baseline() -> dict[str, str]:

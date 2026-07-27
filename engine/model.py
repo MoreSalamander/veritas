@@ -13,11 +13,23 @@ config change, never a rewrite. (README/ROADMAP: the shipping constraint.)
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from typing import Any
 
+from engine.errors import ProviderError  # re-exported: existing callers import it from here
 from engine.run import Phase, emit_activity
+
+__all__ = [
+    "ProviderError",
+    "ModelProvider",
+    "OllamaProvider",
+    "LMStudioProvider",
+    "ClaudeProvider",
+    "ScriptedProvider",
+    "SequencedProvider",
+]
 
 
 def _announce(role: str) -> None:
@@ -103,8 +115,11 @@ class OllamaProvider(ModelProvider):
             data=json.dumps(body).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise ProviderError(f"Ollama request to {self.host} failed: {exc}") from exc
         text = payload.get("response", "")
         return str(text)
 
@@ -127,6 +142,65 @@ class OllamaProvider(ModelProvider):
         # converts a fail, so cap to 2 when thinking. Off-thinking keeps the full budget (those
         # retries are cheap AND genuinely useful — the involution/clamp self-corrections).
         return 2 if self.think else default
+
+
+class LMStudioProvider(ModelProvider):
+    """Local-model backend that talks to LM Studio's OpenAI-compatible server.
+
+    Sibling of OllamaProvider: same "reliability lives in the gates" contract, different
+    local host. LM Studio speaks the OpenAI Chat Completions API (POST /v1/chat/completions)
+    on port 1234, so this class exists purely to bridge protocols — the gates are untouched.
+
+    Stdlib-only (urllib), matching OllamaProvider. `reasoning_effort` is passed through for
+    reasoning models like gpt-oss (LM Studio ignores it for non-reasoning models such as the
+    qwen coder), so the same class serves both new proposers."""
+
+    def __init__(
+        self,
+        model: str,
+        host: str = "http://localhost:1234",
+        temperature: float = 0.2,
+        timeout: float = 300.0,
+        reasoning_effort: str | None = None,
+    ) -> None:
+        self.model = model
+        self.host = host.rstrip("/")
+        self.temperature = temperature
+        self.timeout = timeout
+        self.reasoning_effort = reasoning_effort
+
+    def propose(self, *, role: str, prompt: str, system: str | None = None) -> str:
+        _announce(role)
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "stream": False,
+        }
+        if self.reasoning_effort is not None:
+            body["reasoning_effort"] = self.reasoning_effort
+        request = urllib.request.Request(
+            f"{self.host}/v1/chat/completions",
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            return str(payload["choices"][0]["message"]["content"])
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise ProviderError(f"LM Studio request to {self.host} failed: {exc}") from exc
+        except (KeyError, IndexError, TypeError) as exc:
+            # A 200 response whose body doesn't match the Chat Completions shape we
+            # expect (e.g. an error payload returned with a 200 status) — still a
+            # provider failure from the caller's point of view, not a bug in our code.
+            raise ProviderError(
+                f"LM Studio at {self.host} returned an unexpected response shape: {exc}"
+            ) from exc
 
 
 class ClaudeProvider(ModelProvider):

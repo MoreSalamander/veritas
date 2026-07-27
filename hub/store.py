@@ -10,6 +10,7 @@ hosted.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,8 @@ from typing import Any
 from engine.run import Phase
 from engine.tokens import estimate_tokens  # built by the org itself (bootstrap); now powers telemetry
 from orgs.registry import OrgRun
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -119,13 +122,37 @@ class RunStore:
         return path
 
     def get(self, run_id: str) -> dict[str, Any] | None:
+        """Load one run's summary by id.
+
+        A run file can only be corrupted by something external to this class (a crash
+        mid-write, disk corruption, manual editing) — `save` always writes a complete,
+        valid JSON document. Treat a corrupt file the same as a missing one (`None`,
+        the documented "not found" contract) rather than letting the parse error
+        propagate as a 500, but log it at warning level so the corruption is visible
+        to whoever operates this host.
+        """
         path = self.base / f"{run_id}.json"
         if not path.exists():
             return None
-        data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.warning("run file %s is unreadable or not valid JSON; treating as not found", path)
+            return None
         return data
 
     def list(self) -> list[dict[str, Any]]:
-        runs = [json.loads(p.read_text(encoding="utf-8")) for p in self.base.glob("*.json")]
+        """Load every run's summary, most recent first.
+
+        One corrupted run file must not take down the whole list (and therefore the
+        dashboard, which is the single most-viewed page in the Hub) — skip it, log a
+        warning naming the exact file, and keep going.
+        """
+        runs: list[dict[str, Any]] = []
+        for path in self.base.glob("*.json"):
+            try:
+                runs.append(json.loads(path.read_text(encoding="utf-8")))
+            except (OSError, json.JSONDecodeError):
+                logger.warning("run file %s is unreadable or not valid JSON; skipping it", path)
         runs.sort(key=lambda r: r.get("created_at", ""), reverse=True)
         return runs

@@ -7,8 +7,17 @@ embedder (the real nomic-embed comparison is a live demo); the plumbing is what'
 
 from __future__ import annotations
 
-from engine.embed import Embedder, cosine
+import json
+import urllib.error
+from contextlib import contextmanager
+from typing import Any, Iterator
+from unittest.mock import patch
+
+import pytest
+
+from engine.embed import Embedder, OllamaEmbedder, cosine
 from engine.memory import MemoryRecord, MemoryStore
+from engine.model import ProviderError
 
 
 class TopicEmbedder(Embedder):
@@ -60,3 +69,48 @@ def test_embedder_falls_back_to_tokens_when_it_errors(tmp_path):
     # query shares a token ("palette") so token-overlap fallback still finds the color lesson
     hits = store.recall("a nice palette")
     assert any("color palette" in h.title for h in hits)
+
+
+class _FakeResponse:
+    """Minimal stand-in for `http.client.HTTPResponse` — a context manager with `.read()`."""
+
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def __enter__(self) -> "_FakeResponse":
+        return self
+
+    def __exit__(self, *exc_info: Any) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._body
+
+
+@contextmanager
+def _urlopen_returns(payload: dict[str, Any]) -> Iterator[None]:
+    with patch("urllib.request.urlopen", return_value=_FakeResponse(json.dumps(payload).encode())):
+        yield
+
+
+def test_ollama_embedder_returns_the_embedding_field_on_success() -> None:
+    embedder = OllamaEmbedder()
+    with _urlopen_returns({"embedding": [0.1, 0.2, 0.3]}):
+        result = embedder.embed("reverse a list")
+    assert result == [0.1, 0.2, 0.3]
+
+
+def test_ollama_embedder_wraps_a_network_failure_as_provider_error() -> None:
+    embedder = OllamaEmbedder()
+    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("down")):
+        with pytest.raises(ProviderError):
+            embedder.embed("reverse a list")
+
+
+def test_ollama_embedder_wraps_a_malformed_embedding_as_provider_error() -> None:
+    """The embedding field is present but contains something that can't be coerced
+    to float — e.g. the server returned an error message string instead of numbers."""
+    embedder = OllamaEmbedder()
+    with _urlopen_returns({"embedding": ["not", "a", "vector"]}):
+        with pytest.raises(ProviderError):
+            embedder.embed("reverse a list")

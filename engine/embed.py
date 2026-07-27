@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import json
 import math
+import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
+
+from engine.errors import ProviderError  # same typed failure as the propose() seam
 
 
 class Embedder(ABC):
@@ -38,9 +41,19 @@ class OllamaEmbedder(Embedder):
             data=json.dumps(body).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        return [float(x) for x in payload.get("embedding", [])]
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            return [float(x) for x in payload.get("embedding", [])]
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise ProviderError(f"Ollama embedding request to {self.host} failed: {exc}") from exc
+        except (TypeError, ValueError) as exc:
+            # payload["embedding"] contained something that isn't coercible to float —
+            # a malformed response body, same failure class as a transport error from
+            # the caller's perspective.
+            raise ProviderError(
+                f"Ollama at {self.host} returned a malformed embedding: {exc}"
+            ) from exc
 
 
 def cosine(a: list[float], b: list[float]) -> float:
