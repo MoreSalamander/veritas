@@ -1045,6 +1045,7 @@ def create_app(
                 "verified_by": org.verified_by,
                 "goal_hint": org.goal_hint,
                 "needs_sources": org.needs_sources,
+                "color": org.color,
             }
             for org in REGISTRY.values()
         ]
@@ -1672,6 +1673,13 @@ def create_app(
 
     if _STATIC.exists():
         app.mount("/static", StaticFiles(directory=_STATIC), name="static")
+
+    # docs/shared holds a vendored copy of the Entropy house-style CSS, mounted at the same
+    # absolute path (/shared/...) that docs/about.html also resolves against when served
+    # standalone (e.g. `python -m http.server --directory docs`) — one href works in both contexts.
+    _docs_shared = _ROOT / "docs" / "shared"
+    if _docs_shared.exists():
+        app.mount("/shared", StaticFiles(directory=_docs_shared), name="shared")
 
     # Serve rendered productions (images + the published video) so the UI can play them.
     productions = base / "productions"

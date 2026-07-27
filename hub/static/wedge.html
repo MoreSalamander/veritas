@@ -4,20 +4,23 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Veritas — submit a goal, watch it verified</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/shared/entropy-theme.css">
 <style>
+  /* Verdict palette, on the shared Entropy house tokens — see
+     /static/shared/entropy-theme.css. Local aliases keep every class name
+     in this file unchanged; only the values moved to the shared system. */
   :root {
-    /* Verdict palette: warm gold = verified/truth, cool slate = the model's proposal */
-    --bg: #08090c; --panel: #121317; --line: #26282e; --ink: #f4f5f7; --dim: #8b8f98;
-    --gold: #e8c468; --proposal: #8b96ad; --green: #4ade80; --red: #f43f5e; --amber: #d9a441;
-    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --bg: var(--void); --panel: #10140f;
+    --ink: var(--bone); --green: var(--safe); --red: var(--threat);
   }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink);
-         font-family: system-ui, sans-serif; line-height: 1.5;
-         display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 0 18px 80px; }
+  body { line-height: 1.5;
+         display: flex; flex-direction: column; align-items: center; padding: 0 18px 80px; }
   .wrap { width: 100%; max-width: 680px; }
   header { padding: 40px 0 8px; }
-  .logo { font-weight: 800; letter-spacing: 1px; font-size: 22px; }
+  .logo { font-family: var(--disp); font-weight: 700; letter-spacing: 1px; font-size: 22px; }
   .logo b { color: var(--gold); }
   .tagline { color: var(--dim); font-size: 14px; margin-top: 6px; }
   .thesis { color: var(--dim); font-size: 12.5px; margin-top: 10px; max-width: 560px; }

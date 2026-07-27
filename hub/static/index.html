@@ -4,25 +4,35 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Veritas Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/shared/entropy-theme.css">
 <style>
+  /*
+   * Verdict palette, on the shared Entropy house tokens (see
+   * /static/shared/entropy-theme.css): --void/--bone base, --gold as the
+   * Entropy-wide trust signal (which is also Veritas's own identity —
+   * verification is what Veritas does), --proposal for "the model's claim,
+   * not yet verified." Local aliases below keep every existing class name
+   * in this file working unchanged; only the values moved to the shared system.
+   */
   :root {
-    /* Verdict palette: warm gold = verified/truth, cool slate = the model's proposal */
-    --bg: #08090c; --panel: #121317; --line: #26282e; --ink: #f4f5f7; --dim: #8b8f98;
-    --gold: #e8c468; --proposal: #8b96ad; --green: #4ade80; --red: #f43f5e; --amber: #d9a441;
-    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* --line and --dim already come from entropy-theme.css unchanged; only
+       the names that differ between the two systems are aliased here. */
+    --bg: var(--void); --panel: #10140f;
+    --ink: var(--bone); --green: var(--safe); --red: var(--threat);
   }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink);
-         font-family: system-ui, sans-serif; display: flex; min-height: 100vh; }
+  body { display: flex; min-height: 100vh; }
   aside { width: 210px; border-right: 1px solid var(--line); padding: 22px 14px; flex-shrink: 0; }
-  .logo { font-weight: 800; letter-spacing: 1px; font-size: 18px; margin: 0 8px 6px; }
+  .logo { font-family: var(--disp); font-weight: 700; letter-spacing: 1px; font-size: 18px; margin: 0 8px 6px; }
   .logo b { color: var(--gold); }
   .tagline { color: var(--dim); font-size: 11px; margin: 0 8px 26px; line-height: 1.4; }
   nav a { display: block; padding: 10px 12px; border-radius: 8px; color: var(--dim);
           text-decoration: none; cursor: pointer; font-size: 14px; margin-bottom: 4px; }
   nav a.active, nav a:hover { background: var(--panel); color: var(--ink); }
   main { flex: 1; padding: 30px 36px; overflow-y: auto; }
-  h1 { margin: 0 0 22px; font-size: 26px; }
+  h1 { margin: 0 0 22px; font-size: 26px; font-family: var(--disp); font-weight: 700; }
   h2 { font-size: 13px; letter-spacing: 1px; text-transform: uppercase; color: var(--dim); margin: 28px 0 12px; }
   .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
@@ -207,6 +217,17 @@
   .verdict.human { color: var(--gold); }
   .proftag { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px;
              border-radius: 5px; border: 1px solid var(--line); margin: 0 6px 6px 0; color: var(--ink); }
+
+  /* --- the shell hero: Veritas at the center, every registered production orbiting it --- */
+  .shell-hero { position: relative; height: 300px; border-radius: 14px; overflow: hidden;
+                border: 1px solid var(--line); margin-bottom: 26px; background: var(--void); }
+  .shell-hero canvas { position: absolute; inset: 0; }
+  .shell-vig { position: absolute; inset: 0; pointer-events: none;
+               background: radial-gradient(ellipse 70% 65% at 50% 45%, transparent 0%, rgba(10,14,12,.55) 72%, rgba(10,14,12,.92) 100%); }
+  .shell-label { position: absolute; left: 16px; bottom: 16px; max-width: 340px; padding: 12px 16px; border-radius: 10px; }
+  .shell-title { font-family: var(--disp); font-weight: 700; font-size: 12px; letter-spacing: .28em;
+                 color: var(--gold); margin-bottom: 4px; }
+  .shell-sub { font-size: 12px; color: var(--dim); line-height: 1.4; }
 </style>
 </head>
 <body>
@@ -235,6 +256,14 @@
 </aside>
 <main>
   <section id="home">
+    <div class="shell-hero">
+      <canvas id="shellscene"></canvas>
+      <div class="shell-vig"></div>
+      <div class="shell-label eg-panel">
+        <div class="shell-title">THE SHELL</div>
+        <div class="shell-sub" id="shellsub">every registered production, orbiting the gates that hold it accountable</div>
+      </div>
+    </div>
     <h1>What do you want to make?</h1>
     <div class="muted" style="margin:-12px 0 14px; max-width:680px">Describe it — the router proposes a studio and a goal, you confirm. The model proposes the route; the gates are still the authority.</div>
     <div class="row">
@@ -1463,6 +1492,33 @@ $('#planreq').onkeydown = e => { if (e.key === 'Enter') startPlan(); };
 
 loadOrgs();
 loadHome();
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="/static/shared/entropy-scene.js"></script>
+<script>
+// The shell, made visible: Veritas at the center, every registered production
+// orbiting it — the same center-and-orbit grammar Opportunity's own scanfield
+// and the Hunter engines' hero scenes already use, one layer further out.
+(async function loadShell() {
+  try {
+    const orgs = await api('/api/orgs');
+    EntropyScene.init(document.getElementById('shellscene'), {
+      center: { color: 0xe8c468 },
+      nodes: orgs.map(o => ({ name: o.title, color: parseInt(o.color.replace('#', ''), 16) })),
+    });
+    $('#shellsub').textContent = `${orgs.length} registered productions, orbiting the gates that hold them accountable`;
+  } catch (e) {
+    // A WebGL failure or a slow /api/orgs must never block the rest of the dashboard.
+    console.warn('shell hero failed to load', e);
+  }
+})();
 </script>
 </body>
 </html>

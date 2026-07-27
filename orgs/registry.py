@@ -73,6 +73,11 @@ class OrgType:
     build: BuildFn
     roster: Callable[[], dict[str, Any]] | None = None  # cast + gates, for the Org view
     needs_sources: bool = False  # the UI shows a sources box for these orgs
+    # brand accent for this org's own node in the shell view (Home's "every registered
+    # production orbiting Veritas" scene) — an external production like crypto_hunter uses
+    # its own real brand color; a preset uses --proposal slate since it isn't a separate
+    # verification model, just a framing on top of an existing org's gates.
+    color: str = "#e8c468"
 
 
 def _run_software(
@@ -226,6 +231,7 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a function that returns the nth Fibonacci number",
         build=_run_software,
         roster=software_roster,
+        color="#6ee7ff",
     ),
     "web": OrgType(
         name="web",
@@ -239,6 +245,7 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a landing page for a coffee shop",
         build=_run_web,
         roster=web_roster,
+        color="#a78bfa",
     ),
     "research": OrgType(
         name="research",
@@ -255,6 +262,7 @@ REGISTRY: dict[str, OrgType] = {
         build=_run_research,
         roster=research_roster,
         needs_sources=True,
+        color="#f472b6",
     ),
     "production": OrgType(
         name="production",
@@ -269,6 +277,7 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a 60-second explainer on why the sky is blue, for curious kids",
         build=_run_production,
         roster=production_roster,
+        color="#fb923c",
     ),
     "empirical": OrgType(
         name="empirical",
@@ -282,6 +291,7 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="do small-model ensembles beat a single larger model on accuracy?",
         build=_run_empirical,
         roster=empirical_roster,
+        color="#34d399",
     ),
     # --- Presets: products on the existing verification models, not new orgs. ---
     "newsroom": OrgType(
@@ -296,6 +306,7 @@ REGISTRY: dict[str, OrgType] = {
         build=lambda g, p, m, sources=None: _run_grounded_preset(build_article, "newsroom", g, p, m, sources),
         roster=research_roster,
         needs_sources=True,
+        color="#8b96ad",
     ),
     "education": OrgType(
         name="education",
@@ -309,6 +320,7 @@ REGISTRY: dict[str, OrgType] = {
         build=lambda g, p, m, sources=None: _run_grounded_preset(build_lesson, "education", g, p, m, sources),
         roster=research_roster,
         needs_sources=True,
+        color="#8b96ad",
     ),
     "startup": OrgType(
         name="startup",
@@ -321,6 +333,7 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a tool that finds profitable opportunities in poker",
         build=lambda g, p, m, sources=None: _run_composition(build_startup, "startup", g, p, m),
         roster=None,
+        color="#8b96ad",
     ),
     "game": OrgType(
         name="game",
@@ -333,6 +346,7 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a roguelike about pirates",
         build=lambda g, p, m, sources=None: _run_composition(build_game, "game", g, p, m),
         roster=None,
+        color="#8b96ad",
     ),
     "crypto_hunter": OrgType(
         name="crypto_hunter",
@@ -348,6 +362,7 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="run today's hunt",
         build=_run_crypto_hunter_bridge,
         roster=crypto_hunter_roster,
+        color="#f0a52c",
     ),
 }
 
