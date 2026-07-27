@@ -1,0 +1,30 @@
+{
+  "crypto_hunter": {
+    "title": "Crypto Hunter AI",
+    "repo": "~/MoreSalamander/crypto-hunter",
+    "kind": "hunter_engine",
+    "color": "f0a52c",
+    "default_trust": "held"
+  },
+  "collectible_hunter": {
+    "title": "Collectible Hunter AI",
+    "repo": "~/MoreSalamander/collectible-hunter",
+    "kind": "hunter_engine",
+    "color": "d4af37",
+    "default_trust": "held"
+  },
+  "free_money_hunter": {
+    "title": "Free Money Hunter AI",
+    "repo": "~/MoreSalamander/free-money-hunter",
+    "kind": "hunter_engine",
+    "color": "4ade80",
+    "default_trust": "held"
+  },
+  "opportunity_agency": {
+    "title": "Opportunity [Agency AI]",
+    "repo": "~/MoreSalamander/opportunity-agency-ai",
+    "kind": "opportunity_hub",
+    "color": "f472b6",
+    "default_trust": "held"
+  }
+}

@@ -41,6 +41,9 @@ from hub.wedge import (
     Wedge,
     WedgeAuth,
 )
+from collector.collect import run_collection
+from collector.sources import load_sources
+from collector.store import CollectorStore
 from hub.background_session import BackgroundSession
 from hub.expiring_store import ExpiringRegistry
 from hub.ingest import TranscriptFetcher, TranscriptUnavailable, YtDlpFetcher
@@ -1117,6 +1120,9 @@ def create_app(
         accepted = sum(1 for r in all_runs if r.get("accepted"))
         mem = [m for org_name in REGISTRY for m in org_memory(org_name).load_all()]
         rate = (accepted / len(all_runs) * 100.0) if all_runs else 0.0
+        # Same lazy, idempotent refresh as login — cheap, never raises, keeps the
+        # always-open local dashboard's pending count fresh without a scheduler.
+        run_collection(collector_sources, collector_store)
         return {
             "total_runs": len(all_runs),
             "accepted_runs": accepted,
@@ -1128,6 +1134,7 @@ def create_app(
                 for org_name in REGISTRY
             },
             "recent": all_runs[:8],
+            "pending_admission_count": collector_store.count_pending(),
         }
 
     @app.get("/api/runs")
@@ -1229,6 +1236,57 @@ def create_app(
     # dashboard uses): the page polls and watches the spec + gates light up as the build flows.
     wedge_progress: ExpiringRegistry[dict[str, Any]] = ExpiringRegistry()
 
+    # Entropy's own DataHub: the collection point every other engine's DataHub feeds into.
+    # Global, not tenant-scoped — the Hunter engines and Opportunity are this operator's own
+    # infrastructure, structurally identical to accounts.db/usage.db already being global.
+    collector_store = CollectorStore(base / "collector.sqlite3")
+    collector_sources = load_sources(_ROOT / "config" / "collector_sources.json")
+
+    @app.get("/api/collector/sources")
+    def collector_sources_list() -> list[dict[str, Any]]:
+        return [
+            {"name": c.name, "title": c.title, "kind": c.kind, "color": c.color,
+             "default_trust": c.default_trust}
+            for c in collector_sources.values()
+        ]
+
+    @app.post("/api/collector/collect")
+    def collector_collect() -> dict[str, int]:
+        return run_collection(collector_sources, collector_store)
+
+    @app.get("/api/collector/pending")
+    def collector_pending() -> list[dict[str, Any]]:
+        return [json.loads(r.model_dump_json()) for r in collector_store.list_pending()]
+
+    def _collector_actor(authorization: str | None) -> str:
+        # Resolves to a real user/tenant id when accounts are on; falls back to a
+        # literal "operator" so the collector is usable without forcing
+        # VERITAS_ACCOUNTS=1 just to try it out locally.
+        if accounts is not None:
+            try:
+                return accounts.tenant_for(authorization)
+            except Unauthorized:
+                pass
+        return "operator"
+
+    @app.post("/api/collector/records/{record_id}/approve")
+    def collector_approve(
+        record_id: str, authorization: str | None = Header(default=None)
+    ) -> dict[str, Any]:
+        rec = collector_store.approve(record_id, _collector_actor(authorization))
+        if rec is None:
+            raise HTTPException(status_code=404, detail="unknown or already-decided record")
+        return dict(json.loads(rec.model_dump_json()))
+
+    @app.post("/api/collector/records/{record_id}/decline")
+    def collector_decline(
+        record_id: str, authorization: str | None = Header(default=None)
+    ) -> dict[str, Any]:
+        rec = collector_store.decline(record_id, _collector_actor(authorization))
+        if rec is None:
+            raise HTTPException(status_code=404, detail="unknown or already-decided record")
+        return dict(json.loads(rec.model_dump_json()))
+
     @app.post("/api/auth/signup")
     def auth_signup(req: AuthRequest) -> dict[str, str]:
         if accounts is None:
@@ -1242,14 +1300,17 @@ def create_app(
         return {"tenant": tenant}
 
     @app.post("/api/auth/login")
-    def auth_login(req: AuthRequest) -> dict[str, str]:
+    def auth_login(req: AuthRequest) -> dict[str, str | int]:
         if accounts is None:
             raise HTTPException(status_code=503, detail="accounts are not enabled on this host")
         try:
             token = accounts.login(req.username, req.password)
         except BadCredentials as exc:
             raise HTTPException(status_code=401, detail=str(exc))  # generic — no account enumeration
-        return {"token": token}
+        # Lazy, idempotent refresh so the pending count a human sees at login is
+        # fresh — cheap (a handful of mode=ro reads), never raises.
+        run_collection(collector_sources, collector_store)
+        return {"token": token, "pending_admission_count": collector_store.count_pending()}
 
     @app.post("/api/auth/logout")
     def auth_logout(authorization: str | None = Header(default=None)) -> dict[str, bool]:

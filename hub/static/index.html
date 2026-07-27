@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Veritas Hub</title>
+<title>Veritas — the shell of Entropy AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -25,6 +25,8 @@
   }
   body { display: flex; min-height: 100vh; }
   aside { width: 210px; border-right: 1px solid var(--line); padding: 22px 14px; flex-shrink: 0; }
+  .entropy-kicker { font-family: var(--disp); font-weight: 700; font-size: 10px; letter-spacing: .32em;
+                     color: var(--gold); margin: 0 8px 4px; }
   .logo { font-family: var(--disp); font-weight: 700; letter-spacing: 1px; font-size: 18px; margin: 0 8px 6px; }
   .logo b { color: var(--gold); }
   .tagline { color: var(--dim); font-size: 11px; margin: 0 8px 26px; line-height: 1.4; }
@@ -232,8 +234,9 @@
 </head>
 <body>
 <aside>
+  <div class="entropy-kicker">ENTROPY AI</div>
   <div class="logo">VERI<b>TAS</b></div>
-  <div class="tagline">The model proposes. The gates decide.</div>
+  <div class="tagline">The shell. The model proposes. The gates decide.</div>
   <nav>
     <a data-view="home" class="active">Home</a>
     <a data-view="plan">Plan</a>
@@ -260,10 +263,27 @@
       <canvas id="shellscene"></canvas>
       <div class="shell-vig"></div>
       <div class="shell-label eg-panel">
-        <div class="shell-title">THE SHELL</div>
+        <div class="shell-title">ENTROPY AI <span style="color:var(--dim);font-weight:400">/ the shell</span></div>
         <div class="shell-sub" id="shellsub">every registered production, orbiting the gates that hold it accountable</div>
       </div>
     </div>
+
+    <div class="eg-sec" id="collectorSec">
+      <div class="hd" onclick="document.getElementById('collectorSec').classList.toggle('open')">
+        <h2 style="margin:0">Collector</h2>
+        <span class="sub">feeding Entropy's own source of truth</span>
+        <span class="cnt" id="collectorCnt"></span>
+        <span class="chev">▸</span>
+      </div>
+      <div class="body">
+        <div class="muted" style="margin-bottom:10px">Every registered production's own DataHub feeds
+          into this one. Admission doesn't re-judge the source's claim — it checks that the crossing
+          itself was legitimate. A held record needs a human's call before it counts as Entropy's own
+          source of truth.</div>
+        <div id="collectorList"></div>
+      </div>
+    </div>
+
     <h1>What do you want to make?</h1>
     <div class="muted" style="margin:-12px 0 14px; max-width:680px">Describe it — the router proposes a studio and a goal, you confirm. The model proposes the route; the gates are still the authority.</div>
     <div class="row">
@@ -1060,6 +1080,27 @@ async function loadHome() {
   if (!ORGS.length) ORGS = await api('/api/orgs');
   $('#enginedir').innerHTML = HOME_ENGINES.map(n => ORGS.find(o => o.name === n)).filter(Boolean).map(orgCard).join('');
   $('#labsdir').innerHTML = ORGS.filter(o => !HOME_ENGINES.includes(o.name)).map(orgCard).join('');
+  loadCollector();
+}
+
+async function loadCollector() {
+  const pending = await api('/api/collector/pending');
+  $('#collectorCnt').textContent = `${pending.length} pending`;
+  document.getElementById('collectorSec').classList.toggle('open', pending.length > 0);
+  $('#collectorList').innerHTML = pending.length
+    ? pending.map(r => `
+      <div class="eg-panel" style="margin-bottom:8px; display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+        <span class="eg-badge candidate">${esc(r.source)}</span>
+        <span style="flex:1; min-width:180px">${esc(r.payload_ref.name || r.source_ref)}</span>
+        <button class="ghost" onclick="collectorDecide('${r.id}','approve')">Approve</button>
+        <button class="ghost" onclick="collectorDecide('${r.id}','decline')">Decline</button>
+      </div>`).join('')
+    : `<div class="muted">Nothing waiting on you right now.</div>`;
+}
+
+async function collectorDecide(id, action) {
+  await api(`/api/collector/records/${id}/${action}`, { method: 'POST' });
+  loadCollector();
 }
 
 async function loadLabs() {
