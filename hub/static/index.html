@@ -233,6 +233,15 @@
   /* --- collector detail: payload + verification-evidence key/value rows --- */
   .kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 3px 0; color: var(--dim); }
   .kv b { color: var(--ink); font-weight: 500; text-align: right; }
+  /* --- Prompt Studio: a real result deserves to look like one --- */
+  .proofpoint { display: flex; align-items: center; gap: 20px; margin: 6px 0 22px;
+                padding: 18px 22px; border: 1px solid rgba(232,196,104,.35);
+                border-radius: 12px; background: rgba(232,196,104,.06); }
+  .proofnum { font-family: var(--disp); font-weight: 800; font-size: 44px; line-height: 1;
+              color: var(--gold); white-space: nowrap; }
+  .proofcap { font-size: 13.5px; color: var(--ink); line-height: 1.5; max-width: 560px; }
+  .proofcap strong { color: var(--gold); }
+  .promptpanel { border: 1px solid rgba(232,196,104,.3); }
 </style>
 </head>
 <body>
@@ -243,6 +252,7 @@
   <nav>
     <a data-view="home" class="active">Home</a>
     <a data-view="plan">Plan</a>
+    <a data-view="prompts">Prompt Studio</a>
     <div class="navlabel">Engines</div>
     <a data-view="studio" data-org="software">Software</a>
     <a data-view="studio" data-org="web">Web</a>
@@ -388,10 +398,25 @@
       <div class="row" style="margin-top:12px"><button id="benchgo">Run benchmark</button><span class="muted" id="benchest" style="font-size:12px"></span></div>
     </div>
     <div id="benchresult"></div>
+  </section>
 
-    <h2>Prompt Studio <span class="muted" style="text-transform:none;letter-spacing:0">— tune the org's own proposer prompt</span></h2>
-    <div class="panel">
-      <div class="muted" style="font-size:13px">Edit the Spec proposer's prompt, then prove the change the org's own way: an A/B against the live prompt over a goal suite, scored by <strong>accept-rate through the hard gates</strong> — never by how the prompt reads. (A measured fact: a human-"cosmetic" reword was once a 67-point regression. Intuition lies; the gate doesn't.)</div>
+  <section id="prompts" class="hidden">
+    <h1>Prompt Studio</h1>
+    <div class="muted" style="margin:-12px 0 16px;max-width:700px">The same discipline every engine
+      is held to, aimed at Veritas's own reasoning: a prompt change is never trusted because it
+      reads better — it's proven, or rejected, by measured accept-rate through the unchanged hard
+      gates.</div>
+
+    <div class="proofpoint">
+      <div class="proofnum">67<span style="font-size:22px;font-weight:500">pts</span></div>
+      <div class="proofcap">The measured regression from a single human-"cosmetic" reword of the
+        live prompt — no logic changed, just wording. <strong>Intuition lies. The gate doesn't.</strong></div>
+    </div>
+
+    <div class="panel promptpanel">
+      <div class="muted" style="font-size:13px">Edit the Spec proposer's prompt, then prove the
+        change the org's own way: an A/B against the live prompt over a goal suite, scored by
+        <strong>accept-rate through the hard gates</strong> — never by how the prompt reads.</div>
       <div class="ungoverned" style="margin-top:12px">⚠ <strong>Held-out goals only.</strong> The suite below is fixed. If you wrote the candidate <em>against</em> these goals, a win is overfitting — the prompt analogue of grading your own work. A real improvement is one that wins on goals you didn't tune for.</div>
       <div class="row" style="margin-top:12px"><select id="tunemodel"></select><span class="muted" id="tuneest" style="font-size:12px"></span></div>
       <div class="subh">Live prompt (baseline)</div>
@@ -468,9 +493,10 @@ document.querySelectorAll('nav a[data-view]').forEach(a => a.onclick = () => {
   document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
   a.classList.add('active');
   const view = a.dataset.view;
-  ['home','plan','studio','labs','models','commons','create','chat'].forEach(v => $('#'+v).classList.toggle('hidden', v !== view));
+  ['home','plan','prompts','studio','labs','models','commons','create','chat'].forEach(v => $('#'+v).classList.toggle('hidden', v !== view));
   if (view === 'home') loadHome();
   if (view === 'plan') loadPlan();
+  if (view === 'prompts') loadPromptStudio();
   if (view === 'studio') loadStudio(a.dataset.org);
   if (view === 'labs') loadLabs();
   if (view === 'models') loadModelsView();
@@ -1217,6 +1243,10 @@ async function loadLabs() {
     `<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--dim)"><input type="checkbox" class="benchm" value="${esc(m.name)}" ${m.kind === 'ollama' ? 'checked' : ''}> ${esc(m.label)}${m.kind === 'claude' ? ' <span style="color:var(--amber)">($)</span>' : ''}</label>`).join('');
   $('#benchmodels').onchange = updateBenchEst;
   updateBenchEst();
+}
+
+async function loadPromptStudio() {
+  const models = await api('/api/models');
   initTune(models);
 }
 
@@ -1233,18 +1263,21 @@ async function initTune(models) {
 
 function renderTune(s) {
   const pct = s.total ? Math.round(s.done / s.total * 100) : 0;
-  let html = `<div class="panel"><div class="row" style="justify-content:space-between">
+  let html = `<div class="panel promptpanel"><div class="row" style="justify-content:space-between">
       <span>${s.phase === 'done' ? 'A/B complete' : 'Running…'}${s.current ? ' · <span class="mono">' + esc(s.current) + '</span>' : ''}</span>
       <span class="mono muted">${s.done}/${s.total}</span></div>
       <div class="bartrack" style="margin-top:8px"><span class="barfill" style="width:${pct}%"></span></div>`;
   const v = s.verdict;
   if (v) {
-    const verdictCls = v.improved ? 'pass' : (v.winner === 'tie' ? 'soft' : 'fail');
-    const verdictTxt = v.improved ? '✓ candidate wins — adopt it (if these goals were held out)'
-      : (v.winner === 'tie' ? '= tie — no measurable difference on this suite'
-      : '✗ candidate is worse — keep the live prompt');
+    // A genuine win is a real trust event — gold, the same signal every
+    // verified record uses elsewhere. A regression is threat-red, not just
+    // the generic "fail" tone; a tie stays amber/soft.
+    const verdictColor = v.improved ? 'var(--gold)' : (v.winner === 'tie' ? 'var(--amber)' : 'var(--red)');
+    const verdictTxt = v.improved ? '✓ CANDIDATE WINS — adopt it (if these goals were held out)'
+      : (v.winner === 'tie' ? '= TIE — no measurable difference on this suite'
+      : '✕ CANDIDATE IS WORSE — keep the live prompt');
     html += `<div class="subh">Verdict — by accept-rate through the hard gates</div>
-      <div class="gverdict ${verdictCls}" style="font-size:14px;margin:4px 0 10px">${verdictTxt}</div>
+      <div style="font-family:var(--disp);font-weight:800;font-size:17px;letter-spacing:.3px;margin:6px 0 14px;color:${verdictColor}">${verdictTxt}</div>
       <table style="width:100%;font-family:var(--mono);font-size:12.5px;border-collapse:collapse">
         <tr style="color:var(--dim);text-align:left"><th>variant</th><th>accept-rate</th></tr>
         <tr><td style="padding:3px 0">baseline (live)</td><td class="${v.baseline_rate >= 67 ? 'pass' : (v.baseline_rate > 0 ? 'soft' : 'fail')}">${v.baseline_rate}%</td></tr>
@@ -1273,7 +1306,7 @@ async function runTune() {
   const model = $('#tunemodel').value;
   if (!confirm(`Run the prompt A/B: 6 builds (2 prompts × 3 goals) on ${model}?\n\nLocal & free, but it takes a few minutes.`)) return;
   $('#tunego').disabled = true;
-  $('#tuneresult').innerHTML = `<div class="panel muted"><span class="livedot"></span> starting…</div>`;
+  $('#tuneresult').innerHTML = `<div class="panel promptpanel muted"><span class="livedot"></span> starting…</div>`;
   const start = await api('/api/tune/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({candidate, model, repeats: 1}) });
   if (!start.token) { $('#tuneresult').innerHTML = `<div class="panel"><span class="fail">could not start</span></div>`; $('#tunego').disabled = false; return; }
   pollTune(start.token);
