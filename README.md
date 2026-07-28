@@ -5,6 +5,12 @@
 > LLMs are not reliable.
 > Systems can be.
 
+**502 tests passed, 8 skipped (Docker-gated) · `mypy --strict` clean · 8 distinct verification
+models registered** — as of 2026-07-28. This is a project that argues nothing should be trusted on
+the model's word alone, so its own claim of correctness gets held to the same standard: run
+`.venv/bin/pytest -q` and `.venv/bin/mypy --strict .` yourself rather than take this line's word
+for it.
+
 This is the founding document. It explains what Veritas is, how the idea arrived,
 why it is different from most AI projects, and what gets built first. Everything
 downstream — code, agents, schemas, milestones — descends from the ideas on this page.

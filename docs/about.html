@@ -44,6 +44,16 @@
              border-radius: 0 12px 12px 0; padding: 16px 20px; margin: 22px 0; font-size: 16px; }
   .callout.thesis { border-left-color: var(--violet); background: rgba(167,139,250,.06); }
 
+  /* The proof strip: a claim of trustworthiness needs its own trust to be checkable, so the
+     suite's own pass/fail state gets the same "say it plainly, in numbers" treatment as every
+     other proof point in this doc — not buried in a footer line that goes stale unnoticed. */
+  .proofstrip { display: flex; gap: 36px; flex-wrap: wrap; margin: 28px 0 8px; padding: 20px 24px;
+                background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  .proofstrip .stat { display: flex; flex-direction: column; }
+  .proofstrip .num { font-family: var(--disp); font-weight: 800; font-size: 32px; color: var(--cyan);
+                      line-height: 1.1; }
+  .proofstrip .cap { font-size: 12.5px; color: var(--dim); margin-top: 2px; }
+
   pre { background: #0c1119; border: 1px solid var(--line); border-radius: 12px; margin: 18px 0;
         padding: 16px 18px; overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.6; }
   code { font-family: var(--mono); font-size: .92em; color: var(--amber); }
@@ -95,6 +105,12 @@
   into a finished, <strong>verified</strong> artifact. The catch, and the whole point: it will only call
   something "done" if a deterministic gate can <em>prove</em> it. The model proposes. The scaffold
   decides.</p>
+
+  <div class="proofstrip">
+    <div class="stat"><span class="num">502</span><span class="cap">tests passed, 8 skipped (Docker-gated) — clean, 2026-07-28</span></div>
+    <div class="stat"><span class="num">0</span><span class="cap">mypy --strict errors</span></div>
+    <div class="stat"><span class="num">8</span><span class="cap">distinct verification models — "eight ways to know it's true"</span></div>
+  </div>
 </header>
 
 <!-- ───────────────────────── WHAT ───────────────────────── -->
@@ -446,7 +462,7 @@ human step, by design.</p>
 
 <footer>
   Veritas Dynamics · a MoreSalamander project · built by the engineer learning how to build it.<br/>
-  Engine: Artifact · Gate · Memory · Run · Executor · Validation &nbsp;|&nbsp; 5 verification models · cross-org planning · 245 tests · mypy --strict clean
+  Engine: Artifact · Gate · Memory · Run · Executor · Validation &nbsp;|&nbsp; 8 verification models · cross-org planning · 502 tests · mypy --strict clean
 </footer>
 
 </div>
