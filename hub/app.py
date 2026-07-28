@@ -43,6 +43,7 @@ from hub.wedge import (
     WedgeAuth,
 )
 from collector.collect import run_collection
+from collector.explain import CHECK_EXPLANATIONS
 from collector.sources import load_sources
 from collector.store import CollectorStore
 from hub.keytracker import KeyTrackerStore
@@ -1263,6 +1264,13 @@ def create_app(
     @app.get("/api/collector/pending")
     def collector_pending() -> list[dict[str, Any]]:
         return [json.loads(r.model_dump_json()) for r in collector_store.list_pending()]
+
+    @app.get("/api/collector/check-explanations")
+    def collector_check_explanations() -> dict[str, str]:
+        """Plain-English text per structural check name — the Collector's own
+        version of the "Explain it to me" treatment every Hunter engine already
+        gives its own gate checks. Fetched once and cached client-side."""
+        return CHECK_EXPLANATIONS
 
     def _collector_actor(authorization: str | None) -> str:
         # Resolves to a real user/tenant id when accounts are on; falls back to a
