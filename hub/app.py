@@ -31,7 +31,9 @@ from pydantic import BaseModel
 
 from engine.artifact import Artifact
 from engine.executor import sandbox_active
-from engine.memory import MemoryRecord, MemoryStore, default_memory_store
+from engine.grounding import record_grounding
+from engine.memory import MemoryRecord, MemoryStore, default_memory_store, format_lessons
+from engine.memory_export import sync_vault, vault_status
 from hub.accounts import AccountStore, BadCredentials, UsernameTaken, WeakCredentials
 from hub.quota import QuotaStore
 from hub.wedge import (
@@ -1676,7 +1678,12 @@ def create_app(
     def list_memory() -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for org_name in REGISTRY:
-            for m in org_memory(org_name).load_all():
+            store = org_memory(org_name)
+            for m in store.load_all():
+                # Diagnostic only — never gates persistence (the org's own gates already did
+                # that at build time). Tells a human whether this record's own memory trail
+                # (informed_by) actually holds up, not whether the artifact itself is correct.
+                grounding = record_grounding(m, store)
                 out.append(
                     {
                         "id": m.id,
@@ -1690,10 +1697,37 @@ def create_app(
                         "informed_by": m.provenance.get("informed_by", []),
                         "accepted_because": m.provenance.get("accepted_because"),
                         "rejected_because": m.provenance.get("rejected_because"),
+                        "grounding": grounding,
                     }
                 )
         out.sort(key=lambda m: str(m["created_at"]), reverse=True)
         return out
+
+    @app.get("/api/memory/recall")
+    def memory_recall(org: str, query: str) -> dict[str, Any]:
+        """Surface what `format_lessons()` would actually inject into a new proposer's
+        prompt for this org + goal — today that preamble is invisible, built and consumed
+        entirely inside the run. This makes it inspectable before (or after) a run."""
+        if org not in REGISTRY:
+            raise HTTPException(status_code=404, detail=f"unknown org {org!r}")
+        recalled = org_memory(org).recall(query)
+        return {
+            "org": org,
+            "query": query,
+            "recalled": [
+                {"id": r.id, "category": r.category, "title": r.title} for r in recalled
+            ],
+            "preview": format_lessons(recalled),
+        }
+
+    @app.get("/api/memory/vault/status")
+    def memory_vault_status() -> dict[str, Any]:
+        return vault_status()
+
+    @app.post("/api/memory/vault/sync")
+    def memory_vault_sync() -> dict[str, Any]:
+        stores = {org_name: org_memory(org_name) for org_name in REGISTRY}
+        return sync_vault(stores, commons=commons)
 
     @app.get("/api/commons")
     def list_commons() -> list[dict[str, Any]]:

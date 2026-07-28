@@ -450,6 +450,15 @@
       <div class="row" style="margin-top:8px"><button id="csgo">Fetch &amp; Save</button><span class="muted" id="csmsg" style="font-size:12px"></span></div>
     </div>
     <div id="commonslist" style="display:grid;gap:10px;margin-top:16px"></div>
+    <div class="panel" style="margin-top:16px">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <div>
+          <strong style="font-size:13px">Obsidian vault</strong>
+          <div class="muted" style="font-size:12px;margin-top:4px">A browsable, graphable export of every org's memory + this commons — one-way, this stays canonical. <span id="vaultstatus" class="mono"></span></div>
+        </div>
+        <button class="ghost" id="vaultsyncgo">Sync vault</button>
+      </div>
+    </div>
   </section>
 
   <section id="plan" class="hidden">
@@ -638,6 +647,8 @@ async function loadModelsView() {
 // --- Second Brain: the cross-org commons of curated, human-vouched source material (P28) ---
 async function loadCommons() {
   $('#csgo').onclick = saveSource;
+  $('#vaultsyncgo').onclick = syncVault;
+  loadVaultStatus();
   const items = await api('/api/commons');
   const list = $('#commonslist');
   if (!items.length) {
@@ -687,6 +698,21 @@ async function saveSource() {
   msg.textContent = 'saved ✓';
   ['csurl','cschannel','cswhy','cstranscript'].forEach(id => $('#'+id).value = '');
   loadCommons();
+}
+async function loadVaultStatus() {
+  const s = await api('/api/memory/vault/status');
+  $('#vaultstatus').textContent = s.exists ? `— ${s.file_count} file(s) at ${s.vault_path}` : '— not synced yet';
+}
+async function syncVault() {
+  $('#vaultsyncgo').disabled = true;
+  $('#vaultstatus').textContent = '— syncing…';
+  try {
+    const r = await api('/api/memory/vault/sync', { method: 'POST' });
+    $('#vaultstatus').textContent = `— synced ${r.files_written} file(s) to ${r.vault_path}`;
+  } catch (e) {
+    $('#vaultstatus').textContent = '— sync failed';
+  }
+  $('#vaultsyncgo').disabled = false;
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -1454,15 +1480,18 @@ async function loadStudio(org) {
         <select id="studiomodel">${opts}</select>
         <input type="text" id="studiogoal" placeholder="${esc(meta.goal_hint || 'a goal…')}" />
         <button id="studiorun">Run</button>${createBtn}
+        <button class="ghost" id="studiorecallgo" title="See what this studio's own memory would recall for this goal">Preview recall</button>
       </div>${sources}
       <div class="muted" style="margin-top:10px">The model proposes; the deterministic gates decide — watch the cast and gates light up below.</div>
     </div>
+    <div id="studiorecall"></div>
     <div id="studiotrace" style="margin-top:8px">${roster ? '<div class="panel">' + renderRunTrace([], roster) + '</div>' : ''}</div>
     ${knowledgePanel}
     <h2>This studio's runs</h2><div id="studiorundetail"></div><div id="studioruns"></div>
     <h2>This studio's memory</h2><div id="studiomem" class="grid2"></div>`;
   applyDefaultModel();
   $('#studiorun').onclick = () => runStudio(org, roster);
+  $('#studiorecallgo').onclick = () => previewRecall(org);
   if ($('#briefgo')) { $('#briefgo').onclick = startBrief; $('#briefq').onkeydown = e => { if (e.key === 'Enter') startBrief(); }; }
   loadStudioRuns(org);
   loadStudioMem(org);
@@ -1548,9 +1577,36 @@ async function loadStudioMem(org) {
   const mem = (await api('/api/memory')).filter(m => m.org === org);
   $('#studiomem').innerHTML = mem.length ? mem.slice(0, 12).map(m => {
     const reason = m.rejected_because || m.accepted_because || '';
-    return `<div class="panel"><div class="row" style="justify-content:space-between"><strong>${esc(m.title)}</strong><span class="pill">${esc(m.category)}</span></div>
+    const g = m.grounding;
+    // Diagnostic badge: does this record's own informed_by trail actually hold up against
+    // the records it claims informed it? Absent when the record makes no such claim.
+    const groundingBadge = g
+      ? `<span class="pill" title="grounding of this record's memory trail (informed_by)" style="border-color:${g.overall_ratio >= 0.5 ? 'var(--green)' : 'var(--threat)'};color:${g.overall_ratio >= 0.5 ? 'var(--green)' : 'var(--threat)'}">trail ${Math.round(g.overall_ratio * 100)}%</span>`
+      : '';
+    return `<div class="panel"><div class="row" style="justify-content:space-between"><strong>${esc(m.title)}</strong><span class="row" style="gap:6px"><span class="pill">${esc(m.category)}</span>${groundingBadge}</span></div>
       <div class="muted mono" style="margin-top:6px">${esc(reason)}</div></div>`;
   }).join('') : '<div class="muted">No memory yet.</div>';
+}
+
+// --- Recall preview: show what format_lessons() would actually inject for this org +
+// goal, before (or after) running — makes an otherwise invisible prompt preamble visible. ---
+async function previewRecall(org) {
+  const query = $('#studiogoal').value.trim();
+  if (!query) return;
+  const box = $('#studiorecall');
+  box.innerHTML = '<div class="panel muted"><span class="livedot"></span> checking memory…</div>';
+  let r;
+  try {
+    r = await api('/api/memory/recall?' + new URLSearchParams({ org, query }));
+  } catch (e) { box.innerHTML = '<div class="panel"><span class="fail">couldn\'t reach the hub</span></div>'; return; }
+  if (!r.recalled.length) {
+    box.innerHTML = '<div class="panel muted" style="font-size:13px">Nothing in memory would be recalled for this goal yet.</div>';
+    return;
+  }
+  box.innerHTML = `<div class="panel">
+    <div style="font-size:12px;color:var(--dim);margin-bottom:8px">What the proposer would actually read before acting — ${r.recalled.length} record(s) recalled:</div>
+    <div class="mono" style="font-size:12px;white-space:pre-wrap;color:var(--ink)">${esc(r.preview || '')}</div>
+  </div>`;
 }
 
 function openCreateFor(org) {

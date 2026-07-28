@@ -67,6 +67,50 @@ def test_memory_endpoint_lists_records(tmp_path):
     assert any(m["category"] == "artifact" for m in mem)
 
 
+def test_memory_endpoint_includes_grounding_field(tmp_path):
+    client = _client(tmp_path)
+    client.post("/api/runs", json={"goal": "add two numbers"})
+    mem = client.get("/api/memory").json()
+    assert "grounding" in mem[0]  # None for records with no informed_by, present otherwise
+
+
+def test_memory_recall_previews_format_lessons_output(tmp_path):
+    client = _client(tmp_path)
+    client.post("/api/runs", json={"goal": "add two numbers"})
+    r = client.get("/api/memory/recall", params={"org": "software", "query": "add two numbers"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["org"] == "software"
+    assert isinstance(body["recalled"], list)
+
+
+def test_memory_recall_unknown_org_is_404(tmp_path):
+    client = _client(tmp_path)
+    r = client.get("/api/memory/recall", params={"org": "not-a-real-org", "query": "x"})
+    assert r.status_code == 404
+
+
+def test_memory_vault_status_before_sync(tmp_path):
+    client = _client(tmp_path)
+    r = client.get("/api/memory/vault/status")
+    assert r.status_code == 200
+    assert "vault_path" in r.json()
+
+
+def test_memory_vault_sync_writes_files(tmp_path, monkeypatch, tmp_path_factory):
+    import engine.memory_export as memory_export
+    vault = tmp_path_factory.mktemp("vault")
+    monkeypatch.setattr(memory_export, "VAULT_PATH", vault)
+
+    client = _client(tmp_path)
+    client.post("/api/runs", json={"goal": "add two numbers"})
+    r = client.post("/api/memory/vault/sync")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["files_written"] >= 1
+    assert len(list(vault.glob("*.md"))) == body["files_written"]
+
+
 def test_index_is_served(tmp_path):
     client = _client(tmp_path)
     resp = client.get("/")
