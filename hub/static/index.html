@@ -230,6 +230,9 @@
   .shell-title { font-family: var(--disp); font-weight: 700; font-size: 12px; letter-spacing: .28em;
                  color: var(--gold); margin-bottom: 4px; }
   .shell-sub { font-size: 12px; color: var(--dim); line-height: 1.4; }
+  /* --- collector detail: payload + verification-evidence key/value rows --- */
+  .kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 3px 0; color: var(--dim); }
+  .kv b { color: var(--ink); font-weight: 500; text-align: right; }
 </style>
 </head>
 <body>
@@ -1115,17 +1118,73 @@ async function loadKeytracker() {
     : `<div class="muted">No keys tracked yet — run <code>scripts/keytracker_cli.py add</code> or <code>import</code>.</div>`;
 }
 
+let COLLECTOR_RECORDS = [];
+
+function collectorFieldLabel(key) {
+  return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function collectorDetail(r) {
+  const payloadRows = Object.entries(r.payload_ref || {})
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => `<div class="kv"><span>${esc(collectorFieldLabel(k))}</span><b>${esc(String(v))}</b></div>`)
+    .join('') || '<div class="muted">No payload fields.</div>';
+
+  const evidenceRows = (r.verification || []).length
+    ? r.verification.map(ev => `
+        <div class="kv" style="align-items:flex-start">
+          <span>${esc(ev.check || '(unnamed check)')}</span>
+          <b style="color:${ev.passed ? 'var(--safe)' : 'var(--threat)'}">${ev.passed ? 'passed' : 'failed'}</b>
+        </div>
+        ${ev.data && Object.keys(ev.data).length ? `<div class="muted" style="margin:2px 0 8px 2px; font-size:11.5px">${esc(JSON.stringify(ev.data))}</div>` : ''}
+      `).join('')
+    : '<div class="muted">No verification evidence copied from the source.</div>';
+
+  return `
+    <div style="width:100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--line)">
+      <div class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px">
+        ${esc(r.kind)} · from ${esc(r.source)} · id ${esc(r.source_ref)} · collected ${esc(new Date(r.collected_at).toLocaleString())}
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 24px">
+        <div>
+          <div class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:.08em; margin:4px 0">Payload</div>
+          ${payloadRows}
+        </div>
+        <div>
+          <div class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:.08em; margin:4px 0">Verification evidence (copied from the source)</div>
+          ${evidenceRows}
+        </div>
+      </div>
+    </div>`;
+}
+
+function collectorToggle(id) {
+  const body = document.getElementById(`collector-detail-${id}`);
+  const chev = document.getElementById(`collector-chev-${id}`);
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (chev) chev.textContent = open ? '▸' : '▾';
+}
+
 async function loadCollector() {
   const pending = await api('/api/collector/pending');
+  COLLECTOR_RECORDS = pending;
   $('#collectorCnt').textContent = `${pending.length} pending`;
   document.getElementById('collectorSec').classList.toggle('open', pending.length > 0);
   $('#collectorList').innerHTML = pending.length
     ? pending.map(r => `
-      <div class="eg-panel" style="margin-bottom:8px; display:flex; align-items:center; gap:12px; flex-wrap:wrap">
-        <span class="eg-badge candidate">${esc(r.source)}</span>
-        <span style="flex:1; min-width:180px">${esc(r.payload_ref.name || r.source_ref)}</span>
-        <button class="ghost" onclick="collectorDecide('${r.id}','approve')">Approve</button>
-        <button class="ghost" onclick="collectorDecide('${r.id}','decline')">Decline</button>
+      <div class="eg-panel" style="margin-bottom:8px">
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+          <span class="eg-badge candidate">${esc(r.source)}</span>
+          <span onclick="collectorToggle('${r.id}')" style="flex:1; min-width:180px; cursor:pointer">
+            ${esc(r.payload_ref.name || r.source_ref)}
+            <span id="collector-chev-${r.id}" class="muted" style="margin-left:6px">▸</span>
+          </span>
+          <button class="ghost" onclick="collectorDecide('${r.id}','approve')">Approve</button>
+          <button class="ghost" onclick="collectorDecide('${r.id}','decline')">Decline</button>
+        </div>
+        <div id="collector-detail-${r.id}" style="display:none">${collectorDetail(r)}</div>
       </div>`).join('')
     : `<div class="muted">Nothing waiting on you right now.</div>`;
 }
