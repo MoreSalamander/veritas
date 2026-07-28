@@ -23,6 +23,8 @@ from engine.run import ActivityEntry, Outcome
 from orgs.empirical_lab.pipeline import build_experiment
 from orgs.empirical_lab.roster import roster as empirical_roster
 from orgs.crypto_hunter.roster import roster as crypto_hunter_roster
+from orgs.collectible_hunter.roster import roster as collectible_hunter_roster
+from orgs.free_money_hunter.roster import roster as free_money_hunter_roster
 from orgs.presets import (
     build_article,
     build_game,
@@ -213,9 +215,37 @@ def _run_crypto_hunter_bridge(
     goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
 ) -> OrgRun:
     # Deferred import: the bridge imports OrgRun from this module.
-    from orgs.crypto_hunter.bridge import run_crypto_hunter
+    from pathlib import Path
 
-    return run_crypto_hunter(goal, provider, memory, sources)
+    from orgs.hunter_engine_bridge import run_hunter_engine
+
+    return run_hunter_engine(
+        "crypto_hunter", Path.home() / "MoreSalamander" / "crypto-hunter", provider, memory, goal, sources
+    )
+
+
+def _run_collectible_hunter_bridge(
+    goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
+) -> OrgRun:
+    from pathlib import Path
+
+    from orgs.hunter_engine_bridge import run_hunter_engine
+
+    return run_hunter_engine(
+        "collectible_hunter", Path.home() / "MoreSalamander" / "collectible-hunter", provider, memory, goal, sources
+    )
+
+
+def _run_free_money_hunter_bridge(
+    goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
+) -> OrgRun:
+    from pathlib import Path
+
+    from orgs.hunter_engine_bridge import run_hunter_engine
+
+    return run_hunter_engine(
+        "free_money_hunter", Path.home() / "MoreSalamander" / "free-money-hunter", provider, memory, goal, sources
+    )
 
 
 REGISTRY: dict[str, OrgType] = {
@@ -363,6 +393,40 @@ REGISTRY: dict[str, OrgType] = {
         build=_run_crypto_hunter_bridge,
         roster=crypto_hunter_roster,
         color="#f0a52c",
+    ),
+    "collectible_hunter": OrgType(
+        name="collectible_hunter",
+        title="Collectible Hunter AI",
+        description="An external org: agents hunt collectible resale opportunities (cards, "
+        "sneakers, and other graded/collectible goods) against sold comps and grading "
+        "population data; the same deterministic fail-closed gate decides what may be trusted. "
+        "Lives in its own repo (~/MoreSalamander/collectible-hunter).",
+        input_noun="a hunt goal (or nothing — it runs its daily cycle)",
+        produces="gate-verified opportunities, a ranked digest, and a daily mission",
+        verified_by="the scaffold gate: scam list, official allowlist, RDAP source validity, "
+        "multi-source confirmation, credible-scam-report check — all HARD, fail-closed; debate "
+        "stances are transcript, never verdict",
+        goal_hint="run today's hunt",
+        build=_run_collectible_hunter_bridge,
+        roster=collectible_hunter_roster,
+        color="#d4af37",
+    ),
+    "free_money_hunter": OrgType(
+        name="free_money_hunter",
+        title="Free Money Hunter AI",
+        description="An external org: agents hunt unclaimed-property and settlement-claim "
+        "opportunities against official state/federal registries and court-administered claim "
+        "sites; the same deterministic fail-closed gate decides what may be trusted. Lives in "
+        "its own repo (~/MoreSalamander/free-money-hunter).",
+        input_noun="a hunt goal (or nothing — it runs its daily cycle)",
+        produces="gate-verified opportunities, a ranked digest, and a daily mission",
+        verified_by="the scaffold gate: scam list, official allowlist, RDAP source validity, "
+        "multi-source confirmation, credible-scam-report check — all HARD, fail-closed; debate "
+        "stances are transcript, never verdict",
+        goal_hint="run today's hunt",
+        build=_run_free_money_hunter_bridge,
+        roster=free_money_hunter_roster,
+        color="#4ade80",
     ),
 }
 

@@ -1,14 +1,20 @@
-"""Crypto Hunter AI as a Veritas org — the external-org bridge.
+"""The Hunter-engine bridge — shared by every Hunter engine registered as an
+external Veritas org (crypto_hunter, collectible_hunter, free_money_hunter).
 
-Crypto Hunter is the first org that lives OUTSIDE this repo: its own codebase,
-venv, models, and data (~/MoreSalamander/crypto-hunter). The bridge runs its
-day-cycle as a subprocess and translates the results into Veritas's normal
-currency — Artifacts carrying HARD GateResults, persisted to memory, returned
-as an OrgRun. Nothing here re-judges anything: the org's own deterministic
-scaffold gate produced the verdicts; the bridge only reports them.
+Each of these lives OUTSIDE this repo: its own codebase, venv, models, and
+data. The bridge runs its day-cycle as a subprocess and translates the
+results into Veritas's normal currency — Artifacts carrying HARD GateResults,
+persisted to memory, returned as an OrgRun. Nothing here re-judges anything:
+the org's own deterministic scaffold gate (shared across all three via the
+`hunter_engine` package) produced the verdicts; the bridge only reports them.
 
-Deliberately does NOT import crypto-hunter code (separate venv) — it reads the
-org's DataHub (SQLite) directly, read-only.
+Deliberately does NOT import a Hunter engine's own code (each has its own
+venv) — it reads the org's DataHub (SQLite) directly, read-only.
+
+This was previously copy-pasted per org (crypto_hunter had its own
+bridge.py); generalized here the same way this repo's own presets
+(newsroom/education/startup/game) already share one build function behind
+per-preset lambdas in orgs/registry.py.
 """
 
 from __future__ import annotations
@@ -24,9 +30,6 @@ from engine.memory import MemoryRecord, MemoryStore
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome, Phase
 from orgs.registry import OrgRun
-
-CRYPTO_HUNTER_DIR = Path.home() / "MoreSalamander" / "crypto-hunter"
-DATAHUB = CRYPTO_HUNTER_DIR / "data" / "datahub.sqlite3"
 
 _STAGE_PHASE = {
     "sweeping": Phase.EXPLAIN,
@@ -46,27 +49,31 @@ def _phase_for(line: str) -> Phase:
     return Phase.PERSIST
 
 
-def run_crypto_hunter(
-    goal: str,
+def run_hunter_engine(
+    org_name: str,
+    repo_dir: Path,
     provider: ModelProvider,
     memory: MemoryStore,
+    goal: str,
     sources: list[str] | None = None,
 ) -> OrgRun:
-    """Run the org's full day-cycle and report it as an OrgRun.
+    """Run one Hunter engine's full day-cycle and report it as an OrgRun.
 
     `provider` is unused by design: the org brings its own models (its .env
-    selects Claude for product runs, an OpenAI dev key for build runs)."""
-    run_id = f"chrun_{uuid4().hex[:12]}"
+    selects the models for product runs)."""
+    actor = org_name.replace("_", "-")
+    datahub = repo_dir / "data" / "datahub.sqlite3"
+    run_id = f"{org_name[:2]}run_{uuid4().hex[:12]}"
     activity: list[ActivityEntry] = [
         ActivityEntry(
             phase=Phase.EXPLAIN,
-            actor="crypto-hunter",
+            actor=actor,
             message=f"day-cycle started (goal: {goal or 'daily hunt'})",
         )
     ]
     proc = subprocess.run(
-        [str(CRYPTO_HUNTER_DIR / ".venv" / "bin" / "python"), "cli.py", "day", "--no-voice"],
-        cwd=CRYPTO_HUNTER_DIR,
+        [str(repo_dir / ".venv" / "bin" / "python"), "cli.py", "day", "--no-voice"],
+        cwd=repo_dir,
         capture_output=True,
         text=True,
         timeout=3600,
@@ -74,30 +81,26 @@ def run_crypto_hunter(
     for line in proc.stdout.splitlines():
         line = line.strip()
         if line.startswith("=="):
-            activity.append(
-                ActivityEntry(
-                    phase=_phase_for(line), actor="crypto-hunter", message=line.strip("= ")
-                )
-            )
+            activity.append(ActivityEntry(phase=_phase_for(line), actor=actor, message=line.strip("= ")))
     if proc.returncode != 0:
         activity.append(
             ActivityEntry(
                 phase=Phase.COMPLETE,
-                actor="crypto-hunter",
+                actor=actor,
                 message=f"day-cycle FAILED (exit {proc.returncode}): {proc.stderr[-400:]}",
             )
         )
         return OrgRun(
-            org="crypto_hunter", goal=goal, accepted=False, outcomes=[],
+            org=org_name, goal=goal, accepted=False, outcomes=[],
             informed_by=[], run_id=run_id, activity=activity,
         )
 
-    outcomes = _outcomes_from_datahub(memory)
+    outcomes = _outcomes_from_datahub(datahub, actor, memory)
     accepted = any(o.accepted for o in outcomes)
     activity.append(
         ActivityEntry(
             phase=Phase.COMPLETE,
-            actor="crypto-hunter",
+            actor=actor,
             message=(
                 f"day-cycle complete: {sum(o.accepted for o in outcomes)} verified, "
                 f"{sum(not o.accepted for o in outcomes)} rejected by the scaffold gate"
@@ -105,18 +108,18 @@ def run_crypto_hunter(
         )
     )
     return OrgRun(
-        org="crypto_hunter", goal=goal, accepted=accepted, outcomes=outcomes,
+        org=org_name, goal=goal, accepted=accepted, outcomes=outcomes,
         informed_by=[], run_id=run_id, activity=activity,
     )
 
 
-def _outcomes_from_datahub(memory: MemoryStore) -> list[Outcome]:
+def _outcomes_from_datahub(datahub: Path, actor: str, memory: MemoryStore) -> list[Outcome]:
     """Translate today's gated records into Veritas Outcomes. Each record's
-    gate evidence becomes HARD GateResults — verdicts made by crypto-hunter's
+    gate evidence becomes HARD GateResults — verdicts made by the engine's
     own deterministic gate, faithfully reported."""
-    if not DATAHUB.exists():
+    if not datahub.exists():
         return []
-    conn = sqlite3.connect(f"file:{DATAHUB}?mode=ro", uri=True)
+    conn = sqlite3.connect(f"file:{datahub}?mode=ro", uri=True)
     try:
         rows = conn.execute(
             "SELECT spec_json FROM opportunities WHERE trust_status IN ('verified','rejected')"
@@ -130,7 +133,7 @@ def _outcomes_from_datahub(memory: MemoryStore) -> list[Outcome]:
         spec = json.loads(spec_json)
         artifact = Artifact.propose(
             type="opportunity",
-            owner=spec.get("discovered_by", "crypto-hunter"),
+            owner=spec.get("discovered_by", actor),
             payload=spec_json,
             rationale=spec.get("summary") or spec.get("name", "opportunity"),
         )
