@@ -19,6 +19,8 @@
  *     center: { color: 0xe8c468, label: 'Veritas' },
  *     nodes: [{ name: 'crypto_hunter', color: 0xf0a52c, pulse: true }, ...],
  *     onPing: 3400,               // ms between center pulses, optional
+ *     cameraY: 0, cameraZ: 17,    // base camera position, optional — e.g. a
+ *                                 // negative cameraY views the ring from below
  *   });
  */
 (function (global) {
@@ -33,7 +35,9 @@
     const sc = new THREE.Scene();
     sc.fog = new THREE.FogExp2(0x0a0e0c, 0.032);
     const cam = new THREE.PerspectiveCamera(50, W() / H(), 0.1, 100);
-    cam.position.set(0, 0, 17);
+    const baseCamY = opts.cameraY ?? 0;
+    const baseCamZ = opts.cameraZ ?? 17;
+    cam.position.set(0, baseCamY, baseCamZ);
     const grp = new THREE.Group();
     sc.add(grp);
 
@@ -161,7 +165,7 @@
       grp.rotation.y = dx + tm * 0.00006;
       grp.rotation.x = dy;
       cam.position.x = Math.sin(tm * 0.00016) * 0.45;
-      cam.position.y = Math.cos(tm * 0.00012) * 0.28;
+      cam.position.y = baseCamY + Math.cos(tm * 0.00012) * 0.28;
       cam.lookAt(0, 0, 0);
       center.scale.setScalar(1 + Math.sin(tm * 0.003) * 0.11);
       center.rotation.y = tm * 0.0004;

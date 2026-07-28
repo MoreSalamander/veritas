@@ -266,7 +266,7 @@
       <canvas id="shellscene"></canvas>
       <div class="shell-vig"></div>
       <div class="shell-label eg-panel">
-        <div class="shell-title">ENTROPY AI <span style="color:var(--dim);font-weight:400">/ the shell</span></div>
+        <div class="shell-title">ENTROPY AI <span style="color:var(--dim);font-weight:400">powered by Veritas Dynamics</span></div>
         <div class="shell-sub" id="shellsub">every registered production, orbiting the gates that hold it accountable</div>
       </div>
     </div>
@@ -1659,6 +1659,7 @@ loadHome();
     EntropyScene.init(document.getElementById('shellscene'), {
       center: { color: 0xe8c468 },
       nodes: orgs.map(o => ({ name: o.title, color: parseInt(o.color.replace('#', ''), 16) })),
+      cameraY: -8, cameraZ: 15,  // default view from below the ring, looking up at the shell
     });
     $('#shellsub').textContent = `${orgs.length} registered productions, orbiting the gates that hold them accountable`;
   } catch (e) {
