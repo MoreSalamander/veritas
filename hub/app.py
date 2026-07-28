@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 import threading
@@ -44,6 +45,7 @@ from hub.wedge import (
 from collector.collect import run_collection
 from collector.sources import load_sources
 from collector.store import CollectorStore
+from hub.keytracker import KeyTrackerStore
 from hub.background_session import BackgroundSession
 from hub.expiring_store import ExpiringRegistry
 from hub.ingest import TranscriptFetcher, TranscriptUnavailable, YtDlpFetcher
@@ -1242,6 +1244,10 @@ def create_app(
     collector_store = CollectorStore(base / "collector.sqlite3")
     collector_sources = load_sources(_ROOT / "config" / "collector_sources.json")
 
+    # API key inventory — metadata only, see hub/keytracker.py's own docstring for why no
+    # secret value can ever pass through this store or the routes built on it.
+    keytracker_store = KeyTrackerStore(base / "keytracker.sqlite3")
+
     @app.get("/api/collector/sources")
     def collector_sources_list() -> list[dict[str, Any]]:
         return [
@@ -1286,6 +1292,42 @@ def create_app(
         if rec is None:
             raise HTTPException(status_code=404, detail="unknown or already-decided record")
         return dict(json.loads(rec.model_dump_json()))
+
+    @app.get("/api/keytracker/keys")
+    def keytracker_keys() -> list[dict[str, Any]]:
+        """Inventory + best-effort per-key spend. Never returns a secret value —
+        KeyRecord has no field capable of holding one."""
+        now = datetime.now(timezone.utc)
+        out: list[dict[str, Any]] = []
+        for r in keytracker_store.list_all():
+            rotated = r.last_rotated_at or r.created_at
+            spend = 0.0
+            attributed = False
+            for repo in r.used_by_repos:
+                db_path = Path.home() / "MoreSalamander" / repo / "data" / "datahub.sqlite3"
+                if not db_path.exists():
+                    continue
+                try:
+                    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                    row = conn.execute(
+                        "SELECT COALESCE(SUM(cost_usd_est), 0.0) FROM usage_log WHERE key_id = ?",
+                        (r.id,),
+                    ).fetchone()
+                    conn.close()
+                    if row is not None:
+                        spend += float(row[0])
+                        attributed = True
+                except sqlite3.OperationalError:
+                    # The repo's usage_log has no key_id column yet (pre-migration) —
+                    # degrade to "spend not yet attributable," not a crash.
+                    continue
+            out.append({
+                "id": r.id, "label": r.label, "provider": r.provider,
+                "env_var_name": r.env_var_name, "used_by_repos": r.used_by_repos,
+                "status": r.status, "days_since_rotation": (now - rotated).days,
+                "spend_usd": round(spend, 4) if attributed else None,
+            })
+        return out
 
     @app.post("/api/auth/signup")
     def auth_signup(req: AuthRequest) -> dict[str, str]:

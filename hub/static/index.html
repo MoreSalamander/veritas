@@ -284,6 +284,22 @@
       </div>
     </div>
 
+    <div class="eg-sec" id="keytrackerSec">
+      <div class="hd" onclick="document.getElementById('keytrackerSec').classList.toggle('open')">
+        <h2 style="margin:0">Keytracker</h2>
+        <span class="sub">API key inventory — values never leave the Keychain</span>
+        <span class="cnt" id="keytrackerCnt"></span>
+        <span class="chev">▸</span>
+      </div>
+      <div class="body">
+        <div class="muted" style="margin-bottom:10px">Every key here is a metadata row only —
+          id, provider, which repos use it, days since last rotation, and spend once attributed.
+          The actual value lives in the macOS Keychain and is only ever entered or read via
+          <code>scripts/keytracker_cli.py</code> — never through this page.</div>
+        <div id="keytrackerList"></div>
+      </div>
+    </div>
+
     <h1>What do you want to make?</h1>
     <div class="muted" style="margin:-12px 0 14px; max-width:680px">Describe it — the router proposes a studio and a goal, you confirm. The model proposes the route; the gates are still the authority.</div>
     <div class="row">
@@ -1081,6 +1097,22 @@ async function loadHome() {
   $('#enginedir').innerHTML = HOME_ENGINES.map(n => ORGS.find(o => o.name === n)).filter(Boolean).map(orgCard).join('');
   $('#labsdir').innerHTML = ORGS.filter(o => !HOME_ENGINES.includes(o.name)).map(orgCard).join('');
   loadCollector();
+  loadKeytracker();
+}
+
+async function loadKeytracker() {
+  const keys = await api('/api/keytracker/keys');
+  $('#keytrackerCnt').textContent = `${keys.length} tracked`;
+  $('#keytrackerList').innerHTML = keys.length
+    ? keys.map(k => `
+      <div class="eg-panel" style="margin-bottom:8px; display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+        <span class="eg-badge ${k.status === 'active' ? 'verified' : 'rejected'}">${esc(k.provider)}</span>
+        <span style="flex:1; min-width:180px">${esc(k.label)} <span class="muted">(${esc(k.env_var_name)})</span></span>
+        <span class="muted">${esc(k.used_by_repos.join(', ') || 'no repos')}</span>
+        <span class="muted">${k.days_since_rotation}d since rotation</span>
+        <span class="muted">${k.spend_usd == null ? 'spend unattributed' : '$' + k.spend_usd.toFixed(2)}</span>
+      </div>`).join('')
+    : `<div class="muted">No keys tracked yet — run <code>scripts/keytracker_cli.py add</code> or <code>import</code>.</div>`;
 }
 
 async function loadCollector() {
