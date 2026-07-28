@@ -234,6 +234,9 @@
   .kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 3px 0; color: var(--dim); }
   .kv b { color: var(--ink); font-weight: 500; text-align: right; }
   /* --- Prompt Studio: a real result deserves to look like one --- */
+  .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--safe);
+           animation: eg-orgcard-beat 1.6s infinite; display: inline-block; }
+  @keyframes eg-orgcard-beat { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
   .proofpoint { display: flex; align-items: center; gap: 20px; margin: 6px 0 22px;
                 padding: 18px 22px; border: 1px solid rgba(232,196,104,.35);
                 border-radius: 12px; background: rgba(232,196,104,.06); }
@@ -571,6 +574,26 @@ function runCard(r) {
 }
 
 let ORGS = [];
+let LAUNCHPAD_STATUS = null;  // name -> {url, listening} | null once we've tried and it's unreachable
+const LAUNCHPAD_ORIGIN = 'http://localhost:8765';
+
+async function loadLaunchpadStatus() {
+  if (LAUNCHPAD_STATUS !== null) return LAUNCHPAD_STATUS;
+  try {
+    const res = await fetch(LAUNCHPAD_ORIGIN + '/api/projects');
+    const data = await res.json();
+    const byName = {};
+    for (const p of data.projects || []) {
+      byName[p.name] = { url: p.url || (p.port ? `http://localhost:${p.port}` : null), listening: !!p.listening };
+    }
+    LAUNCHPAD_STATUS = byName;
+  } catch (e) {
+    // Launchpad isn't running, or CORS/network failed — a normal, honest state.
+    // Cards fall back to their own known-good default URL, not a dead lookup.
+    LAUNCHPAD_STATUS = {};
+  }
+  return LAUNCHPAD_STATUS;
+}
 async function loadOrgs() {
   ORGS = await api('/api/orgs');
 }
@@ -1115,15 +1138,42 @@ const VERIFY_TAG = {
 let LAST_ROUTE = null;
 
 function orgCard(o) {
-  return `<div class="panel orgcard" onclick="goToOrg('${esc(o.name)}')" style="cursor:pointer;margin:0">
+  // A real standalone app (currently the three Hunter engines) opens itself, in its own
+  // tab — not Veritas's internal Studio trace view. Clicking "Crypto Hunter AI" should take
+  // you to Crypto Hunter AI, the actual app, the same way Studio Launchpad would. Prefer
+  // Launchpad's own live status/URL (loaded into LAUNCHPAD_STATUS before this renders) over
+  // the static fallback — one source of truth for "is it running, what's its real port,"
+  // not a second copy Veritas keeps that can drift from Launchpad's own config.
+  const live = o.launchpad_name && LAUNCHPAD_STATUS ? LAUNCHPAD_STATUS[o.launchpad_name] : null;
+  const openUrl = (live && live.url) || o.external_url;
+  const running = live ? live.listening : null;  // null = unknown (Launchpad unreachable)
+
+  let tagline;
+  if (openUrl) {
+    const dot = running === false
+      ? `<span class="pulse" style="background:var(--threat);animation:none"></span> not running — opens Launchpad's own start`
+      : running === true
+      ? `<span class="pulse"></span> live — opens the app ↗`
+      : `opens the live app ↗`;
+    tagline = `<span class="proftag" style="color:var(--gold);border-color:rgba(232,196,104,.35);display:inline-flex;align-items:center;gap:6px">${dot}</span>`;
+  } else {
+    tagline = `<span class="proftag" style="color:var(--green);border-color:rgba(74,222,128,.3)">verified by ${esc(VERIFY_TAG[o.name] || 'gates')}</span>`;
+  }
+  const inner = `
       <div style="font-weight:600;font-size:14px;margin-bottom:3px">${esc(o.title.replace(' (preset)', ''))}</div>
       <div class="muted" style="font-size:12px;line-height:1.5">${esc(o.produces)}</div>
-      <div style="margin-top:8px"><span class="proftag" style="color:var(--green);border-color:rgba(74,222,128,.3)">verified by ${esc(VERIFY_TAG[o.name] || 'gates')}</span></div>
-    </div>`;
+      <div style="margin-top:8px">${tagline}</div>`;
+  // Known-not-running: send them to Launchpad itself (where "start" actually lives) instead
+  // of a dead link to the app's own port.
+  const target = running === false ? LAUNCHPAD_ORIGIN : openUrl;
+  return openUrl
+    ? `<a class="panel orgcard" href="${esc(target)}" target="_blank" rel="noopener" style="margin:0;display:block;text-decoration:none;color:inherit">${inner}</a>`
+    : `<div class="panel orgcard" onclick="goToOrg('${esc(o.name)}')" style="cursor:pointer;margin:0">${inner}</div>`;
 }
 
 async function loadHome() {
   if (!ORGS.length) ORGS = await api('/api/orgs');
+  await loadLaunchpadStatus();
   $('#enginedir').innerHTML = HOME_ENGINES.map(n => ORGS.find(o => o.name === n)).filter(Boolean).map(orgCard).join('');
   $('#labsdir').innerHTML = ORGS.filter(o => !HOME_ENGINES.includes(o.name)).map(orgCard).join('');
   loadCollector();
@@ -1237,6 +1287,7 @@ async function collectorDecide(id, action) {
 
 async function loadLabs() {
   if (!ORGS.length) ORGS = await api('/api/orgs');
+  await loadLaunchpadStatus();
   $('#labsproducts').innerHTML = ORGS.filter(o => !HOME_ENGINES.includes(o.name)).map(orgCard).join('');
   const models = await api('/api/models');
   $('#benchmodels').innerHTML = models.map(m =>

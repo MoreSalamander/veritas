@@ -1052,6 +1052,8 @@ def create_app(
                 "goal_hint": org.goal_hint,
                 "needs_sources": org.needs_sources,
                 "color": org.color,
+                "external_url": org.external_url,
+                "launchpad_name": org.launchpad_name,
             }
             for org in REGISTRY.values()
         ]

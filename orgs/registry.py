@@ -80,6 +80,16 @@ class OrgType:
     # its own real brand color; a preset uses --proposal slate since it isn't a separate
     # verification model, just a framing on top of an existing org's gates.
     color: str = "#e8c468"
+    # Set only for orgs that ARE a real standalone app (currently the three Hunter
+    # engines) — clicking this org's card opens the actual app in a new tab instead of
+    # Veritas's internal Studio trace view. This is the fallback URL, used if Launchpad
+    # itself isn't reachable; when it is, the frontend prefers Launchpad's live
+    # port/running-state for this project instead (see launchpad_name below).
+    external_url: str | None = None
+    # This org's project name in launchpad/projects.json — lets the frontend ask
+    # Launchpad's own /api/projects for the real, live URL and whether it's actually
+    # running, rather than Veritas keeping a second, driftable copy of that knowledge.
+    launchpad_name: str | None = None
 
 
 def _run_software(
@@ -393,6 +403,8 @@ REGISTRY: dict[str, OrgType] = {
         build=_run_crypto_hunter_bridge,
         roster=crypto_hunter_roster,
         color="#f0a52c",
+        external_url="http://localhost:8010",
+        launchpad_name="crypto-hunter",
     ),
     "collectible_hunter": OrgType(
         name="collectible_hunter",
@@ -410,6 +422,8 @@ REGISTRY: dict[str, OrgType] = {
         build=_run_collectible_hunter_bridge,
         roster=collectible_hunter_roster,
         color="#d4af37",
+        external_url="http://localhost:8013",
+        launchpad_name="collectible-hunter",
     ),
     "free_money_hunter": OrgType(
         name="free_money_hunter",
@@ -427,6 +441,8 @@ REGISTRY: dict[str, OrgType] = {
         build=_run_free_money_hunter_bridge,
         roster=free_money_hunter_roster,
         color="#4ade80",
+        external_url="http://localhost:8014",
+        launchpad_name="free-money-hunter",
     ),
 }
 
