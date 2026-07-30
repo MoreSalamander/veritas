@@ -20,12 +20,14 @@ per-preset lambdas in orgs/registry.py.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import subprocess
 from pathlib import Path
 from uuid import uuid4
 
 from engine.artifact import Artifact, Determinism, GateResult
+from engine.executor import ContainerExecutor
 from engine.memory import MemoryRecord, MemoryStore
 from engine.model import ModelProvider
 from engine.run import ActivityEntry, Outcome, Phase
@@ -41,12 +43,64 @@ _STAGE_PHASE = {
     "debate": Phase.VERIFY,
 }
 
+# Only these get forwarded into a container run, and only if actually set —
+# never invent a blank value for a var the caller didn't provide.
+_ENV_FORWARD = (
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "LLM_PROVIDER",
+    "ETHERSCAN_API_KEY",
+    "ENTROPY_KEY_ID_ANTHROPIC",
+    "ENTROPY_KEY_ID_OPENAI",
+)
+
 
 def _phase_for(line: str) -> Phase:
     for key, phase in _STAGE_PHASE.items():
         if key in line:
             return phase
     return Phase.PERSIST
+
+
+def _is_paused(repo_dir: Path) -> bool:
+    """Mirrors crypto-hunter's own engine/pause.py is_paused() exactly (same
+    {"paused": bool} schema, same fail-open-on-corrupt/missing semantics) —
+    read directly rather than imported, since the bridge deliberately never
+    imports a Hunter engine's own code (each has its own venv)."""
+    path = repo_dir / "data" / "pause.json"
+    if not path.exists():
+        return False
+    try:
+        return bool(json.loads(path.read_text()).get("paused", False))
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
+def _use_container() -> bool:
+    mode = os.environ.get("VERITAS_HUNTER_SANDBOX", "").lower()
+    return mode in ("container", "docker") and ContainerExecutor.available()
+
+
+def _run_container(org_name: str, repo_dir: Path) -> subprocess.CompletedProcess[str]:
+    """Run one day-cycle as a disposable container instead of a local subprocess.
+    Distinct flag profile from engine/executor.py's ContainerExecutor: that class
+    sandboxes untrusted, model-generated code (--network none, read-only root).
+    This is trusted, first-party engine code that needs real egress (the model
+    API, RDAP, Etherscan, blockscout) — see deploy/docker/README.md in the
+    engine's own repo for the exact hosts. --rm makes it disposable; the data/
+    and config/ bind mounts are what let hunter_engine_bridge's own post-run
+    read of datahub.sqlite3 see what the container wrote."""
+    image = f"{org_name.replace('_', '-')}-engine:local"
+    argv = [
+        "docker", "run", "--rm",
+        "-v", f"{repo_dir / 'data'}:/app/data",
+        "-v", f"{repo_dir / 'config'}:/app/config",
+    ]
+    for var in _ENV_FORWARD:
+        if var in os.environ:
+            argv += ["-e", var]
+    argv.append(image)
+    return subprocess.run(argv, capture_output=True, text=True, timeout=3600)
 
 
 def run_hunter_engine(
@@ -71,13 +125,25 @@ def run_hunter_engine(
             message=f"day-cycle started (goal: {goal or 'daily hunt'})",
         )
     ]
-    proc = subprocess.run(
-        [str(repo_dir / ".venv" / "bin" / "python"), "cli.py", "day", "--no-voice"],
-        cwd=repo_dir,
-        capture_output=True,
-        text=True,
-        timeout=3600,
-    )
+    if _is_paused(repo_dir):
+        activity.append(
+            ActivityEntry(phase=Phase.COMPLETE, actor=actor, message="day-cycle skipped — paused")
+        )
+        return OrgRun(
+            org=org_name, goal=goal, accepted=False, outcomes=[],
+            informed_by=[], run_id=run_id, activity=activity,
+        )
+
+    if _use_container():
+        proc = _run_container(org_name, repo_dir)
+    else:
+        proc = subprocess.run(
+            [str(repo_dir / ".venv" / "bin" / "python"), "cli.py", "day", "--no-voice"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            timeout=3600,
+        )
     for line in proc.stdout.splitlines():
         line = line.strip()
         if line.startswith("=="):

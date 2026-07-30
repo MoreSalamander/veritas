@@ -102,7 +102,11 @@ def test_all_three_registry_bridges_point_at_distinct_repos(tmp_path: Path) -> N
     memory = MemoryStore(tmp_path / "memory")
     fake_proc = MagicMock(returncode=0, stdout="", stderr="")
     cwds = []
-    with patch("orgs.hunter_engine_bridge.subprocess.run", return_value=fake_proc) as mock_run:
+    # Bypass the pause pre-flight (orgs/hunter_engine_bridge.py's _is_paused) —
+    # this test only cares about which repo dir each bridge targets, and one
+    # of the real repos may legitimately have data/pause.json set on disk.
+    with patch("orgs.hunter_engine_bridge._is_paused", return_value=False), \
+         patch("orgs.hunter_engine_bridge.subprocess.run", return_value=fake_proc) as mock_run:
         for bridge_fn in (_run_crypto_hunter_bridge, _run_collectible_hunter_bridge, _run_free_money_hunter_bridge):
             bridge_fn("goal", MagicMock(), memory)
             cwds.append(mock_run.call_args.kwargs["cwd"])
