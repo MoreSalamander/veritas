@@ -5,8 +5,8 @@
 > LLMs are not reliable.
 > Systems can be.
 
-**502 tests passed, 8 skipped (Docker-gated) · `mypy --strict` clean · 8 distinct verification
-models registered** — as of 2026-07-28. This is a project that argues nothing should be trusted on
+**517 tests passed, 0 skipped · `mypy --strict` clean · 8 distinct verification
+models registered** — as of 2026-07-29. This is a project that argues nothing should be trusted on
 the model's word alone, so its own claim of correctness gets held to the same standard: run
 `.venv/bin/pytest -q` and `.venv/bin/mypy --strict .` yourself rather than take this line's word
 for it.

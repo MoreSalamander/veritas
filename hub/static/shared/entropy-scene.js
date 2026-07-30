@@ -195,7 +195,7 @@
       composer.render();
     })();
 
-    return { nodeMeshes, center };
+    return { nodeMeshes, center, ping: () => ping(center.position, centerColor) };
   }
 
   global.EntropyScene = { init: EntropySceneInit };
