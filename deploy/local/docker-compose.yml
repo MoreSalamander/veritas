@@ -1,0 +1,19 @@
+services:
+  veritas:
+    build:
+      context: ../..
+      dockerfile: deploy/local/Dockerfile
+    ports:
+      - "8099:8099"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - veritas_data:/data
+      # Host-socket mount, not a nested dockerd — see README.md. Grants the
+      # container root-equivalent control over the host's Docker; accepted
+      # for a single-operator local box.
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+volumes:
+  veritas_data:
