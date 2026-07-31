@@ -64,6 +64,10 @@ class Provenance:
     accepted_because: str | None = None
     informed_by: list[str] = field(default_factory=list)  # memory ids that shaped this
     created_at: str = field(default_factory=_now)
+    # Which model proposed this artifact (e.g. "gemma4:12b", "claude-sonnet-4-6").
+    # None for artifacts no LLM produced (deterministic records, human-authored
+    # payloads) — execution lineage should say "no model", not guess one.
+    model: str | None = None
 
 
 @dataclass
@@ -88,6 +92,7 @@ class Artifact:
         rationale: str,
         parent_id: str | None = None,
         confidence: float | None = None,
+        model: str | None = None,
     ) -> "Artifact":
         """An agent proposes an artifact. It enters the world as PROPOSED — a
         candidate that has earned nothing yet."""
@@ -97,7 +102,7 @@ class Artifact:
             payload=payload,
             parent_id=parent_id,
             confidence=confidence,
-            provenance=Provenance(created_by=owner, rationale=rationale),
+            provenance=Provenance(created_by=owner, rationale=rationale, model=model),
         )
 
     def record_gate(self, result: GateResult) -> None:

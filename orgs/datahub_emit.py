@@ -170,7 +170,9 @@ def _glossary_terms_aspect(*names: str) -> GlossaryTermsClass:
 # monitoring. `version`/`hash` are DataHub's own mechanism for detecting
 # schema change over time: re-emitting with a changed hash and incremented
 # version is what makes evolution actually trackable, not just present once.
-_OUTCOME_SCHEMA_VERSION = 1
+# v1 -> v2: Stage 3 added model_invoked/confidence/retrieved_context — a
+# real schema evolution, tracked the way the mechanism was built for.
+_OUTCOME_SCHEMA_VERSION = 2
 
 
 def _outcome_schema_metadata(outcome_urn: str) -> SchemaMetadataClass:
@@ -198,6 +200,24 @@ def _outcome_schema_metadata(outcome_urn: str) -> SchemaMetadataClass:
             type=SchemaFieldDataTypeClass(type=StringTypeClass()),
             nativeDataType="string",
             description="Provenance.accepted_because — the stated reason the gate accepted this outcome, if it did.",
+        ),
+        SchemaFieldClass(
+            fieldPath="model_invoked",
+            type=SchemaFieldDataTypeClass(type=StringTypeClass()),
+            nativeDataType="string",
+            description="Provenance.model — which model proposed this artifact; empty for artifacts no LLM produced.",
+        ),
+        SchemaFieldClass(
+            fieldPath="confidence",
+            type=SchemaFieldDataTypeClass(type=StringTypeClass()),
+            nativeDataType="string",
+            description="Artifact.confidence — the artifact's own numeric confidence, when its pipeline assigns one.",
+        ),
+        SchemaFieldClass(
+            fieldPath="retrieved_context",
+            type=SchemaFieldDataTypeClass(type=StringTypeClass()),
+            nativeDataType="string",
+            description="Provenance.informed_by — memory ids recalled to shape this artifact (the retrieved context).",
         ),
     ]
     schema_hash = hashlib.sha256(
@@ -279,6 +299,14 @@ def emit_org_run(org_run: OrgRun, gms_server: str = GMS_SERVER) -> dict[int, str
 
             _emit(emitter, urn, _outcome_schema_metadata(urn))
 
+            # Stage 3 (AI execution lineage): the full request-to-response
+            # record, not just the verdict. original_request = the goal that
+            # started the run; retrieved_context = the memory ids that shaped
+            # this artifact (Provenance.informed_by — recall results, literally
+            # the retrieved context); model_invoked = which model proposed it
+            # (None stays "", honestly absent, for artifacts no LLM wrote);
+            # confidence = the artifact's own numeric confidence if it has one;
+            # response_preview = the artifact payload itself, truncated.
             _emit(
                 emitter,
                 urn,
@@ -288,6 +316,15 @@ def emit_org_run(org_run: OrgRun, gms_server: str = GMS_SERVER) -> dict[int, str
                     customProperties={
                         "created_by": provenance.created_by,
                         "accepted_because": provenance.accepted_because or "",
+                        "original_request": org_run.goal,
+                        "retrieved_context": ",".join(provenance.informed_by),
+                        "model_invoked": provenance.model or "",
+                        "confidence": (
+                            str(outcome.artifact.confidence)
+                            if outcome.artifact.confidence is not None
+                            else ""
+                        ),
+                        "response_preview": outcome.artifact.payload[:500],
                     },
                 ),
             )
@@ -372,7 +409,10 @@ def build_toy_org_run(org_name: str, run_id: str, num_outcomes: int = 10) -> Org
             owner=f"{org_name}-toy",
             payload=f'{{"toy_index": {i}}}',
             rationale=f"toy candidate {i} for demo/testing datahub_emit.py",
+            model="toy-model-v0" if i % 2 == 0 else None,
+            confidence=round(random.uniform(0.5, 1.0), 2) if i % 3 == 0 else None,
         )
+        artifact.provenance.informed_by = [f"mem_toy_{i}a", f"mem_toy_{i}b"] if i % 2 == 0 else []
         passed = random.random() > 0.3
         gate_result = GateResult(
             gate_name="toy:scaffold_check",

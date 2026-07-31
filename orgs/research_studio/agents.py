@@ -53,4 +53,8 @@ class ResearcherAgent:
             owner="researcher-agent",
             payload=raw,
             rationale=f"grounded report on: {topic}",
+            # Execution lineage (Stage 3): record WHICH model wrote this report,
+            # not just that "the researcher" did. Not every provider names a
+            # model (test doubles don't), so absent stays honest None.
+            model=getattr(self.provider, "model", None),
         )
