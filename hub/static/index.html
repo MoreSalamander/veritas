@@ -642,6 +642,12 @@ function artifactBlock(org, a) {
       if (out.length >= 2) body = `<video class="prodvid" controls preload="metadata" src="/productions/${out.slice(-2).map(encodeURIComponent).join('/')}"></video>` + body;
     } catch (e) {}
   }
+  // a completed web page: something was MADE, it needs to be SEEN, not just read as source.
+  // Same iframe pattern create-mode already uses for in-progress candidates (candidatePreview) —
+  // this was the one place a finished, gate-passed page never got the same treatment.
+  if (a.type === 'page' && a.payload) {
+    body = `<iframe class="preview" sandbox="allow-scripts" srcdoc="${esc(a.payload)}"></iframe>` + body;
+  }
   return `<div class="artifact"><div class="loc">${esc(a.type)} → ${loc}</div>${body}</div>`;
 }
 function runCard(r) {
