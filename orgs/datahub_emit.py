@@ -47,6 +47,7 @@ all three so the full tagging path gets exercised in demos.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
@@ -58,13 +59,23 @@ from datahub.metadata.schema_classes import (
     AssertionRunEventClass,
     AssertionRunStatusClass,
     AssertionTypeClass,
+    AuditStampClass,
+    BooleanTypeClass,
     CustomAssertionInfoClass,
     DatasetLineageTypeClass,
     DatasetPropertiesClass,
     GlobalTagsClass,
+    GlossaryTermAssociationClass,
+    GlossaryTermInfoClass,
+    GlossaryTermsClass,
+    OtherSchemaClass,
     OwnerClass,
     OwnershipClass,
     OwnershipTypeClass,
+    SchemaFieldClass,
+    SchemaFieldDataTypeClass,
+    SchemaMetadataClass,
+    StringTypeClass,
     TagAssociationClass,
     TagPropertiesClass,
     UpstreamClass,
@@ -100,6 +111,107 @@ _DETERMINISM_TAG: dict[Determinism, tuple[str, str]] = {
 # gate that also happened to run on the same outcome.
 _DETERMINISM_PRIORITY = [Determinism.HUMAN, Determinism.HARD, Determinism.SOFT]
 
+# The governed glossary term backing each rigor tag (Stage 1 business
+# glossary — the tag is the quick-browse label, the term is its definition).
+_DETERMINISM_GLOSSARY_TERM = {
+    Determinism.HARD: "HardGate",
+    Determinism.SOFT: "SoftGate",
+    Determinism.HUMAN: "HumanGate",
+}
+
+# Stage 1 (Foundation) — business glossary. Tags (above) are informal, ad-hoc
+# labels; glossary terms are formal, governed vocabulary with a real
+# definition attached — DataHub's own distinction, not a synonym for tags.
+# These are the actual domain concepts Veritas's trust model is built on,
+# not invented examples. termSource="INTERNAL" because they're defined by
+# this organization, not borrowed from an external ontology.
+_GLOSSARY_TERMS: dict[str, str] = {
+    "Determinism": (
+        "Whether a gate's verdict is machine-checkable (HARD) or a judgment "
+        "(SOFT) or a human sign-off (HUMAN). A SOFT gate must never be "
+        "presented as a HARD one (engine/artifact.py)."
+    ),
+    "HardGate": "A verdict from a machine-checkable check (tests, types, schema, scans) — no LLM opinion involved.",
+    "SoftGate": "A verdict from a judge-LLM's opinion — recorded, but never disguised as proof.",
+    "HumanGate": "A verdict from a person signing off — the proper verifier for feel/taste (create mode).",
+    "HumanVouchedSource": (
+        "A human curated this source (Veritas P28) — vouches for it being worth "
+        "keeping, NOT for the truth of its claims. May ground only an attributed "
+        "claim, never an asserted fact."
+    ),
+    "CustomAssertion": "A DataHub assertion for a check that ran OUTSIDE DataHub, with its result reported in.",
+}
+
+
+def _glossary_term_urn(name: str) -> str:
+    return f"urn:li:glossaryTerm:{name}"
+
+
+def _ensure_glossary_terms(emitter: DatahubRestEmitter) -> None:
+    """Registers every term in _GLOSSARY_TERMS (idempotent — safe to call on
+    every emit_org_run, same pattern as the per-outcome tag registration)."""
+    for name, definition in _GLOSSARY_TERMS.items():
+        _emit(
+            emitter,
+            _glossary_term_urn(name),
+            GlossaryTermInfoClass(definition=definition, termSource="INTERNAL", name=name),
+        )
+
+
+def _glossary_terms_aspect(*names: str) -> GlossaryTermsClass:
+    now_millis = int(datetime.now().timestamp() * 1000)
+    return GlossaryTermsClass(
+        terms=[GlossaryTermAssociationClass(urn=_glossary_term_urn(n)) for n in names],
+        auditStamp=AuditStampClass(time=now_millis, actor="urn:li:corpuser:veritas"),
+    )
+
+
+# Stage 1 (Foundation) — real schema documentation + schema evolution
+# monitoring. `version`/`hash` are DataHub's own mechanism for detecting
+# schema change over time: re-emitting with a changed hash and incremented
+# version is what makes evolution actually trackable, not just present once.
+_OUTCOME_SCHEMA_VERSION = 1
+
+
+def _outcome_schema_metadata(outcome_urn: str) -> SchemaMetadataClass:
+    fields = [
+        SchemaFieldClass(
+            fieldPath="type",
+            type=SchemaFieldDataTypeClass(type=StringTypeClass()),
+            nativeDataType="string",
+            description="The artifact type this outcome represents, e.g. 'opportunity'.",
+        ),
+        SchemaFieldClass(
+            fieldPath="accepted",
+            type=SchemaFieldDataTypeClass(type=BooleanTypeClass()),
+            nativeDataType="boolean",
+            description="Whether the org's gate accepted this outcome — the verdict this dataset's assertion reports.",
+        ),
+        SchemaFieldClass(
+            fieldPath="created_by",
+            type=SchemaFieldDataTypeClass(type=StringTypeClass()),
+            nativeDataType="string",
+            description="Provenance.created_by — who/what produced this artifact.",
+        ),
+        SchemaFieldClass(
+            fieldPath="accepted_because",
+            type=SchemaFieldDataTypeClass(type=StringTypeClass()),
+            nativeDataType="string",
+            description="Provenance.accepted_because — the stated reason the gate accepted this outcome, if it did.",
+        ),
+    ]
+    schema_hash = hashlib.sha256(
+        "|".join(f"{f.fieldPath}:{f.nativeDataType}" for f in fields).encode()
+    ).hexdigest()[:16]
+    return SchemaMetadataClass(
+        schemaName=f"{outcome_urn}-schema",
+        platform=f"urn:li:dataPlatform:{PLATFORM}",
+        version=_OUTCOME_SCHEMA_VERSION,
+        hash=schema_hash,
+        platformSchema=OtherSchemaClass(rawSchema="veritas.engine.run.Outcome"),
+        fields=fields,
+    )
+
 
 def _org_urn(org_run: OrgRun) -> str:
     return f"urn:li:dataset:(urn:li:dataPlatform:{PLATFORM},{org_run.org}-{org_run.run_id},PROD)"
@@ -115,13 +227,13 @@ def _owner_urn(org_run: OrgRun) -> str:
     return f"urn:li:corpGroup:veritas-{org_run.org.replace('_', '-')}"
 
 
-def _rigor_tag(outcome: Outcome) -> tuple[str, str] | None:
+def _rigor_determinism(outcome: Outcome) -> Determinism | None:
     """The strictest Determinism among an outcome's actual gate results, or
     None if it has no gate results to characterize."""
     present = {gr.determinism for gr in outcome.gate_results}
     for determinism in _DETERMINISM_PRIORITY:
         if determinism in present:
-            return _DETERMINISM_TAG[determinism]
+            return determinism
     return None
 
 
@@ -157,12 +269,15 @@ def emit_org_run(org_run: OrgRun, gms_server: str = GMS_SERVER) -> dict[int, str
             ),
         )
         _emit(emitter, org_urn, ownership)
+        _ensure_glossary_terms(emitter)
 
         outcome_urns: dict[int, str] = {}
         for index, outcome in enumerate(org_run.outcomes):
             urn = _outcome_urn(org_run, index)
             outcome_urns[index] = urn
             provenance = outcome.artifact.provenance
+
+            _emit(emitter, urn, _outcome_schema_metadata(urn))
 
             _emit(
                 emitter,
@@ -188,12 +303,15 @@ def emit_org_run(org_run: OrgRun, gms_server: str = GMS_SERVER) -> dict[int, str
                 ),
             )
 
-            rigor = _rigor_tag(outcome)
+            rigor = _rigor_determinism(outcome)
             if rigor is not None:
-                tag_name, tag_description = rigor
+                tag_name, tag_description = _DETERMINISM_TAG[rigor]
                 tag_urn = f"urn:li:tag:{tag_name}"
                 _emit(emitter, tag_urn, TagPropertiesClass(name=tag_name, description=tag_description))
                 _emit(emitter, urn, GlobalTagsClass(tags=[TagAssociationClass(tag=tag_urn)]))
+                # The tag is the quick-browse label; the glossary term is the
+                # governed definition behind it (Stage 1 business glossary).
+                _emit(emitter, urn, _glossary_terms_aspect(_DETERMINISM_GLOSSARY_TERM[rigor]))
 
             # One custom assertion per outcome: the S2 recon mapping (gate
             # pass/fail -> DataHub Assertion) applied for real. `logic`
