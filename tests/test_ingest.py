@@ -3,6 +3,9 @@
 The network fetch itself is a thin shell over yt-dlp + urllib (exercised live, not in CI); what
 matters to test here is that the two caption formats reduce to clean spoken text, and that the
 ScriptedFetcher honours its 'no transcript -> raise' contract so the fail-honestly path is testable.
+ArticleFetcher is the same story as YtDlpFetcher — its network fetch is exercised live, not here.
+ChainedFetcher's orchestration (try each fetcher, fall through on failure) IS pure and offline, so
+that gets real coverage below.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from hub.ingest import (
+    ChainedFetcher,
     FetchedTranscript,
     ScriptedFetcher,
     TranscriptUnavailable,
@@ -47,3 +51,25 @@ def test_scripted_fetcher_returns_known_and_raises_unknown():
     assert f.fetch("u1").text == "hi"
     with pytest.raises(TranscriptUnavailable):
         f.fetch("missing")
+
+
+def test_chained_fetcher_falls_through_to_the_next_fetcher_on_failure():
+    # Simulates the real case: YtDlpFetcher finds no video on this URL, so
+    # ChainedFetcher falls through to an article-text fetcher instead.
+    video_fetcher = ScriptedFetcher({"has-video": FetchedTranscript(text="captions")})
+    article_fetcher = ScriptedFetcher({"webpage": FetchedTranscript(text="article body")})
+    chained = ChainedFetcher([video_fetcher, article_fetcher])
+
+    assert chained.fetch("has-video").text == "captions"  # first fetcher succeeds
+    assert chained.fetch("webpage").text == "article body"  # falls through to the second
+
+
+def test_chained_fetcher_raises_with_combined_reasons_when_all_fail():
+    chained = ChainedFetcher([ScriptedFetcher({}), ScriptedFetcher({})])
+    with pytest.raises(TranscriptUnavailable, match="no scripted transcript"):
+        chained.fetch("nothing-has-this")
+
+
+def test_chained_fetcher_requires_at_least_one_fetcher():
+    with pytest.raises(ValueError, match="at least one fetcher"):
+        ChainedFetcher([])

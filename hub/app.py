@@ -51,7 +51,7 @@ from collector.store import CollectorStore
 from hub.keytracker import KeyTrackerStore
 from hub.background_session import BackgroundSession
 from hub.expiring_store import ExpiringRegistry
-from hub.ingest import TranscriptFetcher, TranscriptUnavailable, YtDlpFetcher
+from hub.ingest import ArticleFetcher, ChainedFetcher, TranscriptFetcher, TranscriptUnavailable, YtDlpFetcher
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
 from engine.run import ActivityEntry, set_activity_listener
 from hub.store import RunStore, summarize
@@ -981,7 +981,9 @@ def create_app(
     runs = RunStore(base / "runs")
     injected_provider = provider  # set in tests; when None, pick per-request by model
     # Transcript fetcher for the Second Brain (P28b); ScriptedFetcher in tests so they stay offline.
-    transcript_fetcher = fetcher or YtDlpFetcher()
+    # Video first (YtDlpFetcher also catches a webpage with an embedded video), article text as
+    # the fallback for pages with no video at all — one shared URL, either kind of source.
+    transcript_fetcher = fetcher or ChainedFetcher([YtDlpFetcher(), ArticleFetcher()])
 
     # Each org keeps its own institutional memory: recall stays relevant to the
     # domain, and it mirrors how a hosted deployment would isolate tenants.

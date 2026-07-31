@@ -5,6 +5,12 @@ isolated behind an ABC so (a) tests never touch the network (ScriptedFetcher) an
 backend (yt-dlp today, anything later) is a config swap, not a rewrite. The fetcher only retrieves
 what a source already says — it never judges it; the `human-vouched` containment lives downstream
 in MemoryRecord.from_source.
+
+`ChainedFetcher` (bottom of this file) is what makes "share any URL, get a transcript" actually
+true: yt-dlp isn't limited to youtube.com — it scans arbitrary webpages for an embedded video
+player and extracts that video's captions if it finds one (discovered live, mid-session, sharing a
+page that happened to have a YouTube embed). ArticleFetcher is the fallback for pages with no
+video at all: readable article text instead of captions, same FetchedTranscript shape either way.
 """
 
 from __future__ import annotations
@@ -62,6 +68,18 @@ def _parse_json3(raw: bytes) -> str:
     return re.sub(r"\n{2,}", "\n", "".join(parts)).strip()
 
 
+class _SilentLogger:
+    """yt-dlp's `quiet`/`no_warnings` options don't suppress hard errors (e.g. 'Unsupported URL'
+    on a page with no video) — they still print to the console even when handled correctly
+    downstream. Since ChainedFetcher expects YtDlpFetcher to fail on non-video pages and falls
+    through to ArticleFetcher, that's normal operation, not a real error worth alarming logs
+    with. A no-op logger silences it at the source instead of filtering output after the fact."""
+
+    def debug(self, msg: str) -> None: ...
+    def warning(self, msg: str) -> None: ...
+    def error(self, msg: str) -> None: ...
+
+
 class YtDlpFetcher(TranscriptFetcher):
     """Fetch captions via yt-dlp — manual subtitles preferred, auto-generated as fallback, English
     preferred but any language accepted. Caption *text* only; no audio download, no ASR."""
@@ -75,7 +93,12 @@ class YtDlpFetcher(TranscriptFetcher):
         except ImportError as e:  # pragma: no cover - environment-dependent
             raise TranscriptUnavailable("yt-dlp is not installed") from e
 
-        opts = {"skip_download": True, "quiet": True, "no_warnings": True}
+        opts = {
+            "skip_download": True,
+            "quiet": True,
+            "no_warnings": True,
+            "logger": _SilentLogger(),
+        }
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -137,3 +160,70 @@ def _strip_vtt(vtt: str) -> str:
         if not deduped or deduped[-1] != line:
             deduped.append(line)
     return "\n".join(deduped).strip()
+
+
+class ArticleFetcher(TranscriptFetcher):
+    """Extracts readable article text from a general webpage — the fallback for URLs that
+    aren't a video (or have no embeddable video yt-dlp can find). Uses trafilatura to strip
+    navigation/ads/boilerplate down to the actual content: the same 'transcript' concept as a
+    video's captions, just for prose instead of speech."""
+
+    def __init__(self, timeout: float = 15.0) -> None:
+        self._timeout = timeout
+
+    def fetch(self, url: str) -> FetchedTranscript:
+        try:
+            import httpx
+            import trafilatura
+        except ImportError as e:  # pragma: no cover - environment-dependent
+            raise TranscriptUnavailable("httpx/trafilatura are not installed") from e
+
+        try:
+            response = httpx.get(
+                url,
+                timeout=self._timeout,
+                follow_redirects=True,
+                # A normal browser UA, not a self-identifying bot string — some
+                # sites (Wikipedia among them, found live) 403 anything that
+                # announces itself as automated. Same practice as any
+                # read-later tool; this fetches what a human visiting the
+                # page would already see, nothing hidden or paywall-bypassed.
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+                },
+            )
+            response.raise_for_status()
+        except Exception as e:
+            raise TranscriptUnavailable(f"could not fetch {url}: {e}") from e
+
+        text = trafilatura.extract(response.text, include_comments=False, include_tables=False)
+        if not text or not text.strip():
+            raise TranscriptUnavailable("no readable article content found on this page")
+
+        metadata = trafilatura.extract_metadata(response.text)
+        title = (metadata.title if metadata else "") or ""
+        site = (metadata.sitename if metadata else "") or ""
+        return FetchedTranscript(text=text, title=title, channel=site)
+
+
+class ChainedFetcher(TranscriptFetcher):
+    """Tries each fetcher in order, returning the first success. Only raises
+    TranscriptUnavailable (with every fetcher's reason folded in) if all of them fail — this is
+    the mechanism behind 'share any URL, get a transcript': video captions if there's a video
+    (YtDlpFetcher, which itself scans arbitrary pages for an embed), article text otherwise
+    (ArticleFetcher)."""
+
+    def __init__(self, fetchers: list[TranscriptFetcher]) -> None:
+        if not fetchers:
+            raise ValueError("ChainedFetcher needs at least one fetcher")
+        self._fetchers = fetchers
+
+    def fetch(self, url: str) -> FetchedTranscript:
+        reasons: list[str] = []
+        for fetcher in self._fetchers:
+            try:
+                return fetcher.fetch(url)
+            except TranscriptUnavailable as e:
+                reasons.append(str(e))
+        raise TranscriptUnavailable("; ".join(reasons) or "no fetcher could read this URL")
