@@ -46,6 +46,9 @@ class ActivityView:
     actor: str
     message: str
     duration_ms: float
+    # When this entry happened (ActivityEntry.at). Optional so runs persisted
+    # before this field existed still load; new runs always carry it.
+    at: str | None = None
 
 
 @dataclass
@@ -93,6 +96,7 @@ def summarize(result: OrgRun, created_at: str, model: str = "local") -> RunSumma
             actor=entry.actor,
             message=entry.message,
             duration_ms=round(entry.duration_ms, 1),
+            at=entry.at,
         )
         for entry in result.activity
     ]
