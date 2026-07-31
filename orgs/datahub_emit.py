@@ -34,6 +34,18 @@ MetadataChangeProposalWrapper, same path as every other aspect in this
 module) sidesteps GraphQL entirely and is what upsert_custom_assertion/
 report_assertion_result do server-side anyway once the mutation succeeds.
 
+DESIGN NOTE (Stage 4) — version history and deployment history, honestly
+interpreted. Veritas artifacts are IMMUTABLE: proposed once with a fixed id,
+never mutated — a "new version" is a NEW artifact whose parent_id points at
+what it derives from (spec -> code -> package -> acceptance chains in
+software_studio, retry chains after rejection). So an artifact's version
+history IS its parent chain, emitted here as real dataset-to-dataset
+lineage edges — not a mutable version counter bolted onto an immutable
+object. Deployment history lives where deployment actually happens: the
+Stage 2 infrastructure entities (Fly/launchd/Tailscale) and Stage 8's
+lifecycle events record Production/Deployment transitions; an unreleased
+outcome artifact honestly has none.
+
 DESIGN NOTE — tags reflect real code, not an invented scheme. Rather than a
 standalone numeric "trust tier," each outcome is tagged by the strictest
 `engine.artifact.Determinism` among its actual gate results (HARD/SOFT/
@@ -76,6 +88,7 @@ from datahub.metadata.schema_classes import (
     SchemaFieldDataTypeClass,
     SchemaMetadataClass,
     StringTypeClass,
+    TimeStampClass,
     TagAssociationClass,
     TagPropertiesClass,
     UpstreamClass,
@@ -292,9 +305,13 @@ def emit_org_run(org_run: OrgRun, gms_server: str = GMS_SERVER) -> dict[int, str
         _ensure_glossary_terms(emitter)
 
         outcome_urns: dict[int, str] = {}
+        # artifact.id -> dataset urn, so a later outcome whose parent_id points
+        # at an earlier one in this run gets a real dependency edge (Stage 4).
+        artifact_id_to_urn: dict[str, str] = {}
         for index, outcome in enumerate(org_run.outcomes):
             urn = _outcome_urn(org_run, index)
             outcome_urns[index] = urn
+            artifact_id_to_urn[outcome.artifact.id] = urn
             provenance = outcome.artifact.provenance
 
             _emit(emitter, urn, _outcome_schema_metadata(urn))
@@ -307,13 +324,20 @@ def emit_org_run(org_run: OrgRun, gms_server: str = GMS_SERVER) -> dict[int, str
             # (None stays "", honestly absent, for artifacts no LLM wrote);
             # confidence = the artifact's own numeric confidence if it has one;
             # response_preview = the artifact payload itself, truncated.
+            created_millis = _millis(outcome.artifact.created_at)
             _emit(
                 emitter,
                 urn,
                 DatasetPropertiesClass(
                     name=f"{outcome.artifact.type}-{index}",
                     description=provenance.rationale,
+                    # Stage 4: real timestamp aspects from the artifact's own
+                    # created_at, not a string buried in a description.
+                    created=TimeStampClass(time=created_millis),
+                    lastModified=TimeStampClass(time=created_millis),
                     customProperties={
+                        "artifact_id": outcome.artifact.id,
+                        "parent_artifact_id": outcome.artifact.parent_id or "",
                         "created_by": provenance.created_by,
                         "accepted_because": provenance.accepted_because or "",
                         "original_request": org_run.goal,
@@ -330,15 +354,17 @@ def emit_org_run(org_run: OrgRun, gms_server: str = GMS_SERVER) -> dict[int, str
             )
             # Eagerly propagated org-level context — see module docstring.
             _emit(emitter, urn, ownership)
-            _emit(
-                emitter,
-                urn,
-                UpstreamLineageClass(
-                    upstreams=[
-                        UpstreamClass(dataset=org_urn, type=DatasetLineageTypeClass.TRANSFORMED)
-                    ]
-                ),
-            )
+            # Upstreams: always the org run; plus, when this artifact's
+            # parent_id points at another outcome in this run, a real
+            # dependency edge to that dataset (Stage 4 — the parent chain
+            # IS the version/derivation history, see module docstring).
+            upstreams = [UpstreamClass(dataset=org_urn, type=DatasetLineageTypeClass.TRANSFORMED)]
+            parent_urn = artifact_id_to_urn.get(outcome.artifact.parent_id or "")
+            if parent_urn is not None:
+                upstreams.append(
+                    UpstreamClass(dataset=parent_urn, type=DatasetLineageTypeClass.TRANSFORMED)
+                )
+            _emit(emitter, urn, UpstreamLineageClass(upstreams=upstreams))
 
             rigor = _rigor_determinism(outcome)
             if rigor is not None:
@@ -382,7 +408,16 @@ def emit_org_run(org_run: OrgRun, gms_server: str = GMS_SERVER) -> dict[int, str
                         type=AssertionResultTypeClass.SUCCESS
                         if outcome.accepted
                         else AssertionResultTypeClass.FAILURE,
-                        nativeResults={gr.gate_name: str(gr.passed) for gr in outcome.gate_results},
+                        # Structured test results (Stage 4): per-gate verdict
+                        # AND its recorded evidence, not just a boolean.
+                        nativeResults={
+                            key: value
+                            for gr in outcome.gate_results
+                            for key, value in (
+                                (gr.gate_name, str(gr.passed)),
+                                (f"{gr.gate_name}.evidence", gr.evidence[:200]),
+                            )
+                        },
                     ),
                 ),
             )
@@ -403,6 +438,7 @@ def build_toy_org_run(org_name: str, run_id: str, num_outcomes: int = 10) -> Org
 
     determinisms = [Determinism.HARD, Determinism.HARD, Determinism.SOFT, Determinism.HUMAN]
     outcomes: list[Outcome] = []
+    previous_artifact_id: str | None = None
     for i in range(num_outcomes):
         artifact = Artifact.propose(
             type="opportunity",
@@ -411,7 +447,11 @@ def build_toy_org_run(org_name: str, run_id: str, num_outcomes: int = 10) -> Org
             rationale=f"toy candidate {i} for demo/testing datahub_emit.py",
             model="toy-model-v0" if i % 2 == 0 else None,
             confidence=round(random.uniform(0.5, 1.0), 2) if i % 3 == 0 else None,
+            # Every other artifact derives from its predecessor, exercising
+            # the Stage 4 parent-chain dependency edge in demos.
+            parent_id=previous_artifact_id if i % 2 == 1 else None,
         )
+        previous_artifact_id = artifact.id
         artifact.provenance.informed_by = [f"mem_toy_{i}a", f"mem_toy_{i}b"] if i % 2 == 0 else []
         passed = random.random() > 0.3
         gate_result = GateResult(
