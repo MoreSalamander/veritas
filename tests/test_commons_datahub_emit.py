@@ -35,7 +35,7 @@ def _source_record(**overrides) -> MemoryRecord:
 
 def test_emit_source_record_refuses_non_source_category():
     record = _source_record()
-    record.category = "artifact"  # not a Second Brain source at all
+    record.category = "artifact"  # not a Knowledge Graph source at all
     with pytest.raises(ValueError, match="not a human-vouched source record"):
         emit_source_record(emitter=None, record=record)  # type: ignore[arg-type]
 

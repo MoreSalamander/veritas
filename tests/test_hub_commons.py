@@ -1,4 +1,4 @@
-"""The Second Brain endpoints (P28a): manual source entry + listing, over the HTTP control plane.
+"""The Knowledge Graph endpoints (P28a): manual source entry + listing, over the HTTP control plane.
 
 Containment is enforced end to end — a source with no origin is refused with a 400, not silently
 dropped — and a saved source comes back through the list endpoint carrying its human-vouched tag.

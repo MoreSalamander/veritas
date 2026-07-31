@@ -9,23 +9,28 @@ The Veritas discipline, applied to the interview itself: the model proposes the 
 (or a finished spec), but a *deterministic* completeness check — not the model — decides when
 it's done. The interview can't stop until the spec is genuinely gateable. (This is the
 scene/beats "interview until it can pass a score" pattern; here the score is `is it gateable`.)
+
+The loop itself now lives in engine/interview.py — extracted so other domains (a shared
+tutorial's scope, a recipe's presentation style) get the same convergence guarantee without a
+second copy of it. This module is the CreateSpec-specific instance: its own spec type, its own
+completeness check, its own interviewer system prompt, wired to the shared loop.
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 from engine.artifact import Artifact, Determinism, GateResult
 from engine.gate import Gate
+from engine.interview import InterviewResult, SpecParseError, extract_json, run_interview
 from engine.model import ModelProvider
 from orgs.web_studio.aesthetics import AestheticCriteria
 
 
-class CreateSpecParseError(ValueError):
-    """The proposed create-spec is not usable JSON. The scorer rejects on this."""
+class CreateSpecParseError(SpecParseError):
+    """The proposed create-spec is not usable JSON. The scorer rejects on this. Subclasses the
+    shared SpecParseError so engine.interview's loop still catches it as one."""
 
 
 @dataclass
@@ -36,17 +41,11 @@ class CreateSpec:
     aesthetics: AestheticCriteria  # the measurable design intent (P19 gates)
 
 
-def _extract_json(text: str) -> dict[str, Any]:
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        raise CreateSpecParseError("no JSON object found")
+def _extract_json(text: str) -> dict[str, object]:
     try:
-        obj: Any = json.loads(text[start : end + 1])
-    except (ValueError, TypeError) as exc:
-        raise CreateSpecParseError(f"not valid JSON: {exc}") from exc
-    if not isinstance(obj, dict):
-        raise CreateSpecParseError("not a JSON object")
-    return obj
+        return extract_json(text)
+    except SpecParseError as exc:
+        raise CreateSpecParseError(str(exc)) from exc
 
 
 def parse_create_spec(payload: str) -> CreateSpec:
@@ -130,77 +129,20 @@ _FORCE_SPEC = (
 )
 
 
-@dataclass
-class InterviewResult:
-    spec: CreateSpec | None  # None if a gateable spec wasn't reached within the round budget
-    transcript: list[tuple[str, str]] = field(default_factory=list)  # (question, answer) pairs
-    rounds: int = 0
-
-
-class InterviewerAgent:
-    role = "interviewer"
-
-    def __init__(self, provider: ModelProvider) -> None:
-        self.provider = provider
-
-    def next(self, goal: str, transcript: list[tuple[str, str]], nudge: str | None = None,
-             known: str | None = None) -> dict[str, Any]:
-        lines = [f"Goal: {goal}"]
-        if known:
-            lines += [f"Known user preferences (do NOT re-ask these): {known}"]
-        lines += [""]
-        for q, a in transcript:
-            lines += [f"Q: {q}", f"A: {a}"]
-        if nudge:
-            lines += ["", nudge]
-        raw = self.provider.propose(role=self.role, prompt="\n".join(lines), system=INTERVIEWER_SYSTEM)
-        return _extract_json(raw)
-
-
 def interview(
-    goal: str, provider: ModelProvider, answer: Callable[[str], str],
-    known: str | None = None, max_rounds: int = 8, force_after: int = 2,
-) -> InterviewResult:
-    """Run the interview to a gateable spec. `answer` supplies the human's reply to a question
-    (a real person in the hub; a scripted fn in tests). `known` is a summary of the user's learned
-    preferences (from the aesthetic profile) so the interview doesn't re-ask them — it shortens
-    over time. The loop ends when `spec_completeness` says the spec is gateable, or the budget runs
-    out. After `force_after` answered questions the model is forced to synthesize a spec instead of
-    being allowed to keep asking (so a chatty model converges); the completeness check still decides
-    whether that forced spec is acceptable."""
-    transcript: list[tuple[str, str]] = []
-    agent = InterviewerAgent(provider)
-    nudge: str | None = None
-    questions_asked = 0
-    for rnd in range(1, max_rounds + 1):
-        # past the budget, stop letting it ask — make it finalize (unless a more specific nudge,
-        # e.g. a missing-field redirect, is already pending).
-        if questions_asked >= force_after and nudge is None:
-            nudge = _FORCE_SPEC
-        try:
-            parsed = agent.next(goal, transcript, nudge, known)
-        except CreateSpecParseError:
-            nudge = "Your last reply was not valid JSON. Respond with ONLY the JSON object."
-            continue
-        if "question" in parsed and isinstance(parsed["question"], str):
-            q = parsed["question"]
-            transcript.append((q, answer(q)))
-            questions_asked += 1
-            # once we've hit the budget, the next turn forces a spec instead of another question
-            nudge = _FORCE_SPEC if questions_asked >= force_after else None
-            continue
-        if "spec" in parsed:
-            try:
-                spec = parse_create_spec(json.dumps(parsed["spec"]))
-            except CreateSpecParseError:
-                nudge = "That spec was malformed. Output a valid spec JSON now."
-                continue
-            complete, missing = spec_completeness(spec)
-            if complete:
-                return InterviewResult(spec=spec, transcript=transcript, rounds=rnd)
-            # the model thinks it's done; the deterministic check disagrees — redirect to the gap
-            nudge = (f"The spec is missing: {', '.join(missing)}. Output a corrected spec JSON now, "
-                     "asking the user only if a value is genuinely unknowable.")
-            continue
-        nudge = "Reply with either {\"question\": ...} or {\"spec\": ...}."
-    return InterviewResult(spec=None, transcript=transcript, rounds=max_rounds)
+    goal: str, provider: ModelProvider, answer: Callable[[str], str], known: str | None = None,
+    max_rounds: int = 8, force_after: int = 2,
+) -> InterviewResult[CreateSpec]:
+    """Run the interview to a gateable CreateSpec. `answer` supplies the human's reply to a
+    question (a real person in the hub; a scripted fn in tests). `known` is a summary of the
+    user's learned preferences (from the aesthetic profile) so the interview doesn't re-ask them
+    — it shortens over time. Thin wrapper over engine.interview's shared loop; see that module
+    for the actual convergence discipline."""
+    return run_interview(
+        goal, provider, answer,
+        system_prompt=INTERVIEWER_SYSTEM,
+        parse_spec=parse_create_spec,
+        spec_completeness=spec_completeness,
+        force_spec_message=_FORCE_SPEC,
+        known=known, max_rounds=max_rounds, force_after=force_after,
+    )

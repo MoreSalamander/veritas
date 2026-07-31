@@ -1,4 +1,4 @@
-"""Channel-level auto-collection for the Second Brain — extends P28b.
+"""Channel-level auto-collection for the Knowledge Graph — extends P28b.
 
 `hub/ingest.py`'s `/api/commons` flow requires a human to vouch for one URL
 at a time. This module lets a human vouch for a whole CHANNEL once instead

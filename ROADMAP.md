@@ -337,7 +337,7 @@ then the real engine is swapped behind the seam — the pattern that worked ever
   + lesson ship on grounding; the combiner's all-parts-shipped logic). The verification thesis is
   fully demonstrated — five models, and products built by reusing and composing them.*
 
-- **P28 · The Second Brain — a cross-org knowledge commons** — *verification model: **containment**,
+- **P28 · The Knowledge Graph — a cross-org knowledge commons** — *verification model: **containment**,
   not content. The commons holds material the human curated but no gate has fact-checked; the org's
   job is to keep it labeled and quarantined forever. Done-when for the rung: every commons record
   carries a resolvable origin + a `human-vouched` tag, and that tag provably survives into any
@@ -357,7 +357,7 @@ then the real engine is swapped behind the seam — the pattern that worked ever
     `from_source` + `TRUST_VOUCHED` + a persist-time containment guard (a source record without a resolvable
     origin AND the human-vouched tag is refused at persist — unverified material lives in the commons only while
     labeled). hub/app.py: a parallel `MemoryStore(base/"memory"/"commons")`, GET/POST `/api/commons` (manual
-    transcript entry; no-origin → 400). hub UI: a "Second Brain" nav entry + view (add form + ◆ human-vouched
+    transcript entry; no-origin → 400). hub UI: a "Knowledge Graph" nav entry + view (add form + ◆ human-vouched
     cards) under its own "Knowledge" group, in no org tab. 6 tests (tests/test_commons.py + test_hub_commons.py),
     267 pass, mypy clean. Verified live on an isolated instance: save → list → 400-on-no-origin.*
   - **P28b · Manual ingest (URL paste)** — paste a YouTube URL → fetch transcript → `from_source` → persist.

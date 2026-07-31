@@ -1,4 +1,4 @@
-"""Transcript fetching for the Second Brain (P28b) — a swappable seam, like Executor/Publisher.
+"""Transcript fetching for the Knowledge Graph (P28b) — a swappable seam, like Executor/Publisher.
 
 The commons stores *text*; this is the one piece that turns a pasted URL into that text. It is
 isolated behind an ABC so (a) tests never touch the network (ScriptedFetcher) and (b) the concrete

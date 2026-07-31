@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Import myAIstro's authored lessons into Veritas's Second Brain (the commons).
+"""Import myAIstro's authored lessons into Veritas's Knowledge Graph (the commons).
 
 myAIstro is the user's own lesson → SOT → Obsidian-graph system (a separate project,
 ~/myAIstro). This script bridges the two WITHOUT merging them — myAIstro stays canonical for its

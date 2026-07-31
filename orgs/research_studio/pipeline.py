@@ -40,7 +40,7 @@ def build_report(
     topic: str, corpus: Corpus, provider: ModelProvider, memory: MemoryStore,
     *, judge: ModelProvider | None = None, vouched: dict[str, str] | None = None,
 ) -> ReportResult:
-    """`vouched` maps any corpus source id drawn from the Second Brain (commons) -> its attribution
+    """`vouched` maps any corpus source id drawn from the Knowledge Graph (commons) -> its attribution
     label. Those sources are human-vouched but UNVERIFIED, so a claim leaning on one must attribute
     it, not state it as fact (VouchedAttributionGate). The commons source ids also flow into the
     report's `informed_by`, so the unverified provenance travels with whatever the run produces."""

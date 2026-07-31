@@ -1,6 +1,6 @@
 """Obsidian vault export for Veritas's own institutional memory.
 
-The second brain — every org's `MemoryStore` plus the cross-org Commons — already
+The knowledge graph — every org's `MemoryStore` plus the cross-org Commons — already
 accumulates real, persistent state (see `engine/memory.py`'s own framing: "the only
 thing that persists, and the thing that learns"). What it doesn't have is a browsable,
 graphable *view* of that accumulation. This mirrors myAIstro's `obsidian_export.py`

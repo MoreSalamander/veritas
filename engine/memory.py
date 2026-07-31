@@ -131,7 +131,7 @@ class MemoryRecord:
         channel: str = "",
         title: str | None = None,
     ) -> "MemoryRecord":
-        """A piece of curated source material entering the commons (the Second Brain).
+        """A piece of curated source material entering the commons (the Knowledge Graph).
 
         The human picked it, so it is `human-vouched` — but that vouches for the SOURCE, not the
         truth of its claims (the human did not fact-check every sentence; they often hadn't even

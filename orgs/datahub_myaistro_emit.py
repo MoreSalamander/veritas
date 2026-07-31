@@ -5,7 +5,7 @@ project, own repo, own backend, own storage format
 (~/myAIstro/backend/memory_store.json, a flat JSON array) — directly, and
 publishes each lesson as a DataHub entity.
 
-Deliberately NOT routed through Veritas's Second Brain (hub/
+Deliberately NOT routed through Veritas's Knowledge Graph (hub/
 commons_datahub_emit.py already covers that path, on lessons re-imported
 INTO Veritas). This module reads myAIstro's canonical store straight, the
 same read-only-direct-access pattern as orgs/datahub_opportunity_emit.py

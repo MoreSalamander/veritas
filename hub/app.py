@@ -246,7 +246,7 @@ _REPORT_CSS = """
 
 
 def _commons_document_html(rec: MemoryRecord) -> str:
-    """A single Second Brain source as a standalone, readable page: the full transcript, with the
+    """A single Knowledge Graph source as a standalone, readable page: the full transcript, with the
     human-vouched provenance shown up top so the trust tier travels with the text."""
     e = html.escape
     prov = rec.provenance
@@ -263,7 +263,7 @@ def _commons_document_html(rec: MemoryRecord) -> str:
         meta.append(f'<div><span class="k">why saved</span> {e(why)}</div>')
     meta.append(f'<div><span class="k">trust</span> <span class="vouch">◆ {e(trust)}</span> <span class="note">— vouches for the source, not the truth of its claims</span></div>')
     return f"""<!doctype html><html><head><meta charset="utf-8">
-<title>{e(rec.title)} — Second Brain</title>
+<title>{e(rec.title)} — Knowledge Graph</title>
 <style>
   :root {{ color-scheme: dark; }}
   body {{ background:#0d1117; color:#c9d1d9; font:15px/1.6 -apple-system,system-ui,sans-serif; margin:0; padding:32px; }}
@@ -980,7 +980,7 @@ def create_app(
     base = Path(data_dir) if data_dir else _DATA
     runs = RunStore(base / "runs")
     injected_provider = provider  # set in tests; when None, pick per-request by model
-    # Transcript fetcher for the Second Brain (P28b); ScriptedFetcher in tests so they stay offline.
+    # Transcript fetcher for the Knowledge Graph (P28b); ScriptedFetcher in tests so they stay offline.
     # Video first (YtDlpFetcher also catches a webpage with an embedded video), article text as
     # the fallback for pages with no video at all — one shared URL, either kind of source.
     transcript_fetcher = fetcher or ChainedFetcher([YtDlpFetcher(), ArticleFetcher()])
@@ -996,7 +996,7 @@ def create_app(
             memories[org_name] = default_memory_store(base / "memory" / org_name)
         return memories[org_name]
 
-    # The Second Brain: one cross-org commons of curated source material, parallel to (never mixed
+    # The Knowledge Graph: one cross-org commons of curated source material, parallel to (never mixed
     # into) the per-org memories above. It is input, not produced output, so it lives under its own
     # root and shows in no org's view — only an org that opts in reads from it (P28).
     commons = default_memory_store(base / "memory" / "commons")
@@ -1814,7 +1814,7 @@ def create_app(
     @app.get("/commons/{record_id}")
     def commons_document(record_id: str) -> HTMLResponse:
         """A single source's full transcript as its own viewable page (the 'open in its own page'
-        path; the Second Brain view also expands it inline)."""
+        path; the Knowledge Graph view also expands it inline)."""
         rec = next((r for r in commons.load_all() if r.id == record_id), None)
         if rec is None:
             raise HTTPException(status_code=404, detail="source not found")

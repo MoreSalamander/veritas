@@ -1,4 +1,4 @@
-"""P28c1 — the containment under consumption: the Second Brain may inform Research, but it can
+"""P28c1 — the containment under consumption: the Knowledge Graph may inform Research, but it can
 never be laundered into grounded fact.
 
 A human-vouched (commons) source is UNVERIFIED — the human vouched it is worth keeping, not that

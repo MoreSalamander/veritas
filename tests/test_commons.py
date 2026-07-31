@@ -1,4 +1,4 @@
-"""The Second Brain — the cross-org knowledge commons (P28a).
+"""The Knowledge Graph — the cross-org knowledge commons (P28a).
 
 The commons is an ordinary MemoryStore rooted at its own folder, holding curated source material
 under category="source". Its verification model is CONTAINMENT, not content: a source record may

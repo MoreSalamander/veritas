@@ -106,10 +106,10 @@ class QuotesVerbatimGate(Gate):
 
 
 class VouchedAttributionGate(Gate):
-    """HARD: a claim that leans on a human-vouched (commons / Second Brain) source must ATTRIBUTE
+    """HARD: a claim that leans on a human-vouched (commons / Knowledge Graph) source must ATTRIBUTE
     it — name that source in the claim — not state its content as bare fact.
 
-    This is the containment that keeps the Second Brain from laundering unverified material into
+    This is the containment that keeps the Knowledge Graph from laundering unverified material into
     grounded fact (P28c1). The verbatim-quote gate cannot tell *"Source X states Y"* from *"Y is
     true"* — both can quote the same span exactly. The difference is framing, and the deterministic
     signature of honest framing is that an attributed claim NAMES the source it is leaning on. So:

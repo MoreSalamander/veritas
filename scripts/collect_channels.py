@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run the Second Brain's channel-level auto-collector (hub/channel_collect.py).
+"""Run the Knowledge Graph's channel-level auto-collector (hub/channel_collect.py).
 
 Walks every channel in config/vouched_channels.json, fetches any video not
 already in the commons, and persists it as a human-vouched source record —

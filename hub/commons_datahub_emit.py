@@ -1,7 +1,7 @@
-"""Second Brain -> DataHub emitter: publishes human-vouched commons source
+"""Knowledge Graph -> DataHub emitter: publishes human-vouched commons source
 records as real DataHub datasets, closing the loop between the two halves
 of this session's work — orgs/datahub_emit.py publishes Hunter-org verdicts,
-this publishes the Second Brain's curated sources, onto the same platform.
+this publishes the Knowledge Graph's curated sources, onto the same platform.
 
 DESIGN NOTE — the tag must say what human-vouched actually means, not just
 that it exists. engine/memory.py's own doctrine (P28) is explicit: a human
@@ -51,7 +51,7 @@ _OWNER_SAFE = re.compile(r"[^a-z0-9-]+")
 
 def _owner_urn(channel: str) -> str:
     """A stable corpGroup per source channel, falling back to a generic
-    Second Brain owner when a record has no channel (e.g. a pasted-transcript
+    Knowledge Graph owner when a record has no channel (e.g. a pasted-transcript
     or local-file source)."""
     slug = _OWNER_SAFE.sub("-", channel.strip().lower()).strip("-") if channel else ""
     return f"urn:li:corpGroup:veritas-secondbrain-{slug}" if slug else "urn:li:corpGroup:veritas-secondbrain"

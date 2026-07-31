@@ -311,7 +311,7 @@
     <a data-view="labs">Labs</a>
     <a data-view="models">Models</a>
     <div class="navlabel">Knowledge</div>
-    <a data-view="commons">Second Brain</a>
+    <a data-view="commons">Knowledge Graph</a>
     <div class="navlabel">Ungoverned</div>
     <a data-view="chat">Chat</a>
     <div class="navlabel">&nbsp;</div>
@@ -523,7 +523,7 @@
   </section>
 
   <section id="commons" class="hidden">
-    <h1>Second Brain</h1>
+    <h1>Knowledge Graph</h1>
     <div class="muted" style="margin:-12px 0 16px;max-width:720px">Curated source material any engine can draw on — videos, talks, papers you fed in. It is <em>input</em>, not produced work, so it lives apart from every org's memory and shows in no studio. You picked it, so it's <strong>human-vouched</strong> — but that vouches for the <em>source</em>, not the truth of its claims. A grounding gate may cite it as <em>"this source states X"</em>; it may never treat X as a verified fact.</div>
     <div class="panel" id="commonsadd">
       <div class="row" style="flex-wrap:wrap;gap:8px">
@@ -729,7 +729,7 @@ async function loadModelsView() {
   }).join('');
 }
 
-// --- Second Brain: the cross-org commons of curated, human-vouched source material (P28) ---
+// --- Knowledge Graph: the cross-org commons of curated, human-vouched source material (P28) ---
 async function loadCommons() {
   $('#csgo').onclick = saveSource;
   $('#vaultsyncgo').onclick = syncVault;
