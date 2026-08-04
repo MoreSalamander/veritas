@@ -45,7 +45,7 @@ if _env.exists():
             os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
 
 from engine.memory import MemoryStore  # noqa: E402
-from engine.model import ClaudeProvider, OllamaProvider  # noqa: E402
+from engine.model import ClaudeProvider, LMStudioProvider, OllamaProvider  # noqa: E402
 from orgs.software_studio.builder import build  # noqa: E402
 
 # model_key -> factory. Each cell builds a fresh provider (clean state).
@@ -57,6 +57,11 @@ MODELS = {
     "gemma-12b-think": lambda: OllamaProvider(model="gemma4:12b", think=True, timeout=900),
     "llama-8b": lambda: OllamaProvider(model="llama3.1:8b", think=False, timeout=300),
     "qwen-64k-think": lambda: OllamaProvider(model="qwen3.5-64k:latest", think=True, timeout=900),
+    # LM Studio (localhost:1234) — the two new local proposers. Can't co-reside in memory
+    # (11.8+8.3 GB), so run them in separate invocations, loading one at a time.
+    "qwen-coder-14b": lambda: LMStudioProvider(model="qwen/qwen2.5-coder-14b", timeout=300),
+    "gpt-oss-20b": lambda: LMStudioProvider(model="gpt-oss-20b-mlx", timeout=900,
+                                            reasoning_effort="low"),
     "sonnet": lambda: ClaudeProvider(model="claude-sonnet-4-6"),  # cloud — costs a few cents/build
 }
 
