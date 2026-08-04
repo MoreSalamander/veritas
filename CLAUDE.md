@@ -45,9 +45,14 @@ VERITAS_DATA=./hub_data .venv/bin/uvicorn hub.app:app --port 8099
    passed. **Zero hard gates can never accept.** SOFT (incl. LLM judges) can flag, never block.
 3. **Never show something as more verified than it is.** Trust tiers: machine-proven (hard gates) ·
    model-judged (soft) · human-approved (create mode, a person signed off the output) · **human-vouched**
-   (Knowledge Graph commons — a person curated the *source*, but nothing checked its *claims*). Tag every
-   artifact by who verified it. A human-vouched source may ground only an **attributed** claim ("Source X
-   states Y"), never a factual one ("Y is true") — that containment is `VouchedAttributionGate` (P28).
+   (Knowledge Graph commons — a person curated the *source*, but nothing checked its *claims*) ·
+   **machine-fetched** (commons — Veritas found and fetched the source itself, e.g. via Parallel
+   search+extract; mechanically confirmed real/live, but no human ever read or picked it — a
+   *different* trust story from human-vouched, not a weaker copy of it; see
+   `TRUST_MACHINE_FETCHED` / `from_machine_fetched_source` in `engine/memory.py`). Tag every
+   artifact by who verified it. A human-vouched OR machine-fetched source may ground only an
+   **attributed** claim ("Source X states Y"), never a factual one ("Y is true") — that
+   containment is `VouchedAttributionGate` (P28).
 4. **The model is swappable.** Every model call goes through `engine/model.py`'s `ModelProvider`
    seam. Tests use `ScriptedProvider`/`SequencedProvider` (offline, deterministic) — never a live model.
 5. **Memory only counts if retrieved at similar-task-start.** Failures/lessons are recalled and fed

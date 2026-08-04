@@ -37,6 +37,20 @@ _STOPWORDS = {
 # for the source's worth, never for the truth of the claims inside it (see from_source). P28.
 TRUST_VOUCHED = "human-vouched"
 
+# A sibling of TRUST_VOUCHED, not a synonym: Veritas found this source itself (a live web search,
+# e.g. Parallel's Search+Extract), fetched it, and confirmed it's real content from a real URL —
+# but no human ever read or picked it. That makes it WEAKER than human-vouched in the one way that
+# actually matters (no person exercised judgment on whether this source is even credible) even
+# though it's mechanically confirmed live/real, which a pasted URL isn't. Never conflate the two
+# tags — a reader needs to know a person never saw this one. See from_machine_fetched_source. P28c.
+TRUST_MACHINE_FETCHED = "machine-fetched"
+
+# Recognized trust tags an unverified "source" record may carry to satisfy persist()'s P28
+# containment check — the set every current and future discovery mechanism appends to, never a
+# single hardcoded tag, so an honest new tier (like TRUST_MACHINE_FETCHED) is a real option, not a
+# temptation to mislabel a machine-found source as human-vouched just to get it to persist.
+_UNVERIFIED_SOURCE_TRUST_TAGS = {TRUST_VOUCHED, TRUST_MACHINE_FETCHED}
+
 
 def _stem(word: str) -> str:
     # Just enough to make "reverses"/"strings" match "reverse"/"string". Not linguistics.
@@ -155,6 +169,39 @@ class MemoryRecord:
         )
 
     @classmethod
+    def from_machine_fetched_source(
+        cls,
+        *,
+        url: str,
+        content: str,
+        search_query: str,
+        channel: str = "",
+        title: str | None = None,
+    ) -> "MemoryRecord":
+        """A source Veritas found and fetched ITSELF (live web search + extraction) — no human
+        picked or read it first. Still P28-contained exactly like from_source: attributed claims
+        only, never grounds "Y is true". But the trust story is honestly different, not weaker
+        across the board — mechanically confirmed to be real, live content from a real URL (a
+        hallucinated source simply fails to fetch), just never judged by a person for whether it's
+        even a credible source to begin with. `persist` requires the machine-fetched tag exactly
+        as strictly as it requires human-vouched for from_source (P28c) — the two must never be
+        interchangeable, so a caller can't launder a machine-found source into looking human-read."""
+        if not (url and url.strip()):
+            raise ValueError("a machine-fetched source record needs a resolvable origin (url)")
+        return cls(
+            category="source",
+            title=title or (f"[machine-fetched] {channel}" if channel else f"[machine-fetched] {url}"),
+            body=content,
+            tags=["source", TRUST_MACHINE_FETCHED],
+            provenance={
+                "url": url,
+                "channel": channel,
+                "search_query": search_query,
+                "trust": TRUST_MACHINE_FETCHED,
+            },
+        )
+
+    @classmethod
     def from_rejected_artifact(cls, artifact: Artifact, reason: str) -> "MemoryRecord":
         prov = _provenance_dict(artifact)
         prov["rejected_because"] = reason
@@ -208,14 +255,20 @@ class MemoryStore:
         self._embed_cache: dict[str, list[float]] = {}
 
     def persist(self, record: MemoryRecord) -> Path:
-        # Containment (P28): a source record without a resolvable origin AND the human-vouched
-        # trust tag is refused — unverified material may live in the commons only while it stays
-        # labeled, so nothing downstream can mistake it for a fact.
+        # Containment (P28): a source record without a resolvable origin AND a recognized
+        # unverified-source trust tag is refused — unverified material may live in the commons
+        # only while it stays honestly labeled, so nothing downstream can mistake it for a fact.
+        # Membership in a SET, not equality with one hardcoded tag: a new honest tier (like
+        # TRUST_MACHINE_FETCHED) is how you add provenance vocabulary, never a reason to mislabel.
         if record.category == "source":
             if not record.provenance.get("url"):
                 raise ValueError("a source record needs a resolvable origin to persist")
-            if record.provenance.get("trust") != TRUST_VOUCHED or TRUST_VOUCHED not in record.tags:
-                raise ValueError("a source record must carry the human-vouched trust tag to persist")
+            trust = record.provenance.get("trust")
+            if trust not in _UNVERIFIED_SOURCE_TRUST_TAGS or trust not in record.tags:
+                raise ValueError(
+                    f"a source record must carry a recognized trust tag to persist "
+                    f"(one of {sorted(_UNVERIFIED_SOURCE_TRUST_TAGS)})"
+                )
         target_dir = self.failures if record.category == "failure" else self.institutional
         path = target_dir / f"{record.id}.md"
         path.write_text(self._render(record), encoding="utf-8")
@@ -383,12 +436,17 @@ class SqliteMemoryStore(MemoryStore):
 
     def persist(self, record: MemoryRecord) -> Path:
         # The exact containment contract the filesystem store enforces (P28): an unverified source
-        # record may enter the commons only while it stays labeled human-vouched with a real origin.
+        # record may enter the commons only while it stays labeled with a recognized trust tag and
+        # a real origin — see MemoryStore.persist's comment for why this is a set, not one tag.
         if record.category == "source":
             if not record.provenance.get("url"):
                 raise ValueError("a source record needs a resolvable origin to persist")
-            if record.provenance.get("trust") != TRUST_VOUCHED or TRUST_VOUCHED not in record.tags:
-                raise ValueError("a source record must carry the human-vouched trust tag to persist")
+            trust = record.provenance.get("trust")
+            if trust not in _UNVERIFIED_SOURCE_TRUST_TAGS or trust not in record.tags:
+                raise ValueError(
+                    f"a source record must carry a recognized trust tag to persist "
+                    f"(one of {sorted(_UNVERIFIED_SOURCE_TRUST_TAGS)})"
+                )
         with self._connect() as con:
             row = con.execute("SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM records").fetchone()
             con.execute(

@@ -10,6 +10,7 @@ lives; it must never change what the org remembers.
 from __future__ import annotations
 
 from engine.memory import (
+    TRUST_MACHINE_FETCHED,
     TRUST_VOUCHED,
     MemoryRecord,
     MemoryStore,
@@ -85,7 +86,11 @@ def test_source_containment_is_enforced(tmp_path):
                       tags=["source", TRUST_VOUCHED],
                       provenance={"url": "https://x", "trust": TRUST_VOUCHED})
     store.persist(ok)  # labeled + sourced: allowed
-    assert [r.title for r in store.load_all()] == ["s"]
+    machine_fetched = MemoryRecord(category="source", title="m", body="fetched content",
+                      tags=["source", TRUST_MACHINE_FETCHED],
+                      provenance={"url": "https://y", "trust": TRUST_MACHINE_FETCHED})
+    store.persist(machine_fetched)  # the other recognized tier: also allowed
+    assert sorted(r.title for r in store.load_all()) == ["m", "s"]
 
 
 def test_two_tenants_cannot_see_each_others_memory(tmp_path):
