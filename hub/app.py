@@ -80,6 +80,22 @@ from orgs.web_studio.create import Review, build_create_page
 from orgs.web_studio.gates import RenderGate, StructureGate
 from orgs.web_studio.interview import CreateSpec, interview
 from orgs.web_studio.profile import ProfileStore, apply_profile, profile_hint
+from hub.commons_search import search_and_ingest
+from hub.parallel_client import ParallelClient, SearchClient
+from hub.tutorial_container import (
+    DispensedCopy,
+    build_tutorial_image,
+    dispense_copy,
+    return_copy,
+)
+from hub.tutorial_generate import (
+    TutorialContentParseError,
+    generate_tutorial,
+    parse_tutorial_content,
+    tutorial_record,
+)
+from hub.tutorial_publish import publish_tutorial
+from hub.tutorial_spec import TutorialSpec
 
 # The model toggle: local Ollama models (free) plus the three Claude tiers. Reliability comes
 # from the gates regardless of which model proposes — this just lets you discover which model a
@@ -130,6 +146,25 @@ def _provider_for(model: str) -> ModelProvider:
         )
     return ClaudeProvider(spec["id"])
 
+
+def _tutorial_provider_for(model: str, source_len: int) -> ModelProvider:
+    """The same model toggle as every other studio, but an Ollama provider gets a context window
+    sized to the Knowledge Graph source. Measured live: `_provider_for`'s default (unset num_ctx)
+    let Ollama's small default context silently truncate the "respond with ONLY JSON" system
+    prompt off a 37k-char transcript, so the model answered in prose instead of the required
+    schema — the gate correctly rejected it, but every long source would fail the same way.
+    ~3 chars/token, rounded up to the next 2k, with headroom for the system prompt and the
+    JSON response itself; capped so a pathological source can't demand unbounded local RAM."""
+    spec = MODELS.get(model)
+    if spec is None:
+        raise ValueError(f"unknown model {model!r}")
+    if spec["kind"] != "ollama":
+        return ClaudeProvider(spec["id"])
+    num_ctx = max(4096, min(32768, -(-((source_len // 3) + 4096) // 2048) * 2048))
+    return OllamaProvider(
+        model=spec["id"], think=spec["think"], timeout=600.0, num_ctx=num_ctx, num_predict=4096,
+    )
+
 # Anchor the data dir to the repo root, NOT the launch directory, so the hub finds the
 # same runs no matter where it's started from. (Relative "./hub_data" silently moved the
 # data when the server was launched from a different cwd.) VERITAS_DATA overrides it.
@@ -177,6 +212,19 @@ class CommonsSourceRequest(BaseModel):
     transcript: str = ""  # blank => fetch it from the URL (P28b); provided => manual entry (P28a)
     captured_why: str = ""  # the human's "why I saved this" — least-recoverable, most valuable
     channel: str = ""
+
+
+class CommonsSearchRequest(BaseModel):
+    query: str
+    max_results: int = 3
+
+
+class TutorialRequest(BaseModel):
+    source_id: str  # a Knowledge Graph commons record id (mem_...)
+    depth: str = "walkthrough"  # "overview" | "walkthrough" | "deep_dive"
+    reading_style: str = "detailed"  # "essentials_only" | "detailed"
+    include_typing_practice: bool = False
+    model: str = DEFAULT_MODEL
 
 
 class CreateStartRequest(BaseModel):
@@ -976,6 +1024,7 @@ def create_app(
     data_dir: Path | None = None,
     provider: ModelProvider | None = None,
     fetcher: TranscriptFetcher | None = None,
+    search_client: SearchClient | None = None,
 ) -> FastAPI:
     base = Path(data_dir) if data_dir else _DATA
     runs = RunStore(base / "runs")
@@ -984,6 +1033,10 @@ def create_app(
     # Video first (YtDlpFetcher also catches a webpage with an embedded video), article text as
     # the fallback for pages with no video at all — one shared URL, either kind of source.
     transcript_fetcher = fetcher or ChainedFetcher([YtDlpFetcher(), ArticleFetcher()])
+    # Live web search for the Knowledge Graph (P28c) — ScriptedSearchClient in tests so they stay
+    # offline; ParallelClient reads PARALLEL_API_KEY lazily per-call, so it's fine to construct
+    # even when no key is set (the /api/commons/search route checks .available() first).
+    web_search = search_client or ParallelClient()
 
     # Each org keeps its own institutional memory: recall stays relevant to the
     # domain, and it mirrors how a hosted deployment would isolate tenants.
@@ -1006,6 +1059,14 @@ def create_app(
     # ExpiringRegistry (not a plain dict) so a long-running hosted process doesn't
     # accumulate one entry per run forever — see hub/expiring_store.py.
     progress: ExpiringRegistry[dict[str, Any]] = ExpiringRegistry()
+
+    # Tutorial-dispense state (Knowledge Graph source -> single-use lesson -> a real container),
+    # keyed by a one-shot token, same shape as `progress` above.
+    tutorial_progress: ExpiringRegistry[dict[str, Any]] = ExpiringRegistry()
+    # Currently-running dispensed copies, keyed by container id — lets /return look one up to
+    # stop it. Not persisted: a hub restart doesn't need to remember what it handed out: `docker
+    # ps` remains the actual source of truth for what's still running (--rm cleans up either way).
+    dispensed_copies: dict[str, DispensedCopy] = {}
 
     # Create-mode sessions (the interview/build conversation), keyed by token.
     create_sessions: ExpiringRegistry[CreateSession] = ExpiringRegistry()
@@ -1781,6 +1842,208 @@ def create_app(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         return {"id": rec.id, "title": rec.title, "trust": rec.provenance.get("trust")}
+
+    @app.post("/api/commons/search")
+    def search_commons(body: CommonsSearchRequest) -> dict[str, Any]:
+        """The other way in (P28c): no URL, just a question. Veritas searches the live web itself
+        and extracts the top results — no human ever read these before they enter the commons, so
+        every one lands tagged `machine-fetched`, never `human-vouched` (search_and_ingest is where
+        that trust decision is made, not here). A URL Parallel can't extract is skipped, not fatal;
+        an empty `added` list honestly means nothing usable was found, not a hidden failure."""
+        query = body.query.strip()
+        if not query:
+            raise HTTPException(status_code=400, detail="a query is required")
+        # Only gate on a configured API key for the real client — an injected test double (a
+        # ScriptedSearchClient) has no key to check and must work regardless of env state.
+        if isinstance(web_search, ParallelClient) and not ParallelClient.available():
+            raise HTTPException(
+                status_code=503, detail="Parallel is not configured (PARALLEL_API_KEY not set)"
+            )
+        added = search_and_ingest(query, web_search, commons, max_results=body.max_results)
+        return {
+            "query": query,
+            "added": [
+                {"id": r.id, "title": r.title, "url": r.provenance.get("url")} for r in added
+            ],
+        }
+
+    @app.post("/api/tutorial/start")
+    def start_tutorial(req: TutorialRequest) -> dict[str, str]:
+        """Dispense a single-use tutorial from a Knowledge Graph source, in the background — same
+        progress-token shape as /api/runs/start. Bounded retry (not a repair hack) absorbs the one
+        failure mode measured live that isn't fixed by sizing the context window: a local model
+        occasionally emitting one bad escape sequence inside otherwise-valid JSON when the source
+        has embedded code. The GATE still decides pass/fail on every attempt; retrying just gives
+        the proposer another chance, exactly like every other studio's retry_budget.
+
+        Veritas persists its OWN copy the moment the gate passes (the Persist step every other
+        studio already gets) — the Vending Machine tab reads that, not any downstream system.
+        Mirroring into myAIstro (or any other extension) is best-effort AFTER that: its failure
+        must never blank out a product Veritas already has, the same contract vault-sync holds."""
+        source = next(
+            (r for r in commons.load_all() if r.id == req.source_id and r.category == "source"),
+            None,
+        )
+        if source is None:
+            raise HTTPException(status_code=404, detail=f"no Knowledge Graph source {req.source_id!r}")
+        spec = TutorialSpec(
+            depth=req.depth, reading_style=req.reading_style,
+            include_typing_practice=req.include_typing_practice,
+        )
+        token = uuid4().hex
+        tutorial_progress[token] = {
+            "done": False, "passed": None, "evidence": None,
+            "product_id": None, "container_image": None, "mirror": None, "error": None,
+        }
+
+        def worker() -> None:
+            try:
+                prov = injected_provider or _tutorial_provider_for(req.model, len(source.body))
+                artifact, result = None, None
+                for _attempt in range(3):
+                    artifact, result = generate_tutorial(source, spec, prov)
+                    if result.passed:
+                        break
+                tutorial_progress[token]["passed"] = bool(result and result.passed)
+                tutorial_progress[token]["evidence"] = result.evidence if result else "no attempt completed"
+                if result is not None and result.passed and artifact is not None:
+                    content = parse_tutorial_content(artifact.payload)
+                    record = tutorial_record(source, spec, artifact)
+                    # Package it as a container BEFORE persisting, so the record's own provenance
+                    # carries the tag — the product Veritas keeps and the container it's shipped
+                    # as are the same write, not two things that can drift apart.
+                    try:
+                        record.provenance["container_image"] = build_tutorial_image(
+                            record.id, source.title, content,
+                            source.provenance.get("url"), source.provenance.get("channel"),
+                        )
+                    except Exception as exc:  # no docker daemon, build failure — product still stands
+                        record.provenance["container_build_error"] = str(exc)
+                    org_memory("tutorials").persist(record)
+                    tutorial_progress[token]["product_id"] = record.id
+                    tutorial_progress[token]["container_image"] = record.provenance.get("container_image")
+                    try:
+                        tutorial_progress[token]["mirror"] = publish_tutorial(source, content, spec)
+                    except Exception as exc:  # myAIstro unreachable/changed shape — the product still stands
+                        tutorial_progress[token]["mirror"] = {"status": "mirror_failed", "detail": str(exc)}
+            except Exception as exc:  # model down, gate raised, etc.
+                tutorial_progress[token]["error"] = f"{type(exc).__name__}: {exc}"
+            finally:
+                tutorial_progress[token]["done"] = True
+
+        threading.Thread(target=worker, daemon=True).start()
+        return {"token": token}
+
+    @app.get("/api/tutorial/progress/{token}")
+    def tutorial_progress_status(token: str) -> dict[str, Any]:
+        state = tutorial_progress.get(token)
+        if state is None:
+            return {"error": "unknown tutorial token"}
+        return state
+
+    @app.get("/api/tutorial/products")
+    def list_tutorial_products() -> list[dict[str, Any]]:
+        """The Vending Machine's stock — every tutorial Veritas has itself dispensed, read from
+        Veritas's own memory only (never from a downstream mirror)."""
+        out: list[dict[str, Any]] = []
+        for r in org_memory("tutorials").load_all():
+            if r.category != "artifact" or "tutorial" not in r.tags:
+                continue
+            try:
+                content = parse_tutorial_content(r.body)
+            except TutorialContentParseError:
+                continue  # a malformed record must never break the whole machine
+            out.append({
+                "id": r.id,
+                "title": r.title,
+                "overview": content.overview,
+                "materials": content.materials,
+                "sections": [
+                    {
+                        "title": sec.title,
+                        "intro": sec.intro,
+                        "tip": sec.tip,
+                        "steps": [{"instruction": s.instruction, "code": s.code} for s in sec.steps],
+                    }
+                    for sec in content.sections
+                ],
+                "reference": content.reference,
+                "depth": r.provenance.get("depth"),
+                "reading_style": r.provenance.get("reading_style"),
+                "include_typing_practice": bool(r.provenance.get("include_typing_practice")),
+                "source_url": r.provenance.get("source_url"),
+                "source_channel": r.provenance.get("source_channel"),
+                "container_image": r.provenance.get("container_image"),
+                "created_at": r.created_at,
+            })
+        out.sort(key=lambda p: str(p["created_at"]))
+        return out
+
+    @app.get("/api/academy/products")
+    def list_academy_products() -> list[dict[str, Any]]:
+        """The Academy shelf — taichi-academy projects packaged as dispensable readers. These
+        are human-approved (a person authored them; the academy's own check_lessons.py gate
+        re-verified prose-matches-code at packaging time), a deliberately different trust story
+        from the LLM-generated tutorial shelf, carried in every record's provenance."""
+        out: list[dict[str, Any]] = []
+        for r in org_memory("academy").load_all():
+            if r.category != "artifact" or "academy" not in r.tags:
+                continue
+            try:
+                body = json.loads(r.body)
+            except (json.JSONDecodeError, ValueError):
+                continue  # a malformed record must never break the whole shelf
+            out.append({
+                "id": r.id,
+                "kind": "academy",
+                "title": r.title,
+                "pitch": body.get("pitch", ""),
+                "tier": body.get("tier", ""),
+                "language": body.get("language", ""),
+                "chapters": body.get("chapters", []),
+                "project_id": r.provenance.get("project_id"),
+                "trust": r.provenance.get("trust"),
+                "verified_by": r.provenance.get("verified_by"),
+                "container_image": r.provenance.get("container_image"),
+                "created_at": r.created_at,
+            })
+        out.sort(key=lambda p: str(p["project_id"] or ""))
+        return out
+
+    @app.post("/api/tutorial/products/{product_id}/dispense")
+    def dispense_tutorial(product_id: str) -> dict[str, Any]:
+        """Press the button: hand out a fresh, disposable COPY of this product's container — a
+        new `docker run`, never the same box twice. The image was built once, at generation time;
+        this only ever runs it. Searches every product line the machine stocks (tutorials, then
+        academy) — the dispense mechanics are identical, only the shelf differs."""
+        record = next(
+            (r for store_name in ("tutorials", "academy")
+             for r in org_memory(store_name).load_all() if r.id == product_id),
+            None,
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"no dispensed product {product_id!r}")
+        image = record.provenance.get("container_image")
+        if not image:
+            raise HTTPException(
+                status_code=409,
+                detail=record.provenance.get("container_build_error")
+                or "this product has no container image (docker was unavailable when it was made)",
+            )
+        try:
+            copy = dispense_copy(image)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        dispensed_copies[copy.container_id] = copy
+        return {"container_id": copy.container_id, "url": copy.url}
+
+    @app.post("/api/tutorial/copies/{container_id}/return")
+    def return_tutorial_copy(container_id: str) -> dict[str, Any]:
+        """Return a dispensed copy — stops (and, via --rm, removes) that one container. Other
+        copies of the same product, if any are still out, are unaffected."""
+        return_copy(container_id)
+        dispensed_copies.pop(container_id, None)
+        return {"stopped": container_id}
 
     @app.get("/")
     def index() -> FileResponse:

@@ -3,11 +3,26 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Veritas — the shell of Entropy AI</title>
+<title>Veritas — the shell of Entropy OS</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/shared/entropy-theme.css">
+<!-- Vendored Prism.js (MIT) — every code block in the Hub is shown syntax-highlighted, VS Code
+     Dark+ theme, matching myAIstro's own code rendering. Fetched once, shipped locally: no CDN
+     call at runtime, same asset reused inside the disposable tutorial containers. -->
+<link rel="stylesheet" href="/static/vendor/prism/prism-vsc-dark-plus.css">
+<script>window.Prism = { manual: true };</script>
+<!-- manual:true — this app injects every view via innerHTML, not on page load, so Prism's own
+     auto-init (DOMContentLoaded highlightAll) would never see dynamically-added code blocks.
+     Every render function that emits a code block calls Prism.highlightAllUnder(el) itself. -->
+<script src="/static/vendor/prism/prism-core.min.js"></script>
+<script src="/static/vendor/prism/prism-markup.min.js"></script>
+<script src="/static/vendor/prism/prism-clike.min.js"></script>
+<script src="/static/vendor/prism/prism-python.min.js"></script>
+<script src="/static/vendor/prism/prism-javascript.min.js"></script>
+<script src="/static/vendor/prism/prism-bash.min.js"></script>
+<script src="/static/vendor/prism/prism-json.min.js"></script>
 <style>
   /*
    * Verdict palette, on the shared Entropy house tokens (see
@@ -90,9 +105,6 @@
   .orgcard { transition: border-color .12s; }
   .orgcard:hover { border-color: var(--gold); }
   .navlabel { font-size: 9.5px; letter-spacing: .5px; text-transform: uppercase; color: #5f6f82; margin: 12px 8px 4px; }
-  pre.code { background: #101116; border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px;
-             overflow-x: auto; font-family: var(--mono); font-size: 12px; color: var(--ink);
-             white-space: pre; margin: 0; line-height: 1.5; }
   button { background: var(--gold); color: #1c1606; border: 0; padding: 12px 18px; border-radius: 10px;
            font-weight: 700; cursor: pointer; }
   button:disabled { opacity: .5; cursor: wait; }
@@ -246,7 +258,7 @@
   .proofcap strong { color: var(--gold); }
   .promptpanel { border: 1px solid rgba(232,196,104,.3); }
 
-  /* --- the nervous system: every real test, one signal, feeding Entropy AI --- */
+  /* --- the nervous system: every real test, one signal, feeding Entropy OS --- */
   .nerve-viz { position: relative; border: 1px solid var(--line); border-radius: 14px;
                background: radial-gradient(ellipse 1000px 700px at 50% 35%, #10151b, var(--void) 70%);
                padding: 26px 20px 18px; margin-bottom: 26px; overflow: hidden; }
@@ -290,6 +302,55 @@
   table.nerve-viz-table tr.cat-row td { font-weight: 700; background: rgba(255,255,255,.03); color: var(--bone); }
   .nerve-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 5px currentColor; }
   .nerve-tablewrap-scroll { overflow-x: auto; }
+
+  /* --- Vending Machine: each gated tutorial is a real container; a press dispenses a fresh,
+     disposable copy of it. The chassis/glass/coil language is deliberately literal — this reads
+     as a physical machine, not a card grid with a theme. --- */
+  .vm-wrap { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+  .vm-machine { background: linear-gradient(180deg, #1a1f19, #0d100d); border: 1px solid var(--line);
+    border-radius: 18px; padding: 18px; width: 380px; flex-shrink: 0;
+    box-shadow: 0 30px 60px -20px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.04); }
+  .vm-header { display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; margin-bottom: 14px; border-radius: 10px;
+    background: linear-gradient(180deg, #14170f, #0a0c09); border: 1px solid var(--line); }
+  .vm-header .vm-brand { font-family: var(--disp); font-weight: 700; letter-spacing: .1em; font-size: 13px; }
+  .vm-header .vm-brand b { color: var(--gold); }
+  .vm-lights { display: flex; gap: 5px; }
+  .vm-light { width: 6px; height: 6px; border-radius: 50%; background: var(--safe); animation: eg-beat 2s infinite; }
+  .vm-light:nth-child(2) { animation-delay: .3s; } .vm-light:nth-child(3) { animation-delay: .6s; }
+  .vm-glass { background: repeating-linear-gradient(180deg, rgba(232,196,104,.02) 0 2px, transparent 2px 4px),
+    rgba(4,6,4,.7); border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    box-shadow: inset 0 0 24px rgba(0,0,0,.6); min-height: 120px; }
+  #vmGlassAcademy { max-height: 460px; overflow-y: auto; }
+  .vm-shelf-label { font-size: 9.5px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--faint); margin: 12px 2px 6px; }
+  .vm-tier { display: inline-block; font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+    border: 1px solid var(--faint); color: var(--dim); border-radius: 4px; padding: 1px 6px; }
+  .vm-slot { background: rgba(20,24,18,.7); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 10px 8px; display: flex; flex-direction: column; gap: 6px; position: relative; overflow: hidden; }
+  .vm-coil { height: 22px; border-radius: 4px;
+    background: repeating-linear-gradient(90deg, var(--faint) 0 4px, transparent 4px 9px); opacity: .8; }
+  .vm-slot.vm-spin .vm-coil { animation: vm-turn .9s linear; }
+  @keyframes vm-turn { from { background-position: 0 0; } to { background-position: 60px 0; } }
+  .vm-code { position: absolute; top: 8px; right: 10px; font-family: var(--mono); font-size: 10px; color: var(--dim); }
+  .vm-label { font-size: 12px; font-weight: 700; line-height: 1.25; min-height: 30px; }
+  .vm-sub { font-size: 10.5px; color: var(--dim); }
+  .vm-select { width: 100%; margin-top: 2px; padding: 8px 6px; font-size: 11px; border-radius: 6px; }
+  .vm-slot.vm-oos .vm-select { background: transparent; border: 1px solid var(--line); color: var(--faint); cursor: not-allowed; }
+  .vm-slot.vm-oos .vm-coil { opacity: .3; }
+  .vm-chute { height: 16px; margin: 10px 6px 0; border-radius: 0 0 6px 6px;
+    background: linear-gradient(180deg, rgba(0,0,0,.5), transparent); border-bottom: 2px solid var(--line); }
+  .vm-tray { margin-top: 10px; border: 1px solid var(--line); border-radius: 0 0 10px 10px;
+    background: rgba(0,0,0,.35); padding: 12px; min-height: 46px; }
+  .vm-tray-label { font-size: 9.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--faint); margin-bottom: 6px; }
+  @keyframes vm-drop { 0% { transform: translateY(-14px); opacity: 0; } 60% { transform: translateY(2px); opacity: 1; } 100% { transform: translateY(0); opacity: 1; } }
+  .vm-receipt { animation: vm-drop .35s ease-out; background: var(--panel); border: 1px solid var(--line);
+    border-top: 3px solid var(--gold); border-radius: 10px; padding: 14px 16px; }
+  .vm-receipt-head { color: var(--gold); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 8px; }
+  .vm-receipt h3 { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); margin: 14px 0 6px; }
+  .vm-receipt ul { margin: 0; padding-left: 18px; font-size: 12.5px; }
+  .vm-panel-note { flex: 1; min-width: 260px; }
 </style>
 </head>
 <body>
@@ -312,6 +373,7 @@
     <a data-view="models">Models</a>
     <div class="navlabel">Knowledge</div>
     <a data-view="commons">Knowledge Graph</a>
+    <a data-view="vending">Vending Machine</a>
     <div class="navlabel">Ungoverned</div>
     <a data-view="chat">Chat</a>
     <div class="navlabel">&nbsp;</div>
@@ -322,11 +384,11 @@
   <section id="home">
     <div class="nerve-viz" id="nerveViz">
       <div class="nerve-head">
-        <div class="nerve-kicker">Entropy AI &middot; nervous system: Veritas Dynamics</div>
-        <h2 class="nerve-title">Every one of the 517 signals, not a summary of them</h2>
-        <div class="nerve-sub">Entropy AI is the organism at the center. Veritas is the nervous system
+        <div class="nerve-kicker">Entropy OS &middot; nervous system: Veritas Dynamics</div>
+        <h2 class="nerve-title">Every one of the 605 signals, not a summary of them</h2>
+        <div class="nerve-sub">Entropy OS is the organism at the center. Veritas is the nervous system
           running through it &mdash; every thin terminal below is one real, individual test, not a
-          module average. All 517 ran and passed clean this session.</div>
+          module average. All 605 ran and passed clean this session.</div>
       </div>
       <div id="nerveStage">
         <canvas id="nerve"></canvas>
@@ -345,8 +407,8 @@
         </div>
       </div>
       <div class="nerve-legend" id="nerveLegend"></div>
-      <div class="nerve-foot" id="nerveFootnote">517 passed &middot; 0 skipped &middot; 0 failed &middot; 76 modules &middot; 517 individual tests, each its own terminal</div>
-      <div class="nerve-credit"><b>Entropy AI</b> &mdash; powered by Veritas Dynamics <span class="sep">&mdash;</span> both a MoreSalamander StudioLabs Production</div>
+      <div class="nerve-foot" id="nerveFootnote">605 passed &middot; 5 skipped &middot; 0 failed &middot; 87 modules &middot; 605 individual tests, each its own terminal</div>
+      <div class="nerve-credit"><b>Entropy OS</b> &mdash; powered by Veritas Dynamics <span class="sep">&mdash;</span> both a MoreSalamander StudioLabs Production</div>
       <details class="nerve-table">
         <summary>&#9656; view every module as a table</summary>
         <div class="nerve-tablewrap-scroll"><div id="nerveTablehost"></div></div>
@@ -364,7 +426,7 @@
     </div>
 
     <div class="panel" style="display:flex;gap:32px;flex-wrap:wrap;margin:14px 0 22px">
-      <div><div class="proofnum" style="font-size:30px">517</div><div class="proofcap">tests passed, 0 skipped — clean, 2026-07-29</div></div>
+      <div><div class="proofnum" style="font-size:30px">605</div><div class="proofcap">tests passed, 5 skipped — clean, 2026-08-02</div></div>
       <div><div class="proofnum" style="font-size:30px">0</div><div class="proofcap">mypy --strict errors</div></div>
       <div><div class="proofnum" style="font-size:30px">8</div><div class="proofcap">distinct verification models registered</div></div>
     </div>
@@ -534,6 +596,15 @@
       <textarea id="cstranscript" placeholder="transcript — optional; leave blank to fetch it from the URL" style="width:100%;height:96px;margin-top:8px;font-family:var(--mono);font-size:12.5px"></textarea>
       <div class="row" style="margin-top:8px"><button id="csgo">Fetch &amp; Save</button><span class="muted" id="csmsg" style="font-size:12px"></span></div>
     </div>
+    <div class="panel" id="commonssearch">
+      <strong style="font-size:13px">Or search the open web</strong>
+      <div class="muted" style="font-size:12px;margin:4px 0 8px">No URL needed — Veritas searches and fetches sources itself (Parallel). Nobody read these first, so they carry their own tag: <strong>machine-fetched</strong>, not human-vouched — mechanically confirmed real and live, but never judged for credibility by a person.</div>
+      <div class="row">
+        <input type="text" id="cssquery" placeholder="e.g. LS engine bellhousing pattern vs SBC" style="flex:1" />
+        <button id="cssgo">Search &amp; Add</button>
+      </div>
+      <div class="muted" id="cssmsg" style="font-size:12px;margin-top:8px"></div>
+    </div>
     <div id="commonslist" style="display:grid;gap:10px;margin-top:16px"></div>
     <div class="panel" style="margin-top:16px">
       <div class="row" style="justify-content:space-between;align-items:center">
@@ -543,6 +614,58 @@
         </div>
         <button class="ghost" id="vaultsyncgo">Sync vault</button>
       </div>
+    </div>
+  </section>
+
+  <section id="vending" class="hidden">
+    <h1>Vending Machine</h1>
+    <div class="muted" style="margin:-12px 0 16px;max-width:720px">Every tutorial that clears the gate becomes its own real Docker image — built once, at generation time. Pressing a button doesn't reuse anything: it runs a fresh, disposable <code>docker run</code> of that image and hands you the copy. Stock comes from the Knowledge Graph, dispensed via <a href="#" onclick="document.querySelector('nav a[data-view=commons]').click();return false">Knowledge Graph</a> sources today.</div>
+    <div class="vm-wrap">
+      <div class="vm-machine">
+        <div class="vm-header">
+          <div class="vm-brand">VERI<b>TAS</b> · VENDING</div>
+          <div class="vm-lights"><span class="vm-light"></span><span class="vm-light"></span><span class="vm-light"></span></div>
+        </div>
+        <div class="vm-glass" id="vmGlass"></div>
+        <div class="vm-shelf-label">Taichi Academy — the skills ladder, one rung per slot</div>
+        <div class="vm-glass" id="vmGlassAcademy"></div>
+        <div class="vm-chute"></div>
+        <div class="vm-tray">
+          <div class="vm-tray-label">tray</div>
+          <div id="vmTrayContent" class="muted" style="font-size:12.5px">press a button to dispense.</div>
+        </div>
+      </div>
+      <div class="vm-panel-note panel">
+        <strong style="font-size:13px">How this works</strong>
+        <div class="muted" style="font-size:12.5px;margin-top:8px;line-height:1.6">
+          A generated tutorial only becomes a product once it clears <code>TutorialContentScorerGate</code> (HARD) —
+          the same proposer/gate split as every other studio. Veritas persists its own record the moment that
+          happens; the container is built from that record, tagged by its own id. Nothing here is re-verified —
+          dispensing just runs the image. Return a copy when you're done reading; it self-destructs (<code>--rm</code>).
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="vmRestock" style="margin-top:20px">
+      <strong style="font-size:13px">Restock</strong>
+      <div class="muted" style="font-size:12px;margin:4px 0 12px">Pick a Knowledge Graph source and a scope — the same proposer/gate pipeline every product goes through. A rejected attempt never reaches the machine; you'll see why below instead.</div>
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <select id="vmRestockSource" style="flex:2;min-width:220px"></select>
+        <select id="vmRestockDepth" style="flex:1;min-width:120px">
+          <option value="overview">overview</option>
+          <option value="walkthrough" selected>walkthrough</option>
+          <option value="deep_dive">deep_dive</option>
+        </select>
+        <select id="vmRestockStyle" style="flex:1;min-width:120px">
+          <option value="essentials_only">essentials only</option>
+          <option value="detailed" selected>detailed</option>
+        </select>
+        <label class="row" style="gap:6px;font-size:12.5px;color:var(--dim)">
+          <input type="checkbox" id="vmRestockTyping" style="width:auto" /> typing practice
+        </label>
+        <button id="vmRestockGo" type="button">Generate &amp; Stock</button>
+      </div>
+      <div id="vmRestockStatus" class="muted" style="font-size:12.5px;margin-top:10px"></div>
     </div>
   </section>
 
@@ -586,11 +709,41 @@ const api = (p, opt) => fetch(p, opt).then(r => r.json());
 const esc = s => (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const isHard = g => g.determinism !== 'soft';
 
+// --- syntax highlighting: every code block in the Hub goes through here, not a one-off <pre> ---
+const PRISM_LANGS = new Set(['python', 'javascript', 'bash', 'json', 'markup']);
+
+// A small regex heuristic — none of this app's code blocks (Software Studio artifacts, tutorial
+// steps) carry an explicit language tag today, so something has to guess. Ordered most-specific
+// first; falls through to 'python' since that's what this whole engine's Software org builds.
+function detectLanguage(code) {
+  const s = (code || '').trim();
+  if (!s) return 'python';
+  if (/^<!doctype html/i.test(s) || /^<html[\s>]/i.test(s)) return 'markup';
+  if (/^[{\[]/.test(s) && /[}\]]$/.test(s)) { try { JSON.parse(s); return 'json'; } catch (e) {} }
+  if (/^#!.*\b(bash|sh)\b/.test(s) || /^\s*(sudo|apt-get|curl|docker|export|cd)\s/m.test(s)) return 'bash';
+  if (/\b(function|const|let|=>|console\.log|import .* from)\b/.test(s)) return 'javascript';
+  return 'python';
+}
+
+// Renders a fenced, highlighted code block from a raw string — the one place a code string turns
+// into markup, so a change to the theme/language set/language chip only ever happens here.
+function codeBlockHtml(code, langHint) {
+  const lang = PRISM_LANGS.has(langHint) ? langHint : detectLanguage(code);
+  return `<div class="code-lang-chip">${lang}</div><pre class="language-${lang}"><code class="language-${lang}">${esc(code)}</code></pre>`;
+}
+
+// Prism.manual=true (see <head>) means nothing highlights itself — call this after any innerHTML
+// assignment that may have introduced a language-* code block, same discipline as loadCommons()
+// re-fetching after every mutation.
+function highlightCodeIn(el) {
+  if (window.Prism && el) Prism.highlightAllUnder(el);
+}
+
 document.querySelectorAll('nav a[data-view]').forEach(a => a.onclick = () => {
   document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
   a.classList.add('active');
   const view = a.dataset.view;
-  ['home','plan','prompts','studio','labs','models','commons','create','chat'].forEach(v => $('#'+v).classList.toggle('hidden', v !== view));
+  ['home','plan','prompts','studio','labs','models','commons','vending','create','chat'].forEach(v => $('#'+v).classList.toggle('hidden', v !== view));
   if (view === 'home') loadHome();
   if (view === 'plan') loadPlan();
   if (view === 'prompts') loadPromptStudio();
@@ -598,6 +751,7 @@ document.querySelectorAll('nav a[data-view]').forEach(a => a.onclick = () => {
   if (view === 'labs') loadLabs();
   if (view === 'models') loadModelsView();
   if (view === 'commons') loadCommons();
+  if (view === 'vending') loadVending();
   if (view === 'chat') loadChat();
 });
 
@@ -632,7 +786,7 @@ function verdictBanner(r) {
 
 function artifactBlock(org, a) {
   const loc = `hub_data/memory/${esc(org)}/${esc(a.store)}/${esc(a.file)}`;
-  let body = a.payload ? `<pre class="code">${esc(a.payload)}</pre>` : '';
+  let body = a.payload ? codeBlockHtml(a.payload, a.type === 'page' ? 'markup' : undefined) : '';
   // a grounded report is shown as a readable document (see runCard), so skip the raw JSON dump here.
   if (a.type === 'report') body = '<div class="muted" style="font-size:12px">rendered as a document — open it above</div>';
   // a published production carries a manifest pointing at the rendered file — play it inline.
@@ -738,6 +892,7 @@ async function loadModelsView() {
 // --- Knowledge Graph: the cross-org commons of curated, human-vouched source material (P28) ---
 async function loadCommons() {
   $('#csgo').onclick = saveSource;
+  $('#cssgo').onclick = searchCommons;
   $('#vaultsyncgo').onclick = syncVault;
   loadVaultStatus();
   const items = await api('/api/commons');
@@ -755,10 +910,16 @@ async function loadCommons() {
     const txt = chars > 280
       ? `<details class="csbody"><summary class="mono" style="font-size:11.5px;color:var(--dim);white-space:pre-wrap;cursor:pointer">${esc(body.slice(0, 280))}… <span class="muted" style="font-size:11px">(${chars.toLocaleString()} chars — click to expand)</span></summary><div class="mono" style="font-size:11.5px;color:var(--ink);white-space:pre-wrap;margin-top:8px;max-height:420px;overflow:auto">${esc(body)}</div></details>`
       : `<div class="mono" style="font-size:11.5px;color:var(--dim);white-space:pre-wrap">${esc(body)}</div>`;
+    // human-vouched (green) means a person picked this; machine-fetched (proposal-slate) means
+    // Veritas found it itself — same containment either way, but visually distinct so the
+    // difference is legible at a glance, not just in the tooltip text (Rule 3: never show
+    // something as more verified than it is).
+    const trust = m.trust || 'human-vouched';
+    const trustColor = trust === 'machine-fetched' ? 'var(--proposal)' : 'var(--green)';
     return `<div class="panel" style="margin:0">
       <div class="row" style="justify-content:space-between;align-items:baseline">
         <span><strong>${esc(m.title)}</strong></span>
-        <span class="pill" style="border-color:var(--green);color:var(--green)">◆ ${esc(m.trust || 'human-vouched')}</span></div>
+        <span class="pill" style="border-color:${trustColor};color:${trustColor}">◆ ${esc(trust)}</span></div>
       <div class="muted" style="font-size:12px;margin:4px 0">${src}<a href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.url)}</a>
         <a href="/commons/${esc(m.id)}" target="_blank" rel="noopener" style="margin-left:10px">open full ↗</a></div>
       ${why}
@@ -790,6 +951,31 @@ async function saveSource() {
   ['csurl','cschannel','cswhy','cstranscript'].forEach(id => $('#'+id).value = '');
   loadCommons();
 }
+async function searchCommons() {
+  const query = $('#cssquery').value.trim();
+  const msg = $('#cssmsg');
+  if (!query) { msg.textContent = 'a query is required'; return; }
+  const btn = $('#cssgo');
+  btn.disabled = true;
+  msg.textContent = 'searching the open web…';
+  try {
+    const res = await fetch('/api/commons/search', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ query }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || 'search failed');
+    msg.textContent = body.added.length
+      ? `✓ added ${body.added.length} source(s): ${body.added.map(a => a.title || a.url).join(', ')}`
+      : 'no usable sources found for that query';
+    $('#cssquery').value = '';
+    loadCommons();
+  } catch (e) {
+    msg.textContent = `✕ ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
 async function loadVaultStatus() {
   const s = await api('/api/memory/vault/status');
   $('#vaultstatus').textContent = s.exists ? `— ${s.file_count} file(s) at ${s.vault_path}` : '— not synced yet';
@@ -806,6 +992,179 @@ async function syncVault() {
   $('#vaultsyncgo').disabled = false;
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// --- Vending Machine: dispense a real, disposable copy of a gated tutorial's own container ---
+const VM_CODES = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2'];
+
+async function loadVending() {
+  const products = await api('/api/tutorial/products');
+  const glass = $('#vmGlass');
+  if (!products.length) {
+    glass.innerHTML = '<div class="muted" style="grid-column:1/-1;padding:8px">Nothing stocked yet — restock from a Knowledge Graph source below.</div>';
+  } else {
+    glass.innerHTML = products.map((p, i) => vmSlotHtml(p, VM_CODES[i] || String(i + 1))).join('');
+    products.forEach((p, i) => {
+      const btn = document.getElementById(`vmbtn-${p.id}`);
+      if (btn && !btn.disabled) btn.onclick = () => dispenseProduct(p, glass.children[i]);
+    });
+  }
+  const academy = await api('/api/academy/products');
+  const shelf = $('#vmGlassAcademy');
+  if (!academy.length) {
+    shelf.innerHTML = '<div class="muted" style="grid-column:1/-1;padding:8px">Academy shelf is empty — run scripts/package_academy.py to stock the ladder.</div>';
+  } else {
+    shelf.innerHTML = academy.map((p, i) => vmAcademySlotHtml(p, i + 1)).join('');
+    academy.forEach((p, i) => {
+      const btn = document.getElementById(`vmbtn-${p.id}`);
+      if (btn && !btn.disabled) btn.onclick = () => dispenseProduct(p, shelf.children[i]);
+    });
+  }
+  await loadVmRestockSources();
+  $('#vmRestockGo').onclick = restockVendingMachine;
+}
+
+function vmAcademySlotHtml(p, rung) {
+  const inStock = !!p.container_image;
+  return `<div class="vm-slot ${inStock ? '' : 'vm-oos'}">
+    <span class="vm-code">T${rung}</span>
+    <div class="vm-coil"></div>
+    <div class="vm-label">${esc(p.title.replace(/^Academy: /, ''))}</div>
+    <div class="vm-sub"><span class="vm-tier">${esc(p.tier)}</span> · ${p.chapters.length} chapter${p.chapters.length === 1 ? '' : 's'}</div>
+    <button class="vm-select" id="vmbtn-${p.id}" ${inStock ? '' : 'disabled'}>${inStock ? 'Dispense' : 'Out of stock'}</button>
+  </div>`;
+}
+
+async function loadVmRestockSources() {
+  const sources = await api('/api/commons');
+  const select = $('#vmRestockSource');
+  select.innerHTML = sources.length
+    ? sources.map(s => `<option value="${esc(s.id)}">${esc(s.title)}${s.channel ? ' — ' + esc(s.channel) : ''}</option>`).join('')
+    : '<option value="">no Knowledge Graph sources yet — add one first</option>';
+}
+
+async function restockVendingMachine() {
+  const sourceId = $('#vmRestockSource').value;
+  const status = $('#vmRestockStatus');
+  if (!sourceId) { status.textContent = 'pick a source first.'; return; }
+  const btn = $('#vmRestockGo');
+  btn.disabled = true;
+  status.textContent = 'generating — the proposer is writing, the gate will decide…';
+  try {
+    const res = await fetch('/api/tutorial/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_id: sourceId,
+        depth: $('#vmRestockDepth').value,
+        reading_style: $('#vmRestockStyle').value,
+        include_typing_practice: $('#vmRestockTyping').checked,
+      }),
+    });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'could not start'); }
+    const { token } = await res.json();
+    let state;
+    for (let i = 0; i < 300; i++) {
+      state = await api(`/api/tutorial/progress/${token}`);
+      if (state.done) break;
+      await sleep(500);
+    }
+    if (state.error) {
+      status.textContent = `✕ ${state.error}`;
+    } else if (!state.passed) {
+      status.textContent = `✕ rejected by the gate — ${state.evidence}`;
+    } else {
+      const built = state.container_image ? '' : ' (no container built — docker unavailable)';
+      status.textContent = `✓ stocked — ${state.evidence}${built}`;
+      await loadVending();
+    }
+  } catch (e) {
+    status.textContent = `✕ ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function vmSlotHtml(p, code) {
+  const inStock = !!p.container_image;
+  return `<div class="vm-slot ${inStock ? '' : 'vm-oos'}">
+    <span class="vm-code">${code}</span>
+    <div class="vm-coil"></div>
+    <div class="vm-label">${esc(p.title)}</div>
+    <div class="vm-sub">${esc(p.source_channel || '')}</div>
+    <button class="vm-select" id="vmbtn-${p.id}" ${inStock ? '' : 'disabled'}>${inStock ? 'Dispense' : 'Out of stock'}</button>
+  </div>`;
+}
+
+async function dispenseProduct(p, slotEl) {
+  const btn = document.getElementById(`vmbtn-${p.id}`);
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'vending…';
+  slotEl.classList.add('vm-spin');
+  $('#vmTrayContent').innerHTML = '<span class="muted">dispensing your copy…</span>';
+  try {
+    const res = await fetch(`/api/tutorial/products/${p.id}/dispense`, { method: 'POST' });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || 'dispense failed');
+    if (p.kind === 'academy') renderTrayAcademy(p, body); else renderTrayProduct(p, body);
+  } catch (e) {
+    $('#vmTrayContent').innerHTML = `<span style="color:var(--red)">✕ ${esc(e.message)}</span>`;
+  } finally {
+    slotEl.classList.remove('vm-spin');
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+function renderTrayProduct(p, copy) {
+  const materials = (p.materials || []).map(m => `<li>${esc(m)}</li>`).join('');
+  const materialsHtml = materials ? `<h3>What You Need</h3><ul>${materials}</ul>` : '';
+  const sectionsHtml = (p.sections || []).map((sec, i) => vmSectionHtml(i + 1, sec)).join('');
+  const reference = (p.reference || []).length
+    ? `<h3>Quick Reference</h3><ul>${p.reference.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : '';
+  $('#vmTrayContent').innerHTML = `<div class="vm-receipt">
+    <div class="vm-receipt-head">✓ dispensed — your own copy, running at ${esc(copy.url)}</div>
+    <strong>${esc(p.title)}</strong>
+    <div class="muted" style="font-size:12px;margin:6px 0">${esc(p.overview)}</div>
+    ${materialsHtml}
+    ${sectionsHtml}
+    ${reference}
+    <div class="row" style="margin-top:12px">
+      <a href="${esc(copy.url)}" target="_blank" rel="noopener"><button type="button">Open my copy ↗</button></a>
+      <button class="ghost" type="button" onclick="returnCopy('${copy.container_id}')">Return copy</button>
+    </div>
+  </div>`;
+  highlightCodeIn($('#vmTrayContent'));
+}
+
+function renderTrayAcademy(p, copy) {
+  const chapters = (p.chapters || []).map((c, i) => `<li>${i + 1}. ${esc(c)}</li>`).join('');
+  $('#vmTrayContent').innerHTML = `<div class="vm-receipt">
+    <div class="vm-receipt-head">✓ dispensed — your own copy of the reader, running at ${esc(copy.url)}</div>
+    <strong>${esc(p.title.replace(/^Academy: /, ''))}</strong> <span class="vm-tier">${esc(p.tier)}</span>
+    <div class="muted" style="font-size:12px;margin:6px 0">${esc(p.pitch)}</div>
+    <h3>Chapters</h3><ul style="list-style:none;padding-left:2px">${chapters}</ul>
+    <div class="muted" style="font-size:11.5px;margin-top:8px">${esc(p.trust || 'human-approved')} — ${esc(p.verified_by || '')}</div>
+    <div class="row" style="margin-top:12px">
+      <a href="${esc(copy.url)}" target="_blank" rel="noopener"><button type="button">Open my copy ↗</button></a>
+      <button class="ghost" type="button" onclick="returnCopy('${copy.container_id}')">Return copy</button>
+    </div>
+  </div>`;
+}
+
+function vmSectionHtml(number, sec) {
+  const intro = sec.intro ? `<div class="muted" style="font-size:12px;margin:2px 0 6px">${esc(sec.intro)}</div>` : '';
+  const steps = (sec.steps || []).map(s => {
+    const code = s.code ? codeBlockHtml(s.code) : '';
+    return `<li>${esc(s.instruction)}${code}</li>`;
+  }).join('');
+  const tip = sec.tip ? `<div class="muted" style="font-size:12px;margin-top:4px">Tip — ${esc(sec.tip)}</div>` : '';
+  return `<h3>${number}. ${esc(sec.title)}</h3>${intro}<ol style="padding-left:18px;margin:0">${steps}</ol>${tip}`;
+}
+
+async function returnCopy(containerId) {
+  await fetch(`/api/tutorial/copies/${containerId}/return`, { method: 'POST' });
+  $('#vmTrayContent').innerHTML = '<span class="muted">copy returned — the container is gone.</span>';
+}
 
 // --- generic live trace: any org's roster, lit from its activity stream ---
 let ORG_ROSTERS = {};
@@ -1641,6 +2000,7 @@ async function runStudio(org, roster) {
     if (p.done) {
       if (p.run) {
         $('#studiotrace').innerHTML = (roster ? '<div class="panel">' + renderRunTrace(p.run.activity, roster) + '</div>' : '') + runCard(p.run);
+        highlightCodeIn($('#studiotrace'));
         loadStudioRuns(org);
       }
       break;
@@ -1661,6 +2021,7 @@ async function loadStudioRuns(org) {
 async function studioRunDetail(id) {
   const r = await api('/api/runs/' + id);
   $('#studiorundetail').innerHTML = r && r.gates ? '<h2 style="margin-top:0">Run detail</h2>' + runCard(r) : '';
+  highlightCodeIn($('#studiorundetail'));
   $('#studiorundetail').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -1845,6 +2206,7 @@ function renderPlan(s) {
   }
   if (s.phase === 'executing') {
     $('#planstatus').innerHTML = `<div class="panel"><div class="verdict running"><span class="livedot"></span> EXECUTING the plan…</div></div>${(s.steps || []).map(planStepBlock).join('')}`;
+    highlightCodeIn($('#planstatus'));
     return;
   }
   // done
@@ -1853,6 +2215,7 @@ function renderPlan(s) {
     ? `<div class="verdict shipped">PLAN SHIPPED <span class="earned">— every step cleared its own gates</span></div>`
     : `<div class="verdict rejected">PLAN STOPPED <span class="earned">— a step didn't ship; the strict chain halted</span></div>`;
   $('#planstatus').innerHTML = `<div class="panel">${banner}</div>${(s.steps || []).map(planStepBlock).join('')}`;
+  highlightCodeIn($('#planstatus'));
 }
 async function reviewPlan(approved, feedback) {
   // collect per-step sources (aligned to the plan) so a grounded step has a corpus to cite into
