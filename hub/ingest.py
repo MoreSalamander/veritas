@@ -162,6 +162,33 @@ def _strip_vtt(vtt: str) -> str:
     return "\n".join(deduped).strip()
 
 
+_JS_ASSIGNMENT_RE = re.compile(r"^(?:var|let|const)?\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*=\s*[{\[]")
+
+# Real extracted article/transcript text tops out well under this on every page we've seen in
+# practice; the WIZ_global_data incident (below) came in around 2MB, ~150x a normal transcript.
+_MAX_PLAUSIBLE_CHARS = 200_000
+
+
+def _looks_like_page_script(text: str) -> bool:
+    """Reject trafilatura output that is actually embedded page JavaScript/JSON rather than
+    prose. Found live: on some YouTube watch pages trafilatura's boilerplate-removal fails to
+    identify any article content and falls back to the largest text block on the page, which is
+    the `window.WIZ_global_data = {...}` state blob Google inlines into every page — a giant
+    blob of code, not a transcript. Two independent signals catch this: the text starts with a
+    JS assignment (`window.foo = {`, `var x = {`, ...), or the whole thing is bare JSON."""
+    stripped = text.lstrip()
+    if _JS_ASSIGNMENT_RE.match(stripped):
+        return True
+    if stripped[:1] in "{[":
+        try:
+            json.loads(stripped)
+        except (json.JSONDecodeError, ValueError):
+            pass
+        else:
+            return True
+    return False
+
+
 class ArticleFetcher(TranscriptFetcher):
     """Extracts readable article text from a general webpage — the fallback for URLs that
     aren't a video (or have no embeddable video yt-dlp can find). Uses trafilatura to strip
@@ -200,6 +227,10 @@ class ArticleFetcher(TranscriptFetcher):
         text = trafilatura.extract(response.text, include_comments=False, include_tables=False)
         if not text or not text.strip():
             raise TranscriptUnavailable("no readable article content found on this page")
+        if len(text) > _MAX_PLAUSIBLE_CHARS or _looks_like_page_script(text):
+            raise TranscriptUnavailable(
+                "extraction returned page script/data instead of readable article content"
+            )
 
         metadata = trafilatura.extract_metadata(response.text)
         title = (metadata.title if metadata else "") or ""
