@@ -14,8 +14,16 @@ from typing import Any
 
 # (display name, role, what it produces) — proposers; they decide nothing.
 _CAST: list[tuple[str, str, str]] = [
-    ("Sold-Comps Scout", "scout", "Candidate collectible specs from active listings vs. sold comps — untrusted by construction."),
-    ("Grading-Pop Scout", "scout", "Candidate specs corroborating a claimed grade/rarity against population reports."),
+    ("Sold-Comps Scout", "scout", "Candidate collectible specs from active trading-card listings vs. sold comps — untrusted by construction."),
+    ("Grading-Pop Scout", "scout", "Candidate specs corroborating a claimed trading-card grade/rarity against PSA/CGC population reports."),
+    ("Comics Sold-Comps Scout", "scout", "Candidate specs from active comic listings vs. GoCollect/GPAnalysis sold data."),
+    ("Coin Sold-Comps Scout", "scout", "Candidate specs from active coin listings vs. PCGS/NGC price guides."),
+    ("Coin Population Scout", "scout", "Candidate specs corroborating a claimed coin grade/rarity against PCGS/NGC population reports."),
+    ("Gold Spot-Value Scout", "scout", "Candidate specs from gold listings priced below melt/spot value (Kitco/APMEX/JM Bullion reference)."),
+    ("Silver Spot-Value Scout", "scout", "Candidate specs from silver listings priced below melt/spot value (Kitco/APMEX/JM Bullion reference)."),
+    ("Jewelry Sold-Comps Scout", "scout", "Candidate specs from active jewelry listings vs. eBay/TheRealReal comps."),
+    ("Jewelry Certification Scout", "scout", "Candidate specs corroborating a claimed GIA diamond/gemstone certification."),
+    ("Watch Sold-Comps Scout", "scout", "Candidate specs from active watch listings vs. Chrono24/WatchCharts market data."),
     ("Source Verification Agent", "verifier", "Independent confirming comps and listing sources attached as positive evidence."),
     ("Scam Detection Agent", "verifier", "Fake-listing/counterfeit-slab scam reports attached as negative evidence — the org's standing red team."),
     ("Opportunity Ranking Agent", "analyst", "A reward-potential proposal (0-40, clamped) plus an evidence-cited narrative."),
