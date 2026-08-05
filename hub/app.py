@@ -68,7 +68,7 @@ from orgs.production_studio.taste import (
     build_create_production,
 )
 from orgs.planning import StepResult, execute_plan, gate_plan, propose_plan
-from orgs.registry import REGISTRY, OrgRun, get_org, production_generator
+from orgs.registry import GROUPS, REGISTRY, OrgRun, get_org, production_generator
 from orgs.research_studio.knowledge import Brief, build_brief
 from orgs.research_studio.report import ReportParseError, parse_report
 from orgs.software_studio import agents as software_agents
@@ -1122,6 +1122,14 @@ def create_app(
             }
             for org in REGISTRY.values()
         ]
+
+    @app.get("/api/org-groups")
+    def list_org_groups() -> dict[str, Any]:
+        """The nesting-doll layers between Entropy OS and the engines — e.g.
+        Opportunity [Agency AI] wrapping the three Hunter engines. Groups are
+        data (see orgs.registry.GROUPS): the frontend nests member org cards
+        inside a group panel whose header opens the group's own live app."""
+        return GROUPS
 
     @app.get("/api/orgs/{name}/roster")
     def org_roster(name: str) -> dict[str, Any]:

@@ -452,3 +452,32 @@ def get_org(name: str) -> OrgType:
         known = ", ".join(sorted(REGISTRY))
         raise KeyError(f"unknown org type {name!r} (registered: {known})")
     return REGISTRY[name]
+
+
+# The nesting-doll layer between Entropy OS and the Hunter engines. A group is
+# data, not an org: Opportunity [Agency AI] is a real standalone app
+# (~/MoreSalamander/opportunity-agency-ai) that arbitrates PRIORITY across its
+# member engines' already-gated output — it has no verification model of its
+# own and no build function, so registering it as an OrgType would claim a
+# trust story it doesn't have. The Hub renders a group as a wrapper around its
+# members' cards, with a header that opens the group's own live app.
+GROUPS: dict[str, dict[str, Any]] = {
+    "opportunity": {
+        "title": "Opportunity [Agency AI]",
+        "description": "Cross-engine arbitration: gathers every member engine's "
+        "gate-verified opportunities and allocates the day's mission across them "
+        "within one shared time/budget profile. Arbitrates priority, not truth — "
+        "every pick already passed its own engine's gate.",
+        "members": ["crypto_hunter", "collectible_hunter", "free_money_hunter"],
+        "external_url": "http://localhost:8015",
+        "launchpad_name": "opportunity-agency-ai",
+        "color": "#e8c468",
+    },
+}
+
+# A group member that isn't a registered org would render as an empty card and
+# silently break the descent — fail loudly at import instead.
+for _gname, _g in GROUPS.items():
+    _missing = [m for m in _g["members"] if m not in REGISTRY]
+    if _missing:
+        raise RuntimeError(f"group {_gname!r} references unregistered orgs: {_missing}")

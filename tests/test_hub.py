@@ -140,6 +140,21 @@ def test_orgs_endpoint_lists_registry(tmp_path):
     assert all(o["input_noun"] and o["produces"] and o["verified_by"] for o in orgs)
 
 
+def test_org_groups_nest_only_registered_orgs(tmp_path):
+    """The nesting-doll layer: Opportunity groups the three Hunter engines, every
+    member really exists in the registry, and the group carries the live-app
+    pointers the frontend needs to open the next doll down."""
+    client = _client(tmp_path)
+    groups = client.get("/api/org-groups").json()
+    org_names = {o["name"] for o in client.get("/api/orgs").json()}
+    assert "opportunity" in groups
+    opp = groups["opportunity"]
+    assert set(opp["members"]) == {"crypto_hunter", "collectible_hunter", "free_money_hunter"}
+    for g in groups.values():
+        assert set(g["members"]) <= org_names
+        assert g["title"] and g["external_url"] and g["launchpad_name"]
+
+
 def test_start_run_streams_real_activity_then_completes(tmp_path):
     client = _client(tmp_path)
     token = client.post("/api/runs/start", json={"goal": "add two numbers"}).json()["token"]

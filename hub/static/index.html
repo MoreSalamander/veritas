@@ -1613,25 +1613,35 @@ const VERIFY_TAG = {
 };
 let LAST_ROUTE = null;
 
+// One source of truth for "is this standalone app running, what's its real URL":
+// prefer Launchpad's own live status (loaded into LAUNCHPAD_STATUS before render)
+// over the static fallback, and send known-not-running clicks to Launchpad itself
+// (where "start" actually lives) instead of a dead port. Shared by org cards and
+// group headers so the two can never disagree about liveness.
+function liveTarget(launchpadName, externalUrl) {
+  const live = launchpadName && LAUNCHPAD_STATUS ? LAUNCHPAD_STATUS[launchpadName] : null;
+  const openUrl = (live && live.url) || externalUrl;
+  const running = live ? live.listening : null;  // null = unknown (Launchpad unreachable)
+  return { openUrl, running, target: running === false ? LAUNCHPAD_ORIGIN : openUrl };
+}
+
+function liveDot(running) {
+  return running === false
+    ? `<span class="pulse" style="background:var(--threat);animation:none"></span> not running — opens Launchpad's own start`
+    : running === true
+    ? `<span class="pulse"></span> live — opens the app ↗`
+    : `opens the live app ↗`;
+}
+
 function orgCard(o) {
   // A real standalone app (currently the three Hunter engines) opens itself, in its own
   // tab — not Veritas's internal Studio trace view. Clicking "Crypto Hunter AI" should take
-  // you to Crypto Hunter AI, the actual app, the same way Studio Launchpad would. Prefer
-  // Launchpad's own live status/URL (loaded into LAUNCHPAD_STATUS before this renders) over
-  // the static fallback — one source of truth for "is it running, what's its real port,"
-  // not a second copy Veritas keeps that can drift from Launchpad's own config.
-  const live = o.launchpad_name && LAUNCHPAD_STATUS ? LAUNCHPAD_STATUS[o.launchpad_name] : null;
-  const openUrl = (live && live.url) || o.external_url;
-  const running = live ? live.listening : null;  // null = unknown (Launchpad unreachable)
+  // you to Crypto Hunter AI, the actual app, the same way Studio Launchpad would.
+  const { openUrl, running, target } = liveTarget(o.launchpad_name, o.external_url);
 
   let tagline;
   if (openUrl) {
-    const dot = running === false
-      ? `<span class="pulse" style="background:var(--threat);animation:none"></span> not running — opens Launchpad's own start`
-      : running === true
-      ? `<span class="pulse"></span> live — opens the app ↗`
-      : `opens the live app ↗`;
-    tagline = `<span class="proftag" style="color:var(--gold);border-color:rgba(232,196,104,.35);display:inline-flex;align-items:center;gap:6px">${dot}</span>`;
+    tagline = `<span class="proftag" style="color:var(--gold);border-color:rgba(232,196,104,.35);display:inline-flex;align-items:center;gap:6px">${liveDot(running)}</span>`;
   } else {
     tagline = `<span class="proftag" style="color:var(--green);border-color:rgba(74,222,128,.3)">verified by ${esc(VERIFY_TAG[o.name] || 'gates')}</span>`;
   }
@@ -1639,19 +1649,43 @@ function orgCard(o) {
       <div style="font-weight:600;font-size:14px;margin-bottom:3px">${esc(o.title.replace(' (preset)', ''))}</div>
       <div class="muted" style="font-size:12px;line-height:1.5">${esc(o.produces)}</div>
       <div style="margin-top:8px">${tagline}</div>`;
-  // Known-not-running: send them to Launchpad itself (where "start" actually lives) instead
-  // of a dead link to the app's own port.
-  const target = running === false ? LAUNCHPAD_ORIGIN : openUrl;
   return openUrl
     ? `<a class="panel orgcard" href="${esc(target)}" target="_blank" rel="noopener" style="margin:0;display:block;text-decoration:none;color:inherit">${inner}</a>`
     : `<div class="panel orgcard" onclick="goToOrg('${esc(o.name)}')" style="cursor:pointer;margin:0">${inner}</div>`;
 }
 
+// A group panel is the nesting-doll layer made visible: the group's own card
+// wraps its member orgs' cards (Entropy OS -> Opportunity -> the engines),
+// and its header opens the group's own live app — the two-tier scanfield.
+function groupPanel(g, members) {
+  const { running, target } = liveTarget(g.launchpad_name, g.external_url);
+  return `
+  <div class="panel" style="grid-column:1/-1;margin:0;border-color:rgba(232,196,104,.3)">
+    <a href="${esc(target)}" target="_blank" rel="noopener" class="orgcard"
+       style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;text-decoration:none;color:inherit;margin-bottom:10px">
+      <span style="font-weight:600;font-size:14px">${esc(g.title)}</span>
+      <span class="muted" style="font-size:12px;flex:1;min-width:200px">${esc(g.description)}</span>
+      <span class="proftag" style="color:var(--gold);border-color:rgba(232,196,104,.35);display:inline-flex;align-items:center;gap:6px">${liveDot(running)}</span>
+    </a>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+      ${members.map(orgCard).join('')}
+    </div>
+  </div>`;
+}
+
+let ORG_GROUPS = null;
+
 async function loadHome() {
   if (!ORGS.length) ORGS = await api('/api/orgs');
+  // Groups failing to load must degrade to the flat directory, never a blank home.
+  if (!ORG_GROUPS) ORG_GROUPS = await api('/api/org-groups').catch(() => ({}));
   await loadLaunchpadStatus();
-  $('#enginedir').innerHTML = HOME_ENGINES.map(n => ORGS.find(o => o.name === n)).filter(Boolean).map(orgCard).join('');
-  $('#labsdir').innerHTML = ORGS.filter(o => !HOME_ENGINES.includes(o.name)).map(orgCard).join('');
+  const grouped = new Set(Object.values(ORG_GROUPS).flatMap(g => g.members));
+  $('#enginedir').innerHTML =
+    HOME_ENGINES.filter(n => !grouped.has(n)).map(n => ORGS.find(o => o.name === n)).filter(Boolean).map(orgCard).join('')
+    + Object.values(ORG_GROUPS).map(g =>
+        groupPanel(g, g.members.map(n => ORGS.find(o => o.name === n)).filter(Boolean))).join('');
+  $('#labsdir').innerHTML = ORGS.filter(o => !HOME_ENGINES.includes(o.name) && !grouped.has(o.name)).map(orgCard).join('');
   loadCollector();
   loadKeytracker();
 }
