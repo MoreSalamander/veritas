@@ -25,6 +25,7 @@ from orgs.empirical_lab.roster import roster as empirical_roster
 from orgs.crypto_hunter.roster import roster as crypto_hunter_roster
 from orgs.collectible_hunter.roster import roster as collectible_hunter_roster
 from orgs.free_money_hunter.roster import roster as free_money_hunter_roster
+from orgs.hackathon_hunter.roster import roster as hackathon_hunter_roster
 from orgs.presets import (
     build_article,
     build_game,
@@ -231,6 +232,16 @@ def _run_collectible_hunter_bridge(
     )
 
 
+def _run_hackathon_hunter_bridge(
+    goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
+) -> OrgRun:
+    from orgs.hunter_engine_bridge import run_hunter_engine
+
+    return run_hunter_engine(
+        "hackathon_hunter", Path.home() / "MoreSalamander" / "hackathon-hunter", provider, memory, goal, sources
+    )
+
+
 def _run_free_money_hunter_bridge(
     goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
 ) -> OrgRun:
@@ -410,6 +421,24 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="run today's hunt",
         build=_run_free_money_hunter_bridge,
         roster=free_money_hunter_roster,
+    ),
+    "hackathon_hunter": OrgType(
+        name="hackathon_hunter",
+        title="Hackathon Hunter AI",
+        description="The fourth external org — created inside the DataHub hackathon "
+        "window, DataHub-native from its first commit. Agents hunt hackathons and "
+        "prize challenges on the official platforms; the same deterministic fail-closed "
+        "gate decides what may be trusted. Lives in its own repo "
+        "(~/MoreSalamander/hackathon-hunter).",
+        input_noun="a hunt goal (or nothing — it runs its daily cycle)",
+        produces="gate-verified events, a ranked digest, and a daily mission",
+        verified_by="the scaffold gate plus four domain checks, all HARD, fail-closed: "
+        "official listing confirmed (lookalike portals never count), deadline in the "
+        "future, prize documented, eligibility parseable; debate stances are transcript, "
+        "never verdict",
+        goal_hint="run today's hunt",
+        build=_run_hackathon_hunter_bridge,
+        roster=hackathon_hunter_roster,
     ),
 }
 
