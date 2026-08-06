@@ -28,6 +28,7 @@ from typing import Any, Callable, Protocol, runtime_checkable
 from engine.executor import sandbox_active
 from engine.memory import MemoryStore, default_memory_store
 from engine.model import ModelProvider
+from commons.parallel_client import ParallelUnavailable, SearchClient
 from orgs.registry import get_org
 from orgs.software_studio.pipeline import build_function
 
@@ -38,6 +39,12 @@ _TENANT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 class Unauthorized(Exception):
     """Missing or unrecognized bearer token — the request has no tenant identity."""
+
+
+class SourcesUnavailable(Exception):
+    """The research slot was asked to research with no live-search client and
+    no pasted sources — refused honestly rather than degraded into a
+    hallucination engine."""
 
 
 class OrgNotVendable(Exception):
@@ -162,6 +169,7 @@ class Wedge:
         memory_factory: Callable[[Path], MemoryStore] = default_memory_store,
         meter: Meter | None = None,
         unlimited_check: Callable[[str], bool] | None = None,
+        search_client: "SearchClient | None" = None,
     ) -> None:
         self.base = Path(base)
         self.provider_factory = provider_factory
@@ -173,6 +181,11 @@ class Wedge:
         self.meter = meter  # None => unlimited (local); a QuotaStore => metered (hosted)
         # Returns True for tenants exempt from the quota (owner / unlimited accounts) — they skip the meter.
         self.unlimited_check = unlimited_check
+        # The live-research seam: when set, the research slot with no pasted
+        # sources FETCHES its own corpus (machine-fetched tier). Without it,
+        # empty-sources research is refused — a report grounded in nothing
+        # would be a summarizer wearing a lab coat.
+        self.search_client = search_client
 
     def tenant_root(self, tenant: str) -> Path:
         if not _TENANT_RE.match(tenant):  # defense in depth; the token table already validated it
@@ -249,6 +262,32 @@ class Wedge:
         isolation, same meter, artifacts pulled from every outcome that
         carried one (the web page's HTML, the research report's text)."""
         memory = self.memory_factory(root / org)
+        fetched_urls: list[str] = []
+        if org == "research" and not sources:
+            # REAL research: the machine finds its own sources. Each corpus
+            # entry carries its URL header so citations stay traceable and the
+            # verbatim-quote gate still has the full text to check against.
+            if self.search_client is None:
+                raise SourcesUnavailable(
+                    "live research isn't enabled here — paste sources, or the operator sets PARALLEL_API_KEY"
+                )
+            corpus: list[str] = []
+            try:
+                for r in self.search_client.search(goal, max_results=4):
+                    try:
+                        ex = self.search_client.extract(r.url, objective=goal)
+                    except ParallelUnavailable:
+                        continue  # one dead URL never sinks the haul
+                    if ex.content.strip():
+                        corpus.append(f"SOURCE: {ex.url}\n{ex.title}\n\n{ex.content}")
+                        fetched_urls.append(ex.url)
+            except ParallelUnavailable as exc:
+                raise SourcesUnavailable(f"live search failed: {exc}") from exc
+            if not corpus:
+                raise SourcesUnavailable(
+                    "the live web search found nothing usable for that question — try rephrasing"
+                )
+            sources = corpus
         run = get_org(org).build(goal, self.provider_factory(), memory, sources=sources)
         evidence: list[dict[str, Any]] = []
         artifacts: list[dict[str, Any]] = []
@@ -263,6 +302,11 @@ class Wedge:
             art = getattr(outcome, "artifact", None)
             if art is not None and getattr(art, "payload", None):
                 artifacts.append({"label": getattr(art, "type", "artifact"), "payload": art.payload})
+        if fetched_urls:
+            artifacts.insert(0, {
+                "label": "machine-fetched sources",
+                "payload": "\n".join(fetched_urls),
+            })
         remaining: int | None = None
         if self.meter is not None and not exempt:
             self.meter.record(tenant, run.accepted, goal)

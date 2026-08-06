@@ -130,3 +130,49 @@ def test_web_slot_vends_the_page(tmp_path):
     # and the evidence names real gates.
     assert isinstance(res.artifacts, list) and isinstance(res.evidence, list)
     assert any(e["gate"] for e in res.evidence)
+
+
+def test_research_with_no_sources_and_no_search_client_is_refused(tmp_path):
+    """No corpus and no live search = a summarizer wearing a lab coat.
+    Refused honestly, before any model call."""
+    from products.wedge import SourcesUnavailable, Wedge, WedgeAuth
+
+    wedge = Wedge(tmp_path, lambda: None, WedgeAuth({"tok": "tenant1"}),
+                  sandbox_check=lambda: True)
+    with pytest.raises(SourcesUnavailable):
+        wedge.submit(authorization="Bearer tok", goal="what is spaced repetition?", org="research")
+
+
+def test_research_fetches_its_own_corpus_via_the_search_seam(tmp_path):
+    """REAL research: the machine finds sources itself; the fetched URLs land
+    in the tray as their own artifact, and the report cites into the corpus."""
+    from commons.parallel_client import ExtractResult, ScriptedSearchClient, SearchResult
+    from engine.model import ScriptedProvider
+    from products.wedge import Wedge, WedgeAuth
+
+    client = ScriptedSearchClient(
+        search_by_query={
+            "what is spaced repetition?": [
+                SearchResult(url="https://example.edu/sr", title="Spaced Repetition"),
+                SearchResult(url="https://example.org/memory", title="Memory Study"),
+            ],
+        },
+        extract_by_url={
+            "https://example.edu/sr": ExtractResult(
+                url="https://example.edu/sr", title="Spaced Repetition",
+                content="Spaced repetition schedules reviews at increasing intervals."),
+            "https://example.org/memory": ExtractResult(
+                url="https://example.org/memory", title="Memory Study",
+                content="Reviews timed before forgetting strengthen recall."),
+        },
+    )
+    provider = ScriptedProvider({
+        "researcher": '{"claims": [{"text": "Spaced repetition schedules reviews at increasing intervals.", '
+                      '"citations": [{"source": "src1", "quote": "schedules reviews at increasing intervals"}]}]}',
+    })
+    wedge = Wedge(tmp_path, lambda: provider, WedgeAuth({"tok": "tenant1"}),
+                  sandbox_check=lambda: True, search_client=client)
+    res = wedge.submit(authorization="Bearer tok", goal="what is spaced repetition?", org="research")
+    assert res.org == "research"
+    assert res.artifacts and res.artifacts[0]["label"] == "machine-fetched sources"
+    assert "example.edu" in res.artifacts[0]["payload"]
