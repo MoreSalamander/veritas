@@ -90,6 +90,11 @@ class OrgType:
     # Launchpad's own /api/projects for the real, live URL and whether it's actually
     # running, rather than Veritas keeping a second, driftable copy of that knowledge.
     launchpad_name: str | None = None
+    # The org's public home (GitHub repo). This is the judge/visitor fallback: when
+    # Launchpad is unreachable — anyone who isn't on the builder's own machine — a
+    # localhost external_url is a dead port, so the card opens this instead. Locally,
+    # with Launchpad up, this field is never used; the live-status path wins.
+    repo_url: str | None = None
 
 
 def _run_software(
@@ -405,6 +410,7 @@ REGISTRY: dict[str, OrgType] = {
         color="#f0a52c",
         external_url="http://localhost:8010",
         launchpad_name="crypto-hunter",
+        repo_url="https://github.com/MoreSalamander/crypto-hunter",
     ),
     "collectible_hunter": OrgType(
         name="collectible_hunter",
@@ -424,6 +430,7 @@ REGISTRY: dict[str, OrgType] = {
         color="#d4af37",
         external_url="http://localhost:8013",
         launchpad_name="collectible-hunter",
+        repo_url="https://github.com/MoreSalamander/collectible-hunter",
     ),
     "free_money_hunter": OrgType(
         name="free_money_hunter",
@@ -443,6 +450,7 @@ REGISTRY: dict[str, OrgType] = {
         color="#4ade80",
         external_url="http://localhost:8014",
         launchpad_name="free-money-hunter",
+        repo_url="https://github.com/MoreSalamander/free-money-hunter",
     ),
 }
 
@@ -471,6 +479,7 @@ GROUPS: dict[str, dict[str, Any]] = {
         "members": ["crypto_hunter", "collectible_hunter", "free_money_hunter"],
         "external_url": "http://localhost:8015",
         "launchpad_name": "opportunity-agency-ai",
+        "repo_url": "https://github.com/MoreSalamander/opportunity-agency-ai",
         "color": "#e8c468",
     },
 }

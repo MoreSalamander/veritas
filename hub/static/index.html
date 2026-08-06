@@ -1618,16 +1618,29 @@ let LAST_ROUTE = null;
 // over the static fallback, and send known-not-running clicks to Launchpad itself
 // (where "start" actually lives) instead of a dead port. Shared by org cards and
 // group headers so the two can never disagree about liveness.
-function liveTarget(launchpadName, externalUrl) {
+//
+// The three states map to three audiences, and each gets an honest destination:
+//   running === true   -> the app's live URL           (builder, engine up)
+//   running === false  -> Launchpad's own start page   (builder, engine down)
+//   running === null   -> the org's public repo        (anyone NOT on the builder's
+//                         machine — a judge, a visitor, or the hosted hub — where
+//                         Launchpad and localhost ports don't exist)
+// The `mode` in the return value is what liveDot() labels, so destination and
+// label come from the same decision and can never disagree.
+function liveTarget(launchpadName, externalUrl, repoUrl) {
   const live = launchpadName && LAUNCHPAD_STATUS ? LAUNCHPAD_STATUS[launchpadName] : null;
   const openUrl = (live && live.url) || externalUrl;
   const running = live ? live.listening : null;  // null = unknown (Launchpad unreachable)
-  return { openUrl, running, target: running === false ? LAUNCHPAD_ORIGIN : openUrl };
+  if (running === false) return { openUrl, running, target: LAUNCHPAD_ORIGIN, mode: 'start' };
+  if (running === null && repoUrl) return { openUrl: repoUrl, running, target: repoUrl, mode: 'repo' };
+  return { openUrl, running, target: openUrl, mode: 'live' };
 }
 
-function liveDot(running) {
-  return running === false
+function liveDot(running, mode) {
+  return mode === 'start'
     ? `<span class="pulse" style="background:var(--threat);animation:none"></span> not running — opens Launchpad's own start`
+    : mode === 'repo'
+    ? `open source — view the engine ↗`
     : running === true
     ? `<span class="pulse"></span> live — opens the app ↗`
     : `opens the live app ↗`;
@@ -1637,11 +1650,11 @@ function orgCard(o) {
   // A real standalone app (currently the three Hunter engines) opens itself, in its own
   // tab — not Veritas's internal Studio trace view. Clicking "Crypto Hunter AI" should take
   // you to Crypto Hunter AI, the actual app, the same way Studio Launchpad would.
-  const { openUrl, running, target } = liveTarget(o.launchpad_name, o.external_url);
+  const { openUrl, running, target, mode } = liveTarget(o.launchpad_name, o.external_url, o.repo_url);
 
   let tagline;
   if (openUrl) {
-    tagline = `<span class="proftag" style="color:var(--gold);border-color:rgba(232,196,104,.35);display:inline-flex;align-items:center;gap:6px">${liveDot(running)}</span>`;
+    tagline = `<span class="proftag" style="color:var(--gold);border-color:rgba(232,196,104,.35);display:inline-flex;align-items:center;gap:6px">${liveDot(running, mode)}</span>`;
   } else {
     tagline = `<span class="proftag" style="color:var(--green);border-color:rgba(74,222,128,.3)">verified by ${esc(VERIFY_TAG[o.name] || 'gates')}</span>`;
   }
@@ -1658,14 +1671,14 @@ function orgCard(o) {
 // wraps its member orgs' cards (Entropy OS -> Opportunity -> the engines),
 // and its header opens the group's own live app — the two-tier scanfield.
 function groupPanel(g, members) {
-  const { running, target } = liveTarget(g.launchpad_name, g.external_url);
+  const { running, target, mode } = liveTarget(g.launchpad_name, g.external_url, g.repo_url);
   return `
   <div class="panel" style="grid-column:1/-1;margin:0;border-color:rgba(232,196,104,.3)">
     <a href="${esc(target)}" target="_blank" rel="noopener" class="orgcard"
        style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;text-decoration:none;color:inherit;margin-bottom:10px">
       <span style="font-weight:600;font-size:14px">${esc(g.title)}</span>
       <span class="muted" style="font-size:12px;flex:1;min-width:200px">${esc(g.description)}</span>
-      <span class="proftag" style="color:var(--gold);border-color:rgba(232,196,104,.35);display:inline-flex;align-items:center;gap:6px">${liveDot(running)}</span>
+      <span class="proftag" style="color:var(--gold);border-color:rgba(232,196,104,.35);display:inline-flex;align-items:center;gap:6px">${liveDot(running, mode)}</span>
     </a>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
       ${members.map(orgCard).join('')}

@@ -1119,6 +1119,7 @@ def create_app(
                 "color": org.color,
                 "external_url": org.external_url,
                 "launchpad_name": org.launchpad_name,
+                "repo_url": org.repo_url,
             }
             for org in REGISTRY.values()
         ]
