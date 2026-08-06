@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from hub.ingest import (
+from commons.ingest import (
     ArticleFetcher,
     ChainedFetcher,
     FetchedTranscript,

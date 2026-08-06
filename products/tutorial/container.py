@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from hub.tutorial_generate import TutorialContent, TutorialSection, TutorialStep
+from products.tutorial.generate import TutorialContent, TutorialSection, TutorialStep
 
 # Every dispensed container is a standalone page with no guaranteed outbound network — the same
 # vendored Prism.js (MIT) the Hub UI itself uses gets inlined directly into each generated HTML

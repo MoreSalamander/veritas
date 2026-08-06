@@ -8,8 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from engine.memory import TRUST_MACHINE_FETCHED, MemoryStore
-from hub.commons_search import search_and_ingest
-from hub.parallel_client import ExtractResult, ScriptedSearchClient, SearchResult
+from commons.search import search_and_ingest
+from commons.parallel_client import ExtractResult, ScriptedSearchClient, SearchResult
 
 
 def test_search_and_ingest_persists_each_extracted_result_as_machine_fetched(tmp_path):

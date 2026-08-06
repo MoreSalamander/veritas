@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from engine.model import ScriptedProvider, SequencedProvider
 from hub.app import create_app
-from hub.tutorial_container import DispensedCopy
+from products.tutorial.container import DispensedCopy
 
 GOOD_CONTENT = json.dumps({
     "overview": "A short walkthrough.",

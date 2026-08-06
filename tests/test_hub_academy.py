@@ -10,9 +10,9 @@ from fastapi.testclient import TestClient
 
 from engine.memory import MemoryStore
 from engine.model import ScriptedProvider
-from hub.academy_container import AcademyProject, academy_record, image_tag
+from products.academy.container import AcademyProject, academy_record, image_tag
 from hub.app import create_app
-from hub.tutorial_container import DispensedCopy
+from products.tutorial.container import DispensedCopy
 
 
 def _seed_academy(tmp_path) -> str:

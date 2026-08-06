@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from engine.memory import default_memory_store  # noqa: E402
-from hub.academy_container import (  # noqa: E402
+from products.academy.container import (  # noqa: E402
     ACADEMY_ROOT,
     AcademyPackagingError,
     academy_record,

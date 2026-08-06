@@ -17,7 +17,7 @@ pytest.importorskip(
 )
 
 from engine.memory import MemoryRecord
-from hub.commons_datahub_emit import _owner_urn, _record_urn, emit_source_record
+from commons.datahub_emit import _owner_urn, _record_urn, emit_source_record
 
 
 def _source_record(**overrides) -> MemoryRecord:

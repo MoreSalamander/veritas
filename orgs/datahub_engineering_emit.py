@@ -31,6 +31,7 @@ NOT CATALOGED, and why (verified before writing, not assumed):
 from __future__ import annotations
 
 import os
+import sys
 
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
 from datahub.emitter.rest_emitter import DatahubRestEmitter
@@ -82,8 +83,26 @@ def _emit_repositories(emitter: DatahubRestEmitter) -> list[str]:
 # --- API endpoints (introspected from the real, running FastAPI app — not hand-picked) ---
 
 
-def _emit_api_endpoints(emitter: DatahubRestEmitter) -> list[str]:
-    from hub.app import app as fastapi_app  # local import: avoid this module requiring a live DB/etc. at import time
+def _emit_api_endpoints(
+    emitter: DatahubRestEmitter,
+    fastapi_app: object | None = None,
+    route_description: str = "Real Entropy OS front-door FastAPI route.",
+) -> list[str]:
+    """Catalog a real FastAPI app's route surface as APIEndpoint entities.
+
+    The app is a parameter because the web surface no longer has to live in
+    this repo: the front door (entropy-os) passes its own app in. When no app
+    is given, the legacy in-repo hub is attempted for as long as it exists —
+    and when it doesn't, this stage skips honestly rather than inventing an
+    API surface it can't see."""
+    if fastapi_app is None:
+        try:
+            # Local import: avoid requiring a live DB/etc. at module import time,
+            # and tolerate the hub's planned removal from this repo entirely.
+            from hub.app import app as fastapi_app  # type: ignore[no-redef]
+        except Exception:
+            print("api-endpoints: no FastAPI app available here — skipped (pass one in)", file=sys.stderr)
+            return []
 
     urns = []
     for route in fastapi_app.routes:
@@ -100,7 +119,7 @@ def _emit_api_endpoints(emitter: DatahubRestEmitter) -> list[str]:
             _emit(
                 emitter,
                 urn,
-                DatasetPropertiesClass(name=f"{method} {path}", description="Real hub.app.py FastAPI route."),
+                DatasetPropertiesClass(name=f"{method} {path}", description=route_description),
             )
             _emit(emitter, urn, SubTypesClass(typeNames=["APIEndpoint"]))
             _emit(emitter, urn, _ownership())

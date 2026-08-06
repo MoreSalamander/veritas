@@ -24,7 +24,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from hub.wedge import QuotaExceeded
+from products.wedge import QuotaExceeded
 
 _DEFAULT_WINDOW = timedelta(days=1)
 

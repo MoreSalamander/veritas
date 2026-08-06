@@ -12,7 +12,7 @@ import json
 
 from engine.memory import MemoryRecord
 from engine.model import SequencedProvider
-from hub.tutorial_generate import (
+from products.tutorial.generate import (
     TutorialContent,
     TutorialSection,
     TutorialStep,
@@ -20,7 +20,7 @@ from hub.tutorial_generate import (
     generate_tutorial,
     parse_tutorial_content,
 )
-from hub.tutorial_spec import TutorialSpec
+from products.tutorial.spec import TutorialSpec
 
 
 def _source() -> MemoryRecord:

@@ -9,7 +9,7 @@ worth and commits it to memory.
 from __future__ import annotations
 
 from engine.memory import MemoryRecord, MemoryStore
-from hub.parallel_client import ParallelUnavailable, SearchClient
+from commons.parallel_client import ParallelUnavailable, SearchClient
 
 
 def search_and_ingest(

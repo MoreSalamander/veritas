@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from engine.model import ScriptedProvider
 from hub.app import create_app
-from hub.ingest import FetchedTranscript, ScriptedFetcher
+from commons.ingest import FetchedTranscript, ScriptedFetcher
 
 
 def _client(tmp_path, fetcher=None):

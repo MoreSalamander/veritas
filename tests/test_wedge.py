@@ -14,7 +14,7 @@ import json
 import pytest
 
 from engine.model import ScriptedProvider
-from hub.wedge import SandboxUnavailable, Unauthorized, Wedge, WedgeAuth
+from products.wedge import SandboxUnavailable, Unauthorized, Wedge, WedgeAuth
 
 GOOD_SPEC = json.dumps({
     "function_name": "add", "description": "add two numbers", "signature": "def add(a, b)",

@@ -23,8 +23,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from engine.memory import default_memory_store  # noqa: E402
-from hub.channel_collect import YtDlpChannelLister, collect_all, load_vouched_channels  # noqa: E402
-from hub.ingest import YtDlpFetcher  # noqa: E402
+from commons.channels import YtDlpChannelLister, collect_all, load_vouched_channels  # noqa: E402
+from commons.ingest import YtDlpFetcher  # noqa: E402
 
 
 def main() -> None:

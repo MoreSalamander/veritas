@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from engine.memory import TRUST_MACHINE_FETCHED, TRUST_VOUCHED
 from engine.model import ScriptedProvider
 from hub.app import create_app
-from hub.parallel_client import ExtractResult, ParallelClient, ScriptedSearchClient, SearchResult
+from commons.parallel_client import ExtractResult, ParallelClient, ScriptedSearchClient, SearchResult
 
 
 def _client(tmp_path, search_client=None):

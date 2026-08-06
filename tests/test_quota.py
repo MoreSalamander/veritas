@@ -16,7 +16,7 @@ import pytest
 
 from engine.model import ScriptedProvider
 from hub.quota import QuotaPolicy, QuotaStore
-from hub.wedge import QuotaExceeded, Wedge, WedgeAuth
+from products.wedge import QuotaExceeded, Wedge, WedgeAuth
 
 
 class _Clock:
@@ -138,7 +138,7 @@ def test_wedge_meters_runs_and_reports_remaining(tmp_path):
 
 def test_quota_is_checked_after_the_sandbox_gate(tmp_path):
     # no live sandbox => the run is refused for ISOLATION, never reaching the meter (no spend recorded)
-    from hub.wedge import SandboxUnavailable
+    from products.wedge import SandboxUnavailable
     meter = _store(tmp_path / "q", limit=1)
     w = Wedge(tmp_path / "data", _wedge_provider, WedgeAuth({"tok": "alice"}),
               sandbox_check=lambda: False, meter=meter)

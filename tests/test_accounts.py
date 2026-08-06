@@ -15,7 +15,7 @@ import pytest
 
 from engine.model import ScriptedProvider
 from hub.accounts import AccountStore, BadCredentials, UsernameTaken, WeakCredentials
-from hub.wedge import Unauthorized, Wedge
+from products.wedge import Unauthorized, Wedge
 
 
 def _store(tmp_path, **kw) -> AccountStore:
@@ -25,7 +25,7 @@ def _store(tmp_path, **kw) -> AccountStore:
 # --- signup ----------------------------------------------------------------------------------
 
 def test_signup_returns_a_path_safe_tenant_id(tmp_path):
-    from hub.wedge import _TENANT_RE
+    from products.wedge import _TENANT_RE
     uid = _store(tmp_path).signup("Alice_99", "hunter2hunter")
     assert _TENANT_RE.match(uid)  # a user id is always a valid tenant directory
 
@@ -118,7 +118,7 @@ def test_wedge_runs_under_account_auth(tmp_path):
 
 def test_unlimited_username_bypasses_the_quota(tmp_path):
     from hub.quota import QuotaPolicy, QuotaStore
-    from hub.wedge import QuotaExceeded
+    from products.wedge import QuotaExceeded
 
     spec = json.dumps({"function_name": "add", "description": "add two numbers",
                        "signature": "def add(a, b)", "cases": [{"args": [1, 2], "expected": 3}]})

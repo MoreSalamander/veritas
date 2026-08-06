@@ -22,7 +22,7 @@ from engine.gate import Gate
 from engine.interview import SpecParseError, extract_json
 from engine.memory import MemoryRecord
 from engine.model import ModelProvider
-from hub.tutorial_spec import TutorialSpec
+from products.tutorial.spec import TutorialSpec
 
 
 class TutorialContentParseError(SpecParseError):

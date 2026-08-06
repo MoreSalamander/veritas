@@ -36,7 +36,7 @@ from engine.memory import MemoryRecord, MemoryStore, default_memory_store, forma
 from engine.memory_export import sync_vault, vault_status
 from hub.accounts import AccountStore, BadCredentials, UsernameTaken, WeakCredentials
 from hub.quota import QuotaStore
-from hub.wedge import (
+from products.wedge import (
     Authenticator,
     QuotaExceeded,
     SandboxUnavailable,
@@ -51,10 +51,10 @@ from collector.store import CollectorStore
 from hub.keytracker import KeyTrackerStore
 from hub.background_session import BackgroundSession
 from hub.expiring_store import ExpiringRegistry
-from hub.ingest import ArticleFetcher, ChainedFetcher, TranscriptFetcher, TranscriptUnavailable, YtDlpFetcher
+from commons.ingest import ArticleFetcher, ChainedFetcher, TranscriptFetcher, TranscriptUnavailable, YtDlpFetcher
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
 from engine.run import ActivityEntry, set_activity_listener
-from hub.store import RunStore, summarize
+from orgs.store import RunStore, summarize
 from orgs.production_studio.pipeline import ProductionResult
 from orgs.production_studio.publishing import (
     FfmpegPublisher,
@@ -80,113 +80,29 @@ from orgs.web_studio.create import Review, build_create_page
 from orgs.web_studio.gates import RenderGate, StructureGate
 from orgs.web_studio.interview import CreateSpec, interview
 from orgs.web_studio.profile import ProfileStore, apply_profile, profile_hint
-from hub.commons_search import search_and_ingest
-from hub.parallel_client import ParallelClient, SearchClient
-from hub.tutorial_container import (
+from commons.search import search_and_ingest
+from commons.parallel_client import ParallelClient, SearchClient
+from products.tutorial.container import (
     DispensedCopy,
     build_tutorial_image,
     dispense_copy,
     return_copy,
 )
-from hub.tutorial_generate import (
+from products.tutorial.generate import (
     TutorialContentParseError,
     generate_tutorial,
     parse_tutorial_content,
     tutorial_record,
 )
-from hub.tutorial_publish import publish_tutorial
-from hub.tutorial_spec import TutorialSpec
+from products.tutorial.publish import publish_tutorial
+from products.tutorial.spec import TutorialSpec
 
-# The model toggle: local Ollama models (free) plus the three Claude tiers. Reliability comes
-# from the gates regardless of which model proposes — this just lets you discover which model a
-# build needs. Each entry declares its kind ("ollama" | "claude"), the exact id, and whether to
-# run with reasoning ON. `think` pairs with context: qwen3.5:9b runs think-off (fast, direct);
-# qwen3.5-64k has the context headroom to reason AND still answer, so it runs think-on.
-class ModelSpec(TypedDict):
-    label: str
-    cost: str
-    kind: str  # "ollama" | "claude"
-    id: str
-    think: bool
+from engine.catalog import DEFAULT_MODEL, MODEL_NOTES, MODELS, provider_for, tutorial_provider_for
+from orgs.paths import default_data_dir, load_dotenv, repo_root
 
-
-MODELS: dict[str, ModelSpec] = {
-    "gemma-12b": {"label": "Gemma 12B · local ★", "cost": "free", "kind": "ollama", "id": "gemma4:12b", "think": False},
-    "qwen": {"label": "Qwen3.5 9B · local", "cost": "free", "kind": "ollama", "id": "qwen3.5:9b", "think": False},
-    "qwen-64k": {"label": "Qwen3.5 64k · local · thinking", "cost": "free", "kind": "ollama", "id": "qwen3.5-64k:latest", "think": True},
-    "llama": {"label": "Llama3.1 8B · local", "cost": "free", "kind": "ollama", "id": "llama3.1:8b", "think": False},
-    "haiku": {"label": "Claude Haiku", "cost": "~1–3¢/build", "kind": "claude", "id": "claude-haiku-4-5", "think": False},
-    "sonnet": {"label": "Claude Sonnet", "cost": "~4–8¢/build", "kind": "claude", "id": "claude-sonnet-4-6", "think": False},
-    "opus": {"label": "Claude Opus", "cost": "~6–13¢/build", "kind": "claude", "id": "claude-opus-4-8", "think": False},
-}
-
-DEFAULT_MODEL = os.environ.get("VERITAS_MODEL", "gemma-12b")  # hosted (Claude-only) sets e.g. "sonnet"
-
-# Honest, measured capability notes — what each model reliably CLEARS, from the project's own
-# benchmark runs. (Milestone 5 wires these to live bench results; until then they're the findings.)
-MODEL_NOTES: dict[str, str] = {
-    "gemma-12b": "Clears function + production chains. The local star.",
-    "qwen": "Fast, but drifts on grounding — good for simple functions, not video.",
-    "qwen-64k": "Thinking model — better first-try on hard goals, ~7x slower.",
-    "llama": "Older 8B — basic functions only; weakest of the locals.",
-    "haiku": "Cloud, cheap — clears more than the locals.",
-    "sonnet": "Cloud — clears module/app scale where local models can't.",
-    "opus": "Cloud — strongest; for the hardest builds.",
-}
-
-
-def _provider_for(model: str) -> ModelProvider:
-    spec = MODELS.get(model)
-    if spec is None:
-        raise ValueError(f"unknown model {model!r}")
-    if spec["kind"] == "ollama":
-        # reasoning runs generate far more tokens, so give them a longer leash
-        return OllamaProvider(
-            model=spec["id"], think=spec["think"], timeout=600.0 if spec["think"] else 120.0
-        )
-    return ClaudeProvider(spec["id"])
-
-
-def _tutorial_provider_for(model: str, source_len: int) -> ModelProvider:
-    """The same model toggle as every other studio, but an Ollama provider gets a context window
-    sized to the Knowledge Graph source. Measured live: `_provider_for`'s default (unset num_ctx)
-    let Ollama's small default context silently truncate the "respond with ONLY JSON" system
-    prompt off a 37k-char transcript, so the model answered in prose instead of the required
-    schema — the gate correctly rejected it, but every long source would fail the same way.
-    ~3 chars/token, rounded up to the next 2k, with headroom for the system prompt and the
-    JSON response itself; capped so a pathological source can't demand unbounded local RAM."""
-    spec = MODELS.get(model)
-    if spec is None:
-        raise ValueError(f"unknown model {model!r}")
-    if spec["kind"] != "ollama":
-        return ClaudeProvider(spec["id"])
-    num_ctx = max(4096, min(32768, -(-((source_len // 3) + 4096) // 2048) * 2048))
-    return OllamaProvider(
-        model=spec["id"], think=spec["think"], timeout=600.0, num_ctx=num_ctx, num_predict=4096,
-    )
-
-# Anchor the data dir to the repo root, NOT the launch directory, so the hub finds the
-# same runs no matter where it's started from. (Relative "./hub_data" silently moved the
-# data when the server was launched from a different cwd.) VERITAS_DATA overrides it.
-_ROOT = Path(__file__).resolve().parent.parent
-
-
-def _load_dotenv(path: Path) -> None:
-    """Load KEY=VALUE lines from .env into the environment (without overriding anything already
-    set). Without this the Claude models are in the toggle but unusable when the hub is launched
-    plainly — the SDK can't find ANTHROPIC_API_KEY. Stdlib only; no python-dotenv dependency."""
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
-
-
-_load_dotenv(_ROOT / ".env")
-_DATA = Path(os.environ.get("VERITAS_DATA", str(_ROOT / "hub_data")))
+_ROOT = repo_root()
+load_dotenv()
+_DATA = default_data_dir()
 _STATIC = Path(__file__).parent / "static"
 
 
@@ -1153,7 +1069,7 @@ def create_app(
         org: str | None = None
         goal = req.request.strip()
         try:
-            prov = injected_provider or _provider_for(req.model)
+            prov = injected_provider or provider_for(req.model)
             raw = prov.propose(role="router", prompt=req.request, system=system)
             start, end = raw.find("{"), raw.rfind("}")
             obj = json.loads(raw[start:end + 1]) if 0 <= start < end else {}
@@ -1187,7 +1103,7 @@ def create_app(
         )
         prompt = f"{convo}\nAssistant:" if convo else ""
         try:
-            prov = injected_provider or _provider_for(req.model)
+            prov = injected_provider or provider_for(req.model)
             reply = prov.propose(role="chat", prompt=prompt, system=system).strip()
         except Exception as exc:  # model down / unknown model / API error
             return {"error": f"{type(exc).__name__}: {exc}"}
@@ -1267,7 +1183,7 @@ def create_app(
             set_activity_listener(lambda e: progress[token]["events"].append(_event(e)))
             try:
                 org = get_org(req.org)
-                prov = injected_provider or _provider_for(req.model)
+                prov = injected_provider or provider_for(req.model)
                 result = org.build(req.goal, prov, org_memory(org.name), sources=req.sources)
                 summary = summarize(result, datetime.now(timezone.utc).isoformat(), model=req.model)
                 runs.save(summary)
@@ -1292,7 +1208,7 @@ def create_app(
     def create_run(req: RunRequest) -> dict[str, Any]:
         org = get_org(req.org)  # KeyError -> 500 is acceptable locally; UI only offers known orgs
         try:
-            prov = injected_provider or _provider_for(req.model)
+            prov = injected_provider or provider_for(req.model)
             result = org.build(req.goal, prov, org_memory(org.name), sources=req.sources)
         except Exception as exc:  # missing API key, unknown model, model API error
             return {"error": f"{type(exc).__name__}: {exc}"}
@@ -1459,7 +1375,7 @@ def create_app(
     def wedge_submit(
         req: WedgeRequest, authorization: str | None = Header(default=None)
     ) -> dict[str, Any]:
-        wedge = Wedge(base, lambda: injected_provider or _provider_for(req.model),
+        wedge = Wedge(base, lambda: injected_provider or provider_for(req.model),
                       wedge_auth, meter=quota,
                       unlimited_check=accounts.is_unlimited if accounts is not None else None)
         try:
@@ -1501,7 +1417,7 @@ def create_app(
                         "duration_ms": 0.0, "at": datetime.now(timezone.utc).isoformat()}],
             "done": False, "result": None, "error": None,
         }
-        wedge = Wedge(base, lambda: injected_provider or _provider_for(req.model),
+        wedge = Wedge(base, lambda: injected_provider or provider_for(req.model),
                       wedge_auth, meter=quota,
                       unlimited_check=accounts.is_unlimited if accounts is not None else None)
 
@@ -1552,7 +1468,7 @@ def create_app(
     @app.post("/api/create/start")
     def create_start(req: CreateStartRequest) -> dict[str, str]:
         token = uuid4().hex
-        prov = injected_provider or _provider_for(req.model)
+        prov = injected_provider or provider_for(req.model)
         sess = CreateSession(token, req.goal, req.model, prov,
                              org_memory("web"), web_profile_store())
         create_sessions[token] = sess
@@ -1597,7 +1513,7 @@ def create_app(
     @app.post("/api/produce/start")
     def produce_start(req: ProduceRequest) -> dict[str, str]:
         token = uuid4().hex
-        prov = injected_provider or _provider_for(req.model)
+        prov = injected_provider or provider_for(req.model)
         publisher: Publisher | None = (
             FfmpegPublisher() if shutil.which("ffmpeg") and shutil.which("ffprobe") else None
         )
@@ -1647,7 +1563,7 @@ def create_app(
     @app.post("/api/plan/start")
     def plan_start(req: PlanStartRequest) -> dict[str, str]:
         token = uuid4().hex
-        prov = injected_provider or _provider_for(req.model)
+        prov = injected_provider or provider_for(req.model)
         sess = PlanSession(token, req.request, req.model, prov, org_memory, _record_run)
         plan_sessions[token] = sess
         sess.start()
@@ -1676,7 +1592,7 @@ def create_app(
 
         def worker() -> None:
             try:
-                prov = injected_provider or _provider_for(req.model)
+                prov = injected_provider or provider_for(req.model)
                 brief_progress[token]["brief"] = _brief_dict(build_brief(req.question, prov))
             except Exception as exc:  # model down, bad model, etc.
                 brief_progress[token]["error"] = f"{type(exc).__name__}: {exc}"
@@ -1704,7 +1620,7 @@ def create_app(
     def bench_start(req: BenchRequest) -> dict[str, str]:
         models = [m for m in req.models if m in MODELS] or [DEFAULT_MODEL]
         token = uuid4().hex
-        sess = BenchSession(token, models, lambda m: injected_provider or _provider_for(m),
+        sess = BenchSession(token, models, lambda m: injected_provider or provider_for(m),
                             repeats=max(1, min(req.repeats, 3)),
                             results_path=base / "bench_latest.json")
         bench_sessions[token] = sess
@@ -1729,7 +1645,7 @@ def create_app(
             raise HTTPException(status_code=400, detail="candidate prompt is empty")
         model = req.model if req.model in MODELS else DEFAULT_MODEL
         token = uuid4().hex
-        sess = TuneSession(token, req.candidate, lambda m: injected_provider or _provider_for(m),
+        sess = TuneSession(token, req.candidate, lambda m: injected_provider or provider_for(m),
                            model, repeats=max(1, min(req.repeats, 3)))
         tune_sessions[token] = sess
         sess.start()
@@ -1907,7 +1823,7 @@ def create_app(
 
         def worker() -> None:
             try:
-                prov = injected_provider or _tutorial_provider_for(req.model, len(source.body))
+                prov = injected_provider or _tutorialprovider_for(req.model, len(source.body))
                 artifact, result = None, None
                 for _attempt in range(3):
                     artifact, result = generate_tutorial(source, spec, prov)

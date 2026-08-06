@@ -15,7 +15,7 @@ dev = ["pytest>=8.0", "mypy>=1.8", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.
 # Web Studio (P14) renders in a real browser: after install, run `playwright install chromium`.
 
 [tool.setuptools.packages.find]
-include = ["engine*", "orgs*", "hub*", "collector*"]
+include = ["engine*", "orgs*", "hub*", "collector*", "products*", "commons*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -25,7 +25,7 @@ pythonpath = ["."]  # so tests can import bench/ (the formalized experiments), n
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["engine", "orgs", "hub", "collector"]
+files = ["engine", "orgs", "hub", "collector", "products", "commons"]
 
 [[tool.mypy.overrides]]
 module = "yaml"

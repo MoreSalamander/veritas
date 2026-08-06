@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 
 from engine.model import SequencedProvider
-from hub.tutorial_spec import TutorialSpec, interview_for_scope, parse_tutorial_spec, spec_completeness
+from products.tutorial.spec import TutorialSpec, interview_for_scope, parse_tutorial_spec, spec_completeness
 
 Q1 = '{"question": "How much depth do you want?"}'
 COMPLETE = json.dumps({"spec": {

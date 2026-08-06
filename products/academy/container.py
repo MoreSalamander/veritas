@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from engine.memory import MemoryRecord
-from hub.tutorial_container import _DOCKER
+from products.tutorial.container import _DOCKER
 
 ACADEMY_ROOT = Path.home() / "MoreSalamander" / "taichi-academy"
 

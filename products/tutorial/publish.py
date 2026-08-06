@@ -23,8 +23,8 @@ from pathlib import Path
 from typing import Any
 
 from engine.memory import MemoryRecord
-from hub.tutorial_generate import TutorialContent
-from hub.tutorial_spec import TutorialSpec
+from products.tutorial.generate import TutorialContent
+from products.tutorial.spec import TutorialSpec
 
 MYAISTRO_BACKEND = Path.home() / "myAIstro" / "backend"
 
@@ -78,7 +78,7 @@ if __name__ == "__main__":
 
     from engine.memory import default_memory_store
     from engine.model import OllamaProvider
-    from hub.tutorial_generate import generate_tutorial
+    from products.tutorial.generate import generate_tutorial
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-id", required=True, help="a Knowledge Graph record id, e.g. mem_abc123")
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     if not result.passed:
         raise SystemExit(1)
 
-    from hub.tutorial_generate import parse_tutorial_content
+    from products.tutorial.generate import parse_tutorial_content
 
     content = parse_tutorial_content(artifact.payload)
     outcome = publish_tutorial(source, content, spec)

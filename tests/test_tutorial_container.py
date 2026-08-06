@@ -9,7 +9,7 @@ import urllib.request
 
 import pytest
 
-from hub.tutorial_container import (
+from products.tutorial.container import (
     _detect_language,
     build_tutorial_image,
     dispense_copy,
@@ -18,7 +18,7 @@ from hub.tutorial_container import (
     render_tutorial_page,
     return_copy,
 )
-from hub.tutorial_generate import TutorialContent, TutorialSection, TutorialStep
+from products.tutorial.generate import TutorialContent, TutorialSection, TutorialStep
 
 
 def test_image_tag_is_a_readable_docker_tag():

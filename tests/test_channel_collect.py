@@ -13,14 +13,14 @@ from pathlib import Path
 import pytest
 
 from engine.memory import MemoryStore, TRUST_VOUCHED
-from hub.channel_collect import (
+from commons.channels import (
     ChannelVideo,
     ScriptedChannelLister,
     VouchedChannel,
     collect_channel,
     load_vouched_channels,
 )
-from hub.ingest import FetchedTranscript, ScriptedFetcher
+from commons.ingest import FetchedTranscript, ScriptedFetcher
 
 
 def _channel(**overrides) -> VouchedChannel:

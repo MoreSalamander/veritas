@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
-from hub.parallel_client import (
+from commons.parallel_client import (
     ExtractResult,
     ParallelClient,
     ParallelUnavailable,

@@ -1,0 +1,133 @@
+/*
+ * A hand-ported CSS theme for Prism.js matching myAIstro's own code-block rendering exactly —
+ * the color values here are copied verbatim from
+ * myAIstro/frontend/node_modules/react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus.js
+ * (a JS-object Prism theme, used there via react-syntax-highlighter), not guessed or pulled from
+ * a third-party CSS port, so this is a byte-exact color match to what myAIstro already shows,
+ * expressed as plain CSS selectors against Prism's standard `.token.<name>` output classes.
+ * Same theme, same "shown like it's in VS Code" reference point, on a static-HTML/no-build stack.
+ */
+
+pre[class*="language-"],
+code[class*="language-"] {
+  color: #d4d4d4;
+  font-size: 12.5px;
+  font-family: var(--mono, ui-monospace, Menlo, Monaco, Consolas, "Andale Mono", "Ubuntu Mono", "Courier New", monospace);
+  text-align: left;
+  white-space: pre;
+  word-spacing: normal;
+  word-break: normal;
+  line-height: 1.5;
+  tab-size: 4;
+  hyphens: none;
+}
+
+pre[class*="language-"] {
+  padding: 12px 14px;
+  margin: 6px 0;
+  overflow: auto;
+  background: #1e1e1e;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+:not(pre) > code[class*="language-"] {
+  padding: 0.1em 0.3em;
+  border-radius: 0.3em;
+  color: #db4c69;
+  background: #1e1e1e;
+}
+
+pre[class*="language-"]::selection,
+code[class*="language-"]::selection,
+pre[class*="language-"] *::selection,
+code[class*="language-"] *::selection {
+  background: #264f78;
+  text-shadow: none;
+}
+
+.token.comment,
+.token.prolog {
+  color: #6a9955;
+}
+
+.token.punctuation,
+.token.operator {
+  color: #d4d4d4;
+}
+
+.token.property,
+.token.attr-name,
+.token.constant,
+.token.variable,
+.token.parameter,
+.token.interpolation,
+.token.console {
+  color: #9cdcfe;
+}
+
+.token.tag,
+.token.boolean,
+.token.entity,
+.token.important,
+.token.doctype.doctype-tag {
+  color: #569cd6;
+}
+
+.token.number,
+.token.symbol,
+.token.inserted,
+.token.unit {
+  color: #b5cea8;
+}
+
+.token.selector {
+  color: #d7ba7d;
+}
+
+.token.string,
+.token.char,
+.token.builtin,
+.token.deleted,
+.token.attr-value {
+  color: #ce9178;
+}
+
+.token.keyword {
+  color: #569cd6;
+}
+
+.token.keyword.module,
+.token.keyword.control-flow,
+.token.atrule.rule {
+  color: #c586c0;
+}
+
+.token.function,
+.token.function.maybe-class-name {
+  color: #dcdcaa;
+}
+
+.token.regex {
+  color: #d16969;
+}
+
+.token.class-name,
+.token.maybe-class-name,
+.token.namespace {
+  color: #4ec9b0;
+}
+
+.token.italic {
+  font-style: italic;
+}
+
+/* A language chip in the corner, like myAIstro's CodeBlock overlay — small, unobtrusive. */
+.code-lang-chip {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7f8c84;
+  margin-bottom: 4px;
+}

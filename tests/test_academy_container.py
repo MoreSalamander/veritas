@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from hub.academy_container import (
+from products.academy.container import (
     AcademyPackagingError,
     AcademyProject,
     academy_record,
@@ -23,7 +23,7 @@ from hub.academy_container import (
     list_academy_projects,
     run_academy_gate,
 )
-from hub.tutorial_container import dispense_copy, docker_available, return_copy
+from products.tutorial.container import dispense_copy, docker_available, return_copy
 
 needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="needs node to evaluate reader data files")
 

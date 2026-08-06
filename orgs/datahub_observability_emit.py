@@ -211,5 +211,10 @@ if __name__ == "__main__":
     import sys
 
     root = Path(__file__).resolve().parent.parent
-    urns = emit_observability(root / "hub_data" / "runs", root / "hub_data" / "usage.db")
+    # The wedge usage ledger belongs to the front door (entropy-os) after the
+    # split; ENTROPY_USAGE_DB points there when it relocates. Its default is
+    # the historical in-repo location, and read_usage_ledger() already treats
+    # a missing file as "no ledger" rather than an error.
+    usage_db = Path(os.environ.get("ENTROPY_USAGE_DB", str(root / "hub_data" / "usage.db")))
+    urns = emit_observability(root / "hub_data" / "runs", usage_db)
     print(f"emitted {len(urns)} observability entities", file=sys.stderr)

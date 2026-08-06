@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from engine.memory import MemoryRecord, MemoryStore
-from hub.ingest import TranscriptFetcher, TranscriptUnavailable
+from commons.ingest import TranscriptFetcher, TranscriptUnavailable
 
 
 @dataclass(frozen=True)
