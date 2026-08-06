@@ -22,6 +22,14 @@ dev = ["pytest>=8.0", "mypy>=1.8", "httpx>=0.27", "anthropic>=0.40", "playwright
 [tool.setuptools.packages.find]
 include = ["engine*", "orgs*", "collector*", "products*", "commons*"]
 
+# The container builders bake vendored assets into their images at build
+# time; a pip install of this library must carry them or the modules can't
+# import anywhere but a source checkout (found the hard way on the first
+# hosted boot).
+[tool.setuptools.package-data]
+"products.tutorial" = ["static/vendor/prism/*"]
+"products.academy" = ["static/vendor/prism/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
