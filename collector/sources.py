@@ -37,6 +37,12 @@ class SourceConfig:
 
 
 def load_sources(path: Path) -> dict[str, SourceConfig]:
+    # The sources file names THIS machine's sibling repos — it's operator
+    # config, not library data, and deliberately doesn't ship in the package.
+    # Anywhere it's absent (a hosted box, a fresh clone), the collector
+    # simply has no sources registered.
+    if not Path(path).exists():
+        return {}
     with open(path) as f:
         raw: dict[str, dict[str, str]] = json.load(f)
     return {

@@ -19,7 +19,7 @@ from collector.collect import collect_one, run_collection
 from collector.gate import check_structural
 from collector.readers import read_hunter_engine, read_opportunity_hub
 from collector.records import AdmissionState, EntropyRecord, record_id
-from collector.sources import SourceConfig
+from collector.sources import SourceConfig, load_sources
 from collector.store import CollectorStore
 
 
@@ -266,3 +266,9 @@ def test_run_collection_isolates_an_unknown_kind_from_other_sources(tmp_path: Pa
     assert len(store.list_by_source("good_engine")) == 1
 
 
+
+
+def test_load_sources_missing_file_means_no_sources(tmp_path: Path) -> None:
+    # Operator config doesn't ship with the library; absence is a valid state,
+    # not a crash — the hosted face boots with zero collector sources.
+    assert load_sources(tmp_path / "nowhere" / "collector_sources.json") == {}
