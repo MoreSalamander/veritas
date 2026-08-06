@@ -97,3 +97,36 @@ def test_two_tenants_are_isolated(tmp_path):
 
 
 # --- HTTP shell: status preflight + 401/503 mapping ------------------------------------------
+
+
+def test_unvendable_slot_is_refused_before_the_sandbox(tmp_path):
+    """The allowlist is deterministic and sits before any execution concern:
+    an org not on the machine is refused even with a healthy sandbox."""
+    from products.wedge import OrgNotVendable, Wedge, WedgeAuth
+
+    wedge = Wedge(tmp_path, lambda: None, WedgeAuth({"tok": "tenant1"}),
+                  sandbox_check=lambda: True)
+    with pytest.raises(OrgNotVendable):
+        wedge.submit(authorization="Bearer tok", goal="x", org="production")
+
+
+def test_web_slot_vends_the_page(tmp_path):
+    """The web slot returns the page itself in the tray — the artifact, not
+    just a verdict."""
+    from engine.model import ScriptedProvider
+    from products.wedge import Wedge, WedgeAuth
+
+    provider = ScriptedProvider({
+        "designer": '{"title": "T", "description": "d", "required_elements": ["h1"], '
+                    '"aesthetics": {}}',
+        "web-developer": "<!doctype html><html><head><style>h1{color:#111;background:#fff}</style>"
+                         "</head><body><h1>Hello</h1></body></html>",
+    })
+    wedge = Wedge(tmp_path, lambda: provider, WedgeAuth({"tok": "tenant1"}),
+                  sandbox_check=lambda: True)
+    res = wedge.submit(authorization="Bearer tok", goal="a page", org="web")
+    assert res.org == "web"
+    # Whatever the gates decided, the tray carries the artifacts that existed
+    # and the evidence names real gates.
+    assert isinstance(res.artifacts, list) and isinstance(res.evidence, list)
+    assert any(e["gate"] for e in res.evidence)

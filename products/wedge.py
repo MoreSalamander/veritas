@@ -28,6 +28,7 @@ from typing import Any, Callable, Protocol, runtime_checkable
 from engine.executor import sandbox_active
 from engine.memory import MemoryStore, default_memory_store
 from engine.model import ModelProvider
+from orgs.registry import get_org
 from orgs.software_studio.pipeline import build_function
 
 # A tenant id becomes a directory name, so it must be path-safe by construction (no separators, no
@@ -37,6 +38,16 @@ _TENANT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 class Unauthorized(Exception):
     """Missing or unrecognized bearer token — the request has no tenant identity."""
+
+
+class OrgNotVendable(Exception):
+    """The requested slot isn't on the machine. Deterministic allowlist — a
+    stranger can only run the orgs the operator chose to vend."""
+
+
+# The made-to-order slots: looks right (web), cited right (research), runs
+# right (software). Everything else stays operator-only.
+VENDABLE_ORGS = ("software", "web", "research")
 
 
 class SandboxUnavailable(Exception):
@@ -117,6 +128,8 @@ class WedgeResult:
     spec: dict[str, Any] | None = None  # the contract extracted from the goal BEFORE any code — the "why"
     evidence: list[dict[str, Any]] = field(default_factory=list)  # the gate verdicts behind the decision
     remaining: int | None = None  # runs left in the tenant's window, when a meter is attached
+    org: str = "software"   # which slot vended this
+    artifacts: list[dict[str, Any]] = field(default_factory=list)  # what dropped into the tray
 
 
 def _evidence(result: Any) -> list[dict[str, Any]]:
@@ -166,12 +179,19 @@ class Wedge:
             raise Unauthorized("invalid tenant id")
         return self.base / "tenants" / tenant
 
-    def submit(self, *, authorization: str | None, goal: str) -> WedgeResult:
-        """Authenticate → verify isolation is live → run the Software org in the tenant's own memory.
+    def submit(
+        self, *, authorization: str | None, goal: str,
+        org: str = "software", sources: list[str] | None = None,
+    ) -> WedgeResult:
+        """Authenticate → verify isolation is live → run the chosen slot's org in the tenant's own memory.
 
-        Order matters: identity first (no anonymous runs), the sandbox guard SECOND and BEFORE any
-        model-authored code can execute (fail closed), the gated build last."""
+        Order matters: identity first (no anonymous runs), the slot allowlist and sandbox guard SECOND
+        and BEFORE any model-authored code can execute (fail closed), the gated build last. The sandbox
+        guard applies to every slot — web and research don't execute stranger code the way software
+        does, but one uniform floor is simpler to trust than three special cases."""
         tenant = self.auth.tenant_for(authorization)            # Unauthorized on a bad/absent token
+        if org not in VENDABLE_ORGS:
+            raise OrgNotVendable(f"slot {org!r} is not on this machine (offered: {', '.join(VENDABLE_ORGS)})")
         if not self.sandbox_check():                            # FAIL CLOSED — no isolation, no run
             raise SandboxUnavailable(
                 "execution sandbox is not active; refusing to run untrusted code on the host"
@@ -180,6 +200,8 @@ class Wedge:
         if self.meter is not None and not exempt:
             self.meter.check(tenant)                            # QuotaExceeded if over the window's limit
         root = self.tenant_root(tenant)
+        if org != "software":
+            return self._submit_org_run(tenant, goal, org, sources, root, exempt)
         memory = self.memory_factory(root / "software")         # per-tenant, isolated by path
         result = build_function(goal, self.provider_factory(), memory)
         # The deliverable itself — the code the org wrote and the gates cleared. Without this, "SHIPPED"
@@ -215,4 +237,47 @@ class Wedge:
             spec=spec,
             evidence=_evidence(result),
             remaining=remaining,
+            org="software",
+            artifacts=[{"label": "verified function", "payload": code}] if code else [],
+        )
+
+    def _submit_org_run(
+        self, tenant: str, goal: str, org: str, sources: list[str] | None,
+        root: Path, exempt: bool,
+    ) -> WedgeResult:
+        """Vend a non-software slot through the org registry: same tenant
+        isolation, same meter, artifacts pulled from every outcome that
+        carried one (the web page's HTML, the research report's text)."""
+        memory = self.memory_factory(root / org)
+        run = get_org(org).build(goal, self.provider_factory(), memory, sources=sources)
+        evidence: list[dict[str, Any]] = []
+        artifacts: list[dict[str, Any]] = []
+        for outcome in run.outcomes:
+            for gr in outcome.gate_results:
+                evidence.append({
+                    "gate": gr.gate_name,
+                    "determinism": gr.determinism.value,
+                    "passed": gr.passed,
+                    "evidence": gr.evidence,
+                })
+            art = getattr(outcome, "artifact", None)
+            if art is not None and getattr(art, "payload", None):
+                artifacts.append({"label": getattr(art, "type", "artifact"), "payload": art.payload})
+        remaining: int | None = None
+        if self.meter is not None and not exempt:
+            self.meter.record(tenant, run.accepted, goal)
+            remaining = self.meter.remaining(tenant)
+        elif exempt:
+            remaining = -1
+        return WedgeResult(
+            tenant=tenant,
+            goal=goal,
+            accepted=run.accepted,
+            run_id=run.run_id,
+            isolated=True,
+            persisted_at=str(root),
+            evidence=evidence,
+            remaining=remaining,
+            org=org,
+            artifacts=artifacts,
         )
