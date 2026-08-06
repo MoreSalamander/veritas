@@ -235,6 +235,8 @@ def _run_collectible_hunter_bridge(
 def _run_hackathon_hunter_bridge(
     goal: str, provider: ModelProvider, memory: MemoryStore, sources: list[str] | None = None
 ) -> OrgRun:
+    from pathlib import Path
+
     from orgs.hunter_engine_bridge import run_hunter_engine
 
     return run_hunter_engine(

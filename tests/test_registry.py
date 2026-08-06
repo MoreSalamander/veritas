@@ -67,3 +67,29 @@ def test_rejected_early_run_has_single_outcome(tmp_path):
     run = get_org("software").build("x", provider, MemoryStore(tmp_path))
     assert not run.accepted
     assert len(run.outcomes) == 1  # the rejected spec; the developer never ran
+
+
+def test_every_hunter_bridge_reaches_the_engine_boundary(monkeypatch, tmp_path):
+    """Each external bridge must survive its own body (a missing function-local
+    import once made a bridge NameError before reaching the engine). Stub the
+    boundary, call every bridge, assert it arrives with the right identity."""
+    import orgs.hunter_engine_bridge as bridge_mod
+    from engine.model import ScriptedProvider
+
+    calls = []
+
+    def _stub(name, repo, provider, memory, goal, sources):
+        calls.append((name, repo.name))
+        from types import SimpleNamespace
+
+        # the minimal OrgRun shape callers forward
+        return SimpleNamespace(org=name, goal=goal, accepted=True, outcomes=[],
+                               informed_by=[], run_id="run_stub", activity=[])
+
+    monkeypatch.setattr(bridge_mod, "run_hunter_engine", _stub)
+    provider, memory = ScriptedProvider({}), MemoryStore(tmp_path)
+    for org_name in ("crypto_hunter", "collectible_hunter", "free_money_hunter", "hackathon_hunter"):
+        REGISTRY[org_name].build(f"run today's hunt via {org_name}", provider, memory)
+    assert [c[0] for c in calls] == [
+        "crypto_hunter", "collectible_hunter", "free_money_hunter", "hackathon_hunter"]
+    assert calls[3][1] == "hackathon-hunter"
