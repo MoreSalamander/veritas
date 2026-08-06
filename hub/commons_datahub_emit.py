@@ -20,6 +20,8 @@ curation, not a child of some larger run.
 
 from __future__ import annotations
 
+import os
+
 import re
 
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
@@ -36,7 +38,7 @@ from datahub.metadata.schema_classes import (
 
 from engine.memory import MemoryRecord
 
-GMS_SERVER = "http://localhost:8080"
+GMS_SERVER = os.environ.get("DATAHUB_GMS", "http://localhost:8080")
 PLATFORM = "veritas"
 
 TAG_NAME = "VeritasHumanVouchedSource"

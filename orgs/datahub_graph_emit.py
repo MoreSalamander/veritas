@@ -37,6 +37,8 @@ repo changes. Impact analysis, automatic.
 
 from __future__ import annotations
 
+import os
+
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
 from datahub.emitter.rest_emitter import DatahubRestEmitter
 from datahub.metadata.schema_classes import (
@@ -52,7 +54,7 @@ from datahub.metadata.schema_classes import (
 
 from orgs.datahub_engineering_emit import _emit_api_endpoints
 
-GMS_SERVER = "http://localhost:8080"
+GMS_SERVER = os.environ.get("DATAHUB_GMS", "http://localhost:8080")
 PLATFORM = "veritas"
 
 REPO_URN = "urn:li:dataset:(urn:li:dataPlatform:github,veritas,PROD)"

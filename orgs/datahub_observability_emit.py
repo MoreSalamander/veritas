@@ -31,6 +31,8 @@ when real measurement exists.
 
 from __future__ import annotations
 
+import os
+
 import json
 import sqlite3
 from collections import defaultdict
@@ -48,7 +50,7 @@ from datahub.metadata.schema_classes import (
 
 from engine.tokens import estimate_tokens
 
-GMS_SERVER = "http://localhost:8080"
+GMS_SERVER = os.environ.get("DATAHUB_GMS", "http://localhost:8080")
 PLATFORM = "veritas"
 OWNER_URN = "urn:li:corpGroup:veritas-observability"
 

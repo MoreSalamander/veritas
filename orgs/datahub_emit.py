@@ -60,6 +60,7 @@ all three so the full tagging path gets exercised in demos.
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import datetime
 
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
@@ -99,7 +100,7 @@ from engine.artifact import Artifact, Determinism, GateResult
 from engine.run import Outcome
 from orgs.registry import OrgRun
 
-GMS_SERVER = "http://localhost:8080"
+GMS_SERVER = os.environ.get("DATAHUB_GMS", "http://localhost:8080")
 PLATFORM = "veritas"
 
 # The real, code-level rigor distinction (engine/artifact.py Determinism) —

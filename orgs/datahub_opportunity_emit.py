@@ -39,6 +39,8 @@ category filter.
 
 from __future__ import annotations
 
+import os
+
 import json
 import sqlite3
 from pathlib import Path
@@ -56,7 +58,7 @@ from datahub.metadata.schema_classes import (
     TagPropertiesClass,
 )
 
-GMS_SERVER = "http://localhost:8080"
+GMS_SERVER = os.environ.get("DATAHUB_GMS", "http://localhost:8080")
 PLATFORM = "veritas"
 
 _HIGH_VALUE_THRESHOLD = 30  # of the engine's 0-40 reward_potential scale — stated policy
@@ -179,5 +181,6 @@ def emit_hunter_opportunities(
 if __name__ == "__main__":
     import sys
 
-    urns = emit_hunter_opportunities("crypto_hunter", Path.home() / "MoreSalamander" / "crypto-hunter")
+    repo = Path(os.environ.get("CRYPTO_HUNTER_DIR", str(Path.home() / "MoreSalamander" / "crypto-hunter")))
+    urns = emit_hunter_opportunities("crypto_hunter", repo)
     print(f"emitted {len(urns)} real crypto-hunter opportunities", file=sys.stderr)

@@ -30,6 +30,8 @@ NOT CATALOGED, and why (verified before writing, not assumed):
 
 from __future__ import annotations
 
+import os
+
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
 from datahub.emitter.rest_emitter import DatahubRestEmitter
 from datahub.metadata.schema_classes import (
@@ -43,7 +45,7 @@ from datahub.metadata.schema_classes import (
     SubTypesClass,
 )
 
-GMS_SERVER = "http://localhost:8080"
+GMS_SERVER = os.environ.get("DATAHUB_GMS", "http://localhost:8080")
 PLATFORM = "veritas"
 OWNER_URN = "urn:li:corpGroup:veritas-engineering"
 

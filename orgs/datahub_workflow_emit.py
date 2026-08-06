@@ -32,6 +32,8 @@ are real in both cases.
 
 from __future__ import annotations
 
+import os
+
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -48,7 +50,7 @@ from datahub.metadata.schema_classes import (
     RunResultTypeClass,
 )
 
-GMS_SERVER = "http://localhost:8080"
+GMS_SERVER = os.environ.get("DATAHUB_GMS", "http://localhost:8080")
 ACTOR = "urn:li:corpuser:veritas"
 
 
