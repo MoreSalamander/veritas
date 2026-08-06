@@ -97,3 +97,35 @@ def normalize(text: str) -> str:
     """Whitespace- and typography-insensitive form for verbatim matching — smart quotes, dashes and
     ellipses shouldn't decide truth; the WORDS still must match exactly, so a paraphrase still fails."""
     return " ".join(text.translate(_TYPOGRAPHY).split())
+
+
+def render_markdown(report: Report, source_urls: dict[str, str] | None = None) -> str:
+    """The human face of a verified report.
+
+    The artifact the gates rule on is deliberately machine-shaped — claims and
+    citations as JSON — so verification is exact. Nobody should have to READ
+    that. This renders the verified structure as a normal research page:
+    findings with their citation marks, the verbatim quotes each claim leans
+    on, and a sources index. Deterministic: the same report and URL map always
+    produce the same page, so the rendering adds nothing the gates didn't rule
+    on. `source_urls` maps corpus ids (src1, ...) to where each source came
+    from; ids without a URL are labeled as pinned corpus text.
+    """
+    urls = source_urls or {}
+    lines: list[str] = [f"# {report.topic}", "", "## Findings", ""]
+    for claim in report.claims:
+        marks = "".join(f" [{c.source}]" for c in claim.citations)
+        lines.append(f"- {claim.text}{marks}")
+        for cit in claim.citations:
+            if cit.quote:
+                lines.append(f'> "{cit.quote}" — {cit.source}')
+        lines.append("")
+    cited = sorted(
+        {c.source for claim in report.claims for c in claim.citations},
+        key=lambda s: (len(s), s),  # src2 before src10
+    )
+    if cited:
+        lines += ["## Sources", ""]
+        for sid in cited:
+            lines.append(f"- [{sid}] {urls.get(sid, 'pinned corpus text (provided to the run)')}")
+    return "\n".join(lines).strip() + "\n"

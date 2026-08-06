@@ -30,6 +30,7 @@ from engine.memory import MemoryStore, default_memory_store
 from engine.model import ModelProvider
 from commons.parallel_client import ParallelUnavailable, SearchClient
 from orgs.registry import get_org
+from orgs.research_studio.report import ReportParseError, parse_report, render_markdown
 from orgs.software_studio.pipeline import build_function
 
 # A tenant id becomes a directory name, so it must be path-safe by construction (no separators, no
@@ -302,6 +303,27 @@ class Wedge:
             art = getattr(outcome, "artifact", None)
             if art is not None and getattr(art, "payload", None):
                 artifacts.append({"label": getattr(art, "type", "artifact"), "payload": art.payload})
+        if org == "research":
+            # The report artifact is machine-shaped JSON so the gates can rule
+            # exactly; the tray hands over a normal research page rendered
+            # from that verified structure. Corpus ids map back to where each
+            # source came from (src1, src2, ... in source order). A payload
+            # that doesn't parse (a garbled rejected proposal) stays raw and
+            # honestly labeled rather than pretending to be a page.
+            source_urls: dict[str, str] = {}
+            for i, s in enumerate(sources or []):
+                head = s.strip().split("\n", 1)[0]
+                if head.startswith("SOURCE: "):
+                    source_urls[f"src{i + 1}"] = head[len("SOURCE: "):].strip()
+                elif head.startswith(("http://", "https://")) and " " not in head:
+                    source_urls[f"src{i + 1}"] = head
+            for entry in artifacts:
+                if entry["label"] == "report":
+                    try:
+                        entry["payload"] = render_markdown(parse_report(entry["payload"]), source_urls)
+                        entry["label"] = "grounded report"
+                    except ReportParseError:
+                        pass
         if fetched_urls:
             artifacts.insert(0, {
                 "label": "machine-fetched sources",

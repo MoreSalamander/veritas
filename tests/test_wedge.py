@@ -176,3 +176,42 @@ def test_research_fetches_its_own_corpus_via_the_search_seam(tmp_path):
     assert res.org == "research"
     assert res.artifacts and res.artifacts[0]["label"] == "machine-fetched sources"
     assert "example.edu" in res.artifacts[0]["payload"]
+
+
+def test_research_tray_holds_a_rendered_page_not_report_json(tmp_path):
+    """The report artifact is machine-shaped JSON for the gates; the tray must
+    hand over a normal research page — findings, quotes, a sources index that
+    resolves corpus ids back to the fetched URLs. Raw JSON never reaches the
+    tray for a parseable report."""
+    from commons.parallel_client import ExtractResult, ScriptedSearchClient, SearchResult
+    from engine.model import ScriptedProvider
+    from products.wedge import Wedge, WedgeAuth
+
+    client = ScriptedSearchClient(
+        search_by_query={
+            "what is spaced repetition?": [
+                SearchResult(url="https://example.edu/sr", title="Spaced Repetition"),
+            ],
+        },
+        extract_by_url={
+            "https://example.edu/sr": ExtractResult(
+                url="https://example.edu/sr", title="Spaced Repetition",
+                content="Spaced repetition schedules reviews at increasing intervals."),
+        },
+    )
+    provider = ScriptedProvider({
+        "researcher": '{"topic": "what is spaced repetition?", '
+                      '"claims": [{"text": "Spaced repetition schedules reviews at increasing intervals.", '
+                      '"citations": [{"source": "src1", "quote": "schedules reviews at increasing intervals"}]}]}',
+    })
+    wedge = Wedge(tmp_path, lambda: provider, WedgeAuth({"tok": "tenant1"}),
+                  sandbox_check=lambda: True, search_client=client)
+    res = wedge.submit(authorization="Bearer tok", goal="what is spaced repetition?", org="research")
+    rendered = [a for a in res.artifacts if a["label"] == "grounded report"]
+    assert rendered, f"no rendered report artifact in {[a['label'] for a in res.artifacts]}"
+    page = rendered[0]["payload"]
+    assert page.startswith("# "), "the tray artifact must be a page, not JSON"
+    assert "{" not in page.split("## Sources")[0], "no JSON syntax in the findings"
+    assert "## Findings" in page and "## Sources" in page
+    assert "[src1] https://example.edu/sr" in page, "corpus id must resolve to the fetched URL"
+    assert '> "schedules reviews at increasing intervals" — src1' in page
