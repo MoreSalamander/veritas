@@ -462,7 +462,7 @@ def get_org(name: str) -> OrgType:
     return REGISTRY[name]
 
 
-# The nesting-doll layer between Entropy OS and the Hunter engines. A group is
+# The group layer between Entropy OS and the Hunter engines. A group is
 # data, not an org: Opportunity [Agency AI] is a real standalone app
 # (~/MoreSalamander/opportunity-agency-ai) that arbitrates PRIORITY across its
 # member engines' already-gated output — it has no verification model of its

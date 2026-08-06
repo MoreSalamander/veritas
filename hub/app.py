@@ -1126,7 +1126,7 @@ def create_app(
 
     @app.get("/api/org-groups")
     def list_org_groups() -> dict[str, Any]:
-        """The nesting-doll layers between Entropy OS and the engines — e.g.
+        """The group layers between Entropy OS and the engines — e.g.
         Opportunity [Agency AI] wrapping the three Hunter engines. Groups are
         data (see orgs.registry.GROUPS): the frontend nests member org cards
         inside a group panel whose header opens the group's own live app."""

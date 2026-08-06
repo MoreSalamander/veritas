@@ -141,9 +141,9 @@ def test_orgs_endpoint_lists_registry(tmp_path):
 
 
 def test_org_groups_nest_only_registered_orgs(tmp_path):
-    """The nesting-doll layer: Opportunity groups the three Hunter engines, every
+    """The group layer: Opportunity groups the three Hunter engines, every
     member really exists in the registry, and the group carries the live-app
-    pointers the frontend needs to open the next doll down."""
+    pointers the frontend needs to open the next layer down."""
     client = _client(tmp_path)
     groups = client.get("/api/org-groups").json()
     org_names = {o["name"] for o in client.get("/api/orgs").json()}

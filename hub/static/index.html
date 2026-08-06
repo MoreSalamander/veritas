@@ -1667,7 +1667,7 @@ function orgCard(o) {
     : `<div class="panel orgcard" onclick="goToOrg('${esc(o.name)}')" style="cursor:pointer;margin:0">${inner}</div>`;
 }
 
-// A group panel is the nesting-doll layer made visible: the group's own card
+// A group panel is the composition layer made visible: the group's own card
 // wraps its member orgs' cards (Entropy OS -> Opportunity -> the engines),
 // and its header opens the group's own live app — the two-tier scanfield.
 function groupPanel(g, members) {
