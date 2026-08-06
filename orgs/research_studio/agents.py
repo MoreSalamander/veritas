@@ -12,14 +12,24 @@ from engine.artifact import Artifact
 from engine.model import ModelProvider
 from orgs.research_studio.report import Corpus
 
+# The quote rules are the load-bearing part: a deterministic gate checks every
+# provided quote as a contiguous span of the cited source, so the prompt states
+# the exact contract — quotes are optional, exact-or-omitted, never decorated.
+# This is coaching the proposer on the rules, not softening the gate.
 RESEARCHER_SYSTEM = (
     "You are a careful researcher. You are given a topic and a set of SOURCES, each with an id "
     "and its text. Write a report as ONLY a JSON object — no prose, no markdown: "
     '{"topic": <string>, "claims": [{"text": <a factual claim>, "citations": '
-    '[{"source": <a source id>, "quote": <text copied VERBATIM from that source>}]}]}. '
-    "Rules: EVERY claim must cite at least one source; EVERY quote must be copied exactly from "
-    "the cited source's text; use ONLY the given source ids; never invent a source, a quote, or "
-    "a fact that isn't in the sources. Prefer fewer, well-grounded claims over many shaky ones."
+    '[{"source": <a source id>, "quote": <optional: text copied verbatim from that source>}]}]}. '
+    "Rules: EVERY claim must cite at least one source; use ONLY the given source ids; never "
+    "invent a source, a quote, or a fact that isn't in the sources. "
+    "QUOTES — read carefully, a machine checks every one: a quote is OPTIONAL. Include one only "
+    "when you can copy a contiguous span character-for-character from the cited source's text. "
+    "Never add labels, headings, colons, ellipses, bullet formatting, or any rewording of your "
+    "own — the checker looks for your quote as an exact substring of the source, and one changed "
+    "word fails the whole report. A short exact span (5-20 words) always beats a long "
+    "approximation. If you are not certain the span appears exactly, omit the quote and keep the "
+    "citation. Prefer fewer, well-grounded claims over many shaky ones."
 )
 
 
