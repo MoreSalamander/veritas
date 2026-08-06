@@ -16,18 +16,21 @@ Cloud models read `ANTHROPIC_API_KEY` from `.env` (gitignored) — remind the us
 ## Before every commit — the gate
 ```
 .venv/bin/pytest -q          # all green, no exceptions
-.venv/bin/mypy               # strict; config targets engine/ orgs/ hub/
+.venv/bin/mypy               # strict; config targets engine/ orgs/ collector/ products/ commons/
 ```
 Both must pass. New behavior ships with a test. Commit/push only when asked.
 
-## Run the hub
+## No web surface here — this repo is the engine room
+Veritas is a pure library + CLI since the split: the front door (dashboards,
+interviews, every route) lives in `../entropy-os`, which imports this repo as
+a library. Run the UI from there:
 ```
-VERITAS_DATA=./hub_data .venv/bin/uvicorn hub.app:app --port 8099
+cd ../entropy-os && .venv/bin/uvicorn entropy_os.app:app --port 8101
 ```
-- **Never `rm -rf hub_data`** — it holds the user's real runs/memory/profiles. Restart without wiping.
-- uvicorn has no `--reload` here: after editing `hub/`, restart the process to serve changes.
-- The hub UI can't be live-verified from inside Claude Code reliably (the user runs it). Keep
-  changes verifiable: TestClient tests + `node --check` the inline `<script>`; the user eyeballs.
+- **Never `rm -rf hub_data`** — it holds the user's real runs/memory/profiles (entropy-os
+  reads it in place; the split moved no data files). Restart without wiping.
+- The judges' hackathon path is frozen at the `hackathon-2026` tag (where `hub/` still
+  exists) — never move or delete that tag.
 
 ## Layout
 - `engine/` — the substrate: Artifact, Gate, Memory, Run, Executor, Validation, model seam. Org-agnostic.

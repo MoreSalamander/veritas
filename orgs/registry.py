@@ -75,26 +75,6 @@ class OrgType:
     build: BuildFn
     roster: Callable[[], dict[str, Any]] | None = None  # cast + gates, for the Org view
     needs_sources: bool = False  # the UI shows a sources box for these orgs
-    # brand accent for this org's own node in the shell view (Home's "every registered
-    # production orbiting Veritas" scene) — an external production like crypto_hunter uses
-    # its own real brand color; a preset uses --proposal slate since it isn't a separate
-    # verification model, just a framing on top of an existing org's gates.
-    color: str = "#e8c468"
-    # Set only for orgs that ARE a real standalone app (currently the three Hunter
-    # engines) — clicking this org's card opens the actual app in a new tab instead of
-    # Veritas's internal Studio trace view. This is the fallback URL, used if Launchpad
-    # itself isn't reachable; when it is, the frontend prefers Launchpad's live
-    # port/running-state for this project instead (see launchpad_name below).
-    external_url: str | None = None
-    # This org's project name in launchpad/projects.json — lets the frontend ask
-    # Launchpad's own /api/projects for the real, live URL and whether it's actually
-    # running, rather than Veritas keeping a second, driftable copy of that knowledge.
-    launchpad_name: str | None = None
-    # The org's public home (GitHub repo). This is the judge/visitor fallback: when
-    # Launchpad is unreachable — anyone who isn't on the builder's own machine — a
-    # localhost external_url is a dead port, so the card opens this instead. Locally,
-    # with Launchpad up, this field is never used; the live-status path wins.
-    repo_url: str | None = None
 
 
 def _run_software(
@@ -276,7 +256,6 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a function that returns the nth Fibonacci number",
         build=_run_software,
         roster=software_roster,
-        color="#6ee7ff",
     ),
     "web": OrgType(
         name="web",
@@ -290,7 +269,6 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a landing page for a coffee shop",
         build=_run_web,
         roster=web_roster,
-        color="#a78bfa",
     ),
     "research": OrgType(
         name="research",
@@ -307,7 +285,6 @@ REGISTRY: dict[str, OrgType] = {
         build=_run_research,
         roster=research_roster,
         needs_sources=True,
-        color="#f472b6",
     ),
     "production": OrgType(
         name="production",
@@ -322,7 +299,6 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a 60-second explainer on why the sky is blue, for curious kids",
         build=_run_production,
         roster=production_roster,
-        color="#fb923c",
     ),
     "empirical": OrgType(
         name="empirical",
@@ -336,7 +312,6 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="do small-model ensembles beat a single larger model on accuracy?",
         build=_run_empirical,
         roster=empirical_roster,
-        color="#34d399",
     ),
     # --- Presets: products on the existing verification models, not new orgs. ---
     "newsroom": OrgType(
@@ -351,7 +326,6 @@ REGISTRY: dict[str, OrgType] = {
         build=lambda g, p, m, sources=None: _run_grounded_preset(build_article, "newsroom", g, p, m, sources),
         roster=research_roster,
         needs_sources=True,
-        color="#8b96ad",
     ),
     "education": OrgType(
         name="education",
@@ -365,7 +339,6 @@ REGISTRY: dict[str, OrgType] = {
         build=lambda g, p, m, sources=None: _run_grounded_preset(build_lesson, "education", g, p, m, sources),
         roster=research_roster,
         needs_sources=True,
-        color="#8b96ad",
     ),
     "startup": OrgType(
         name="startup",
@@ -378,7 +351,6 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a tool that finds profitable opportunities in poker",
         build=lambda g, p, m, sources=None: _run_composition(build_startup, "startup", g, p, m),
         roster=None,
-        color="#8b96ad",
     ),
     "game": OrgType(
         name="game",
@@ -391,7 +363,6 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="a roguelike about pirates",
         build=lambda g, p, m, sources=None: _run_composition(build_game, "game", g, p, m),
         roster=None,
-        color="#8b96ad",
     ),
     "crypto_hunter": OrgType(
         name="crypto_hunter",
@@ -407,10 +378,6 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="run today's hunt",
         build=_run_crypto_hunter_bridge,
         roster=crypto_hunter_roster,
-        color="#f0a52c",
-        external_url="http://localhost:8010",
-        launchpad_name="crypto-hunter",
-        repo_url="https://github.com/MoreSalamander/crypto-hunter",
     ),
     "collectible_hunter": OrgType(
         name="collectible_hunter",
@@ -427,10 +394,6 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="run today's hunt",
         build=_run_collectible_hunter_bridge,
         roster=collectible_hunter_roster,
-        color="#d4af37",
-        external_url="http://localhost:8013",
-        launchpad_name="collectible-hunter",
-        repo_url="https://github.com/MoreSalamander/collectible-hunter",
     ),
     "free_money_hunter": OrgType(
         name="free_money_hunter",
@@ -447,10 +410,6 @@ REGISTRY: dict[str, OrgType] = {
         goal_hint="run today's hunt",
         build=_run_free_money_hunter_bridge,
         roster=free_money_hunter_roster,
-        color="#4ade80",
-        external_url="http://localhost:8014",
-        launchpad_name="free-money-hunter",
-        repo_url="https://github.com/MoreSalamander/free-money-hunter",
     ),
 }
 
@@ -460,33 +419,3 @@ def get_org(name: str) -> OrgType:
         known = ", ".join(sorted(REGISTRY))
         raise KeyError(f"unknown org type {name!r} (registered: {known})")
     return REGISTRY[name]
-
-
-# The group layer between Entropy OS and the Hunter engines. A group is
-# data, not an org: Opportunity [Agency AI] is a real standalone app
-# (~/MoreSalamander/opportunity-agency-ai) that arbitrates PRIORITY across its
-# member engines' already-gated output — it has no verification model of its
-# own and no build function, so registering it as an OrgType would claim a
-# trust story it doesn't have. The Hub renders a group as a wrapper around its
-# members' cards, with a header that opens the group's own live app.
-GROUPS: dict[str, dict[str, Any]] = {
-    "opportunity": {
-        "title": "Opportunity [Agency AI]",
-        "description": "Cross-engine arbitration: gathers every member engine's "
-        "gate-verified opportunities and allocates the day's mission across them "
-        "within one shared time/budget profile. Arbitrates priority, not truth — "
-        "every pick already passed its own engine's gate.",
-        "members": ["crypto_hunter", "collectible_hunter", "free_money_hunter"],
-        "external_url": "http://localhost:8015",
-        "launchpad_name": "opportunity-agency-ai",
-        "repo_url": "https://github.com/MoreSalamander/opportunity-agency-ai",
-        "color": "#e8c468",
-    },
-}
-
-# A group member that isn't a registered org would render as an empty card and
-# silently break the descent — fail loudly at import instead.
-for _gname, _g in GROUPS.items():
-    _missing = [m for m in _g["members"] if m not in REGISTRY]
-    if _missing:
-        raise RuntimeError(f"group {_gname!r} references unregistered orgs: {_missing}")
