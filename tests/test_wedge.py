@@ -232,3 +232,66 @@ def test_research_tray_holds_a_rendered_page_not_report_json(tmp_path):
     assert "## Findings" in page and "## Sources" in page
     assert "[src1] https://example.edu/sr" in page, "corpus id must resolve to the fetched URL"
     assert '> "schedules reviews at increasing intervals" — src1' in page
+
+
+def test_site_slot_vends_a_whole_site(tmp_path):
+    """The fourth slot: brief -> corpus -> synthesis -> pages -> site gates,
+    the tray carrying every page plus the design system and context graph."""
+    import json as _json
+
+    from commons.parallel_client import ExtractResult, ScriptedSearchClient, SearchResult
+    from engine.model import SequencedProvider
+    from orgs.web_studio.design_intelligence import DESIGN_ANGLES
+    from products.wedge import Wedge, WedgeAuth
+
+    brief = _json.dumps({
+        "industry": "healthcare AI", "audience": ["doctors"],
+        "brand_qualities": ["trust"], "user_goals": ["credibility"],
+        "pages": ["landing", "pricing"], "design_intents": ["medical trust"],
+    })
+    system = _json.dumps({
+        "layout": "enterprise_saas",
+        "palette": {"bg": "#0b0e14", "surface": "#151a23", "ink": "#e8ecf3", "accent": "#4a90d9"},
+        "heading_font": "Georgia, serif", "body_font": "Georgia, serif",
+        "components_by_page": {"landing": ["hero", "cta"], "pricing": ["pricing_table"]},
+        "inspired_by": [{"source": "src1", "pattern": "restrained hero"}],
+    })
+    vars_block = ":root { --accent: #4a90d9; --bg: #0b0e14; --ink: #e8ecf3; --surface: #151a23; }"
+
+    def page(slug, other):
+        return (
+            f"<!doctype html><html lang='en'><head><title>{slug}</title>"
+            f"<style>{vars_block} h1 {{ font-family: Georgia, serif; }}</style></head><body>"
+            f"<nav><a href=\"{slug}.html\">{slug}</a> <a href=\"{other}.html\">{other}</a></nav>"
+            f"<header class=\"hero\"><h1>{slug}</h1></header>"
+            f"<section class=\"pricing cta\"><button>Choose</button></section>"
+            f"<footer>fin</footer></body></html>"
+        )
+
+    def spec(slug):
+        return _json.dumps({"title": slug, "description": slug, "required_elements": ["nav", "footer"]})
+
+    provider = SequencedProvider({
+        "designer": [brief, system, spec("landing"), spec("pricing")],
+        "web-developer": [page("landing", "pricing"), page("pricing", "landing")],
+    })
+    intent = "medical trust"
+    client = ScriptedSearchClient(
+        search_by_query={
+            f"{DESIGN_ANGLES['award_winners'][0]} — {intent}": [
+                SearchResult(url="https://awards.example/x", title="Winner")],
+        },
+        extract_by_url={
+            "https://awards.example/x": ExtractResult(
+                url="https://awards.example/x", title="Winner", content="calm hero")},
+    )
+    wedge = Wedge(tmp_path, lambda: provider, WedgeAuth({"tok": "tenant1"}),
+                  sandbox_check=lambda: True, search_client=client)
+    res = wedge.submit(authorization="Bearer tok", goal="site for an AI healthcare startup", org="site")
+
+    assert res.org == "site" and res.accepted
+    labels = [a["label"] for a in res.artifacts]
+    assert labels[0] == "design brief" and "design system" in labels
+    assert "landing.html" in labels and "pricing.html" in labels and "context graph" in labels
+    assert any(g["gate"] == "site: nav-links-resolve" and g["passed"] for g in res.evidence)
+    assert any(g["gate"].startswith("landing: axe-wcag") and g["passed"] for g in res.evidence)

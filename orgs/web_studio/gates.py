@@ -78,6 +78,43 @@ class StructureGate(_RenderGateBase):
         return self._result(True, f"all {len(self.required)} required element(s) present")
 
 
+# AccessGuard folded in: the same axe-core engine and impact weighting that
+# power the standalone WCAG scanner (~/access-scan) now sit in the page wall.
+# The Accessibility Agent is deterministic — a rules engine, not an opinion.
+_AXE_IMPACT_WEIGHT = {"critical": 15, "serious": 7, "moderate": 3, "minor": 1}
+_AXE_BLOCKING = ("critical", "serious")
+
+
+class AxeGate(_RenderGateBase):
+    """HARD: zero critical or serious WCAG violations, per axe-core run
+    against the real rendered DOM. Moderate/minor are reported, never
+    blocking — the same threshold discipline AccessGuard's scoring uses.
+    If the axe engine itself could not run, the gate fails CLOSED:
+    unverified accessibility is not a pass."""
+
+    name = "axe-wcag"
+
+    def check(self, artifact: Artifact) -> GateResult:
+        if self.render.axe_error:
+            return self._result(False, f"axe engine unavailable — accessibility unverified: {self.render.axe_error}")
+        violations = self.render.axe_violations
+        blocking = [v for v in violations if v.get("impact") in _AXE_BLOCKING]
+        weight = sum(_AXE_IMPACT_WEIGHT.get(v.get("impact", "minor"), 1) * max(v.get("nodes", 1), 1)
+                     for v in violations)
+        score = max(0, 100 - weight)
+        if blocking:
+            named = "; ".join(f"{v['id']} ({v['impact']}, {v['nodes']} node(s))" for v in blocking[:4])
+            return self._result(
+                False,
+                f"{len(blocking)} blocking WCAG violation(s): {named} — "
+                f"AccessGuard score {score}/100",
+            )
+        note = f"axe clean at blocking impact — AccessGuard score {score}/100"
+        if violations:
+            note += f" ({len(violations)} advisory finding(s))"
+        return self._result(True, note)
+
+
 class A11yGate(_RenderGateBase):
     """The accessibility floor: every image has alt text, every button has an accessible
     label, and the page has exactly one h1. Deterministic, no judgment — a screen reader

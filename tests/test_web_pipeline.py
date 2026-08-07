@@ -19,13 +19,13 @@ SPEC = json.dumps(
      "required_elements": ["nav", "h1", "button"]}
 )
 GOOD_PAGE = (
-    "<!doctype html><html><head><title>Landing</title></head><body>"
+    "<!doctype html><html lang='en'><head><title>Landing</title></head><body>"
     "<nav><a href='#'>Home</a></nav><h1>Welcome</h1><button>Get started</button>"
     "</body></html>"
 )
-NO_NAV_PAGE = "<!doctype html><html><body><h1>Welcome</h1><button>go</button></body></html>"
+NO_NAV_PAGE = "<!doctype html><html lang='en'><head><title>t</title></head><body><h1>Welcome</h1><button>go</button></body></html>"
 OVERFLOW_PAGE = (
-    "<!doctype html><html><body><nav>n</nav><h1>x</h1><button>b</button>"
+    "<!doctype html><html lang='en'><head><title>t</title></head><body><nav><a href='#'>n</a></nav><h1>x</h1><button>b</button>"
     "<div style='width:3000px'>wide</div></body></html>"
 )
 
@@ -40,7 +40,7 @@ def test_clean_page_ships(tmp_path):
     assert result.spec_outcome.accepted
     assert result.page_outcome is not None and result.page_outcome.accepted
     gate_names = [g.gate_name for g in result.page_outcome.artifact.provenance.gate_results]
-    assert gate_names == ["render", "layout", "structure", "a11y", "validation"]
+    assert gate_names == ["render", "layout", "structure", "a11y", "axe-wcag", "validation"]
     assert result.page_outcome.memory_path.parent.name == "institutional"
 
 

@@ -29,6 +29,7 @@ include = ["engine*", "orgs*", "collector*", "products*", "commons*"]
 [tool.setuptools.package-data]
 "products.tutorial" = ["static/vendor/prism/*"]
 "products.academy" = ["static/vendor/prism/*"]
+"orgs.web_studio" = ["static/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

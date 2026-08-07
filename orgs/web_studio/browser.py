@@ -17,6 +17,7 @@ exact class of bug that actually breaks UIs.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # playwright is a Web-Studio-only dep; importing it lazily keeps the hub (and the
@@ -38,6 +39,12 @@ class RenderResult:
     images_without_alt: int = 0
     buttons_without_label: int = 0
     selectors_present: dict[str, bool] = field(default_factory=dict)
+    # The AccessGuard fold-in: axe-core (Deque, MPL 2.0; vendored in
+    # static/axe.min.js) runs against the SAME render every gate shares.
+    # Violations are lean dicts {id, impact, nodes, help}; axe_error set
+    # means the engine could not run — the gate fails CLOSED on that.
+    axe_violations: list[dict] = field(default_factory=list)
+    axe_error: str = ""
     # P19 — measurable aesthetics, read from computed styles after rendering
     background_luminance: float = 1.0  # 0 (black) .. 1 (white); the body's effective bg
     min_contrast: float = 21.0  # worst text-vs-background WCAG ratio (21 = none to check)
@@ -117,6 +124,29 @@ class BrowserExecutor:
                 page.wait_for_timeout(50)  # let any load-time scripts settle
                 metrics: dict[str, Any] = page.evaluate(_PROBE)
                 present = {sel: page.query_selector(sel) is not None for sel in selectors}
+                axe_violations: list[dict] = []
+                axe_error = ""
+                axe_path = Path(__file__).parent / "static" / "axe.min.js"
+                if not axe_path.exists():
+                    axe_error = f"axe engine missing at {axe_path}"
+                else:
+                    try:
+                        page.add_script_tag(path=str(axe_path))
+                        raw = page.evaluate(
+                            "async () => (await axe.run(document, "
+                            "{resultTypes: ['violations']})).violations"
+                        )
+                        axe_violations = [
+                            {
+                                "id": str(v.get("id", "")),
+                                "impact": str(v.get("impact") or "minor"),
+                                "nodes": len(v.get("nodes") or []),
+                                "help": str(v.get("help", ""))[:140],
+                            }
+                            for v in raw
+                        ]
+                    except Exception as exc:  # noqa: BLE001 — engine failure is a verdict input
+                        axe_error = f"{type(exc).__name__}: {exc}"
                 browser.close()
         except Exception as exc:  # a render failure is a verdict, not a crash
             return RenderResult(ok=False, error=f"{type(exc).__name__}: {exc}")
@@ -136,4 +166,6 @@ class BrowserExecutor:
             min_contrast=float(metrics["minContrast"]),
             colors=[str(c) for c in metrics["colors"]],
             fonts=[str(f) for f in metrics["fonts"]],
+            axe_violations=axe_violations,
+            axe_error=axe_error,
         )

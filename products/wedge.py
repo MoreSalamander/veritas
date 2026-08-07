@@ -54,8 +54,10 @@ class OrgNotVendable(Exception):
 
 
 # The made-to-order slots: looks right (web), cited right (research), runs
-# right (software). Everything else stays operator-only.
-VENDABLE_ORGS = ("software", "web", "research")
+# right (software) — and site: a whole website, looks right TOGETHER (the
+# design agency: brief, design corpus, synthesis with provenance, one wall
+# per page, site gates across them). Everything else stays operator-only.
+VENDABLE_ORGS = ("software", "web", "research", "site")
 
 
 class SandboxUnavailable(Exception):
@@ -255,6 +257,71 @@ class Wedge:
             artifacts=[{"label": "verified function", "payload": code}] if code else [],
         )
 
+    def _submit_site(
+        self, tenant: str, goal: str, root: Path, exempt: bool, memory: MemoryStore,
+    ) -> WedgeResult:
+        """Vend a whole website: brief -> design corpus -> synthesis ->
+        per-page walls -> site gates. The tray holds every page, the design
+        system, and the project's context graph."""
+        from orgs.web_studio.site import (
+            SiteBriefRejected, SiteSynthesisRejected, build_site,
+        )
+
+        try:
+            site = build_site(
+                goal, self.provider_factory(), memory, self.search_client,
+                max_pages=3,
+            )
+        except (SiteBriefRejected, SiteSynthesisRejected) as exc:
+            raise SourcesUnavailable(f"the design brief/synthesis was refused: {exc}") from exc
+
+        evidence: list[dict[str, Any]] = []
+        for slug, result in site.pages.items():
+            outcome = getattr(result, "page_outcome", None) or getattr(result, "spec_outcome", None)
+            for gr in getattr(outcome, "gate_results", []) or []:
+                evidence.append({
+                    "gate": f"{slug}: {gr.gate_name}",
+                    "determinism": gr.determinism.value,
+                    "passed": gr.passed,
+                    "evidence": gr.evidence,
+                })
+        for g in site.site_gates:
+            evidence.append({
+                "gate": f"site: {g.gate}", "determinism": "hard",
+                "passed": g.passed, "evidence": g.evidence,
+            })
+
+        artifacts: list[dict[str, Any]] = [
+            {"label": "design brief", "payload": site.brief.brief()},
+            {"label": "design system", "payload": site.system.brief()},
+        ]
+        if site.sources:
+            artifacts.append({
+                "label": "machine-fetched design sources",
+                "payload": "\n".join(f"{s.url}  [{s.angle}]" for s in site.sources),
+            })
+        for slug in site.brief.pages:
+            html = site.page_html(slug)
+            if html:
+                artifacts.append({"label": f"{slug}.html", "payload": html})
+        artifacts.append({
+            "label": "context graph",
+            "payload": json.dumps(site.context_graph, indent=2),
+        })
+
+        remaining: int | None = None
+        if self.meter is not None and not exempt:
+            self.meter.record(tenant, site.accepted, goal)
+            remaining = self.meter.remaining(tenant)
+        elif exempt:
+            remaining = -1
+        return WedgeResult(
+            tenant=tenant, goal=goal, accepted=site.accepted,
+            run_id=next(iter(site.pages.values())).run_id if site.pages else "site",
+            isolated=True, persisted_at=str(root), evidence=evidence,
+            remaining=remaining, org="site", artifacts=artifacts,
+        )
+
     def _submit_org_run(
         self, tenant: str, goal: str, org: str, sources: list[str] | None,
         root: Path, exempt: bool,
@@ -265,6 +332,8 @@ class Wedge:
         memory = self.memory_factory(root / org)
         fetched_urls: list[str] = []
         intelligence = None
+        if org == "site":
+            return self._submit_site(tenant, goal, root, exempt, memory)
         if org == "research" and not sources:
             # REAL research, full intelligence flow: the planner charts the
             # angles, the angle workers acquire in parallel, the researcher

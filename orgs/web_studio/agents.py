@@ -98,3 +98,75 @@ class WebDeveloperAgent:
             rationale=f"page for: {spec.title or spec.description}",
             parent_id=parent_id,
         )
+
+
+BRIEF_SYSTEM = (
+    "You are a UX researcher decomposing a website request into a design "
+    'brief. Produce ONLY a JSON object: {"industry": <short phrase>, '
+    '"audience": [<who this site must convince>], "brand_qualities": '
+    '[<what the brand must communicate>], "user_goals": [<what the owner '
+    'needs the site to achieve>], "pages": [<page types>], "design_intents": '
+    "[<semantic phrases a design researcher would hunt with, e.g. "
+    "'medical trust', 'enterprise credibility'>]}. "
+    "Pages MUST come from this exact vocabulary (2-5 pages, pick what the "
+    "request truly needs; never invent a type): {pages}."
+)
+
+
+class BriefAgent:
+    """Phase 1: user intent -> design brief; parse_design_brief decides."""
+
+    role = "designer"
+
+    def __init__(self, provider) -> None:
+        self.provider = provider
+
+    def propose(self, goal: str, feedback: str | None = None) -> str:
+        from orgs.web_studio.design_intelligence import PAGE_TYPES
+
+        prompt = f"Website request: {goal}"
+        if feedback:
+            prompt = f"Your previous brief was REJECTED: {feedback}\nFix exactly that.\n\n{prompt}"
+        return self.provider.propose(
+            role=self.role, prompt=prompt,
+            system=BRIEF_SYSTEM.replace("{pages}", ", ".join(sorted(PAGE_TYPES))),
+        )
+
+
+SYNTHESIS_SYSTEM = (
+    "You are a design director synthesizing a NEW design system from research "
+    "— never copying. You are given a design brief and a corpus of design "
+    "SOURCES, each with an id. Produce ONLY a JSON object: "
+    '{"layout": <one of {layouts}>, '
+    '"palette": {"bg": <#rrggbb>, "surface": <#rrggbb>, "ink": <#rrggbb>, '
+    '"accent": <#rrggbb>}, "heading_font": <CSS font stack>, '
+    '"body_font": <CSS font stack>, "components_by_page": {<page>: '
+    "[<components from: {components}>]}, "
+    '"inspired_by": [{"source": <a source id from the corpus>, "pattern": '
+    "<the specific pattern you are drawing from it>}], "
+    '"rationale": <one sentence>}. '
+    "Every page in the brief must appear in components_by_page. Every "
+    "inspired_by MUST cite a real source id — an influence that cannot name "
+    "its source will be refused by a machine. Contrast matters: ink must "
+    "read clearly on bg and surface."
+)
+
+
+class SynthesisAgent:
+    """Phase 5: brief + design corpus -> a design system with provenance."""
+
+    role = "designer"
+
+    def __init__(self, provider) -> None:
+        self.provider = provider
+
+    def propose(self, brief_text: str, corpus_text: str, feedback: str | None = None) -> str:
+        from orgs.web_studio.design_intelligence import COMPONENTS, LAYOUTS
+
+        prompt = f"{brief_text}\n\nDESIGN CORPUS:\n{corpus_text}"
+        if feedback:
+            prompt = f"Your previous design system was REJECTED: {feedback}\nFix exactly that.\n\n{prompt}"
+        system = (SYNTHESIS_SYSTEM
+                  .replace("{layouts}", ", ".join(LAYOUTS))
+                  .replace("{components}", ", ".join(sorted(COMPONENTS))))
+        return self.provider.propose(role=self.role, prompt=prompt, system=system)

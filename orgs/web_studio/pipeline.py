@@ -18,7 +18,7 @@ from engine.run import ActivityEntry, Outcome, Run
 from engine.validation import ValidationGate
 from orgs.web_studio.agents import DesignerAgent, WebDeveloperAgent
 from orgs.web_studio.browser import BrowserExecutor
-from orgs.web_studio.gates import A11yGate, LayoutGate, RenderGate, StructureGate
+from orgs.web_studio.gates import A11yGate, AxeGate, LayoutGate, RenderGate, StructureGate
 from orgs.web_studio.spec import PageSpecGate, parse_page_spec
 
 
@@ -82,6 +82,7 @@ def build_page(
             LayoutGate(rendered),
             StructureGate(rendered, required),
             A11yGate(rendered),
+            AxeGate(rendered),
             ValidationGate(),  # final authority — must run last
         ]
         outcome = run.submit(page_artifact, gates)

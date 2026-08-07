@@ -52,7 +52,27 @@ MODEL_NOTES: dict[str, str] = {
 }
 
 
+# The operator's runtime toggle (the developer cloud switch on the local
+# face): when set, requests that rode the import-time default get the
+# override instead. An EXPLICIT model choice always wins — the toggle moves
+# the default, never overrules a person. None means the toggle is off.
+_DEFAULT_OVERRIDE: str | None = None
+
+
+def set_default_override(model: str | None) -> None:
+    global _DEFAULT_OVERRIDE
+    if model is not None and model not in MODELS:
+        raise ValueError(f"unknown model {model!r}")
+    _DEFAULT_OVERRIDE = model
+
+
+def get_default_override() -> str | None:
+    return _DEFAULT_OVERRIDE
+
+
 def provider_for(model: str) -> ModelProvider:
+    if model == DEFAULT_MODEL and _DEFAULT_OVERRIDE:
+        model = _DEFAULT_OVERRIDE
     spec = MODELS.get(model)
     if spec is None:
         raise ValueError(f"unknown model {model!r}")
