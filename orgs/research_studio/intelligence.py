@@ -127,14 +127,16 @@ class AcquiredSource:
         return f"SOURCE: {self.url}\nANGLE: {self.angle}\n{self.title}\n\n{self.content}"
 
 
-def acquire_parallel(
-    plan: ResearchPlan,
+def fan_out(
+    queries: dict[str, str],
     search_client: "SearchClient",
     *,
+    objective: str,
     per_angle: int = 3,
     concurrency: int = 6,
 ) -> list[AcquiredSource]:
-    """Fan the plan's angles out over the live search seam concurrently.
+    """The shared acquisition engine: angle -> query, fanned out concurrently
+    over the live search seam. Research and design both ride this.
 
     The SearchClient is synchronous; each worker runs it in a thread via
     asyncio, so the I/O genuinely overlaps. One dead angle or URL never
@@ -146,9 +148,7 @@ def acquire_parallel(
     async def _run() -> list[AcquiredSource]:
         sem = asyncio.Semaphore(concurrency)
 
-        async def fetch_angle(angle: str) -> list[AcquiredSource]:
-            bias, _charter = ANGLES[angle]
-            query = f"{plan.topic} {bias}"
+        async def fetch_angle(angle: str, query: str) -> list[AcquiredSource]:
             try:
                 async with sem:
                     results = await asyncio.to_thread(
@@ -161,7 +161,7 @@ def acquire_parallel(
                 try:
                     async with sem:
                         ex = await asyncio.to_thread(
-                            search_client.extract, r.url, objective=plan.topic
+                            search_client.extract, r.url, objective=objective
                         )
                 except Exception:
                     continue  # one dead URL never sinks the haul
@@ -171,7 +171,9 @@ def acquire_parallel(
                     )
             return out
 
-        batches = await asyncio.gather(*(fetch_angle(a) for a in plan.angles))
+        batches = await asyncio.gather(
+            *(fetch_angle(a, q) for a, q in queries.items())
+        )
         seen_urls: set[str] = set()
         merged: list[AcquiredSource] = []
         for batch in batches:
@@ -183,3 +185,19 @@ def acquire_parallel(
         return merged
 
     return asyncio.run(_run())
+
+
+def acquire_parallel(
+    plan: ResearchPlan,
+    search_client: "SearchClient",
+    *,
+    per_angle: int = 3,
+    concurrency: int = 6,
+) -> list[AcquiredSource]:
+    """Research's acquisition: the plan's angles become angle-biased queries
+    over the shared fan-out."""
+    queries = {a: f"{plan.topic} {ANGLES[a][0]}" for a in plan.angles}
+    return fan_out(
+        queries, search_client,
+        objective=plan.topic, per_angle=per_angle, concurrency=concurrency,
+    )
