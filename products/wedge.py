@@ -57,7 +57,7 @@ class OrgNotVendable(Exception):
 # right (software) — and site: a whole website, looks right TOGETHER (the
 # design agency: brief, design corpus, synthesis with provenance, one wall
 # per page, site gates across them). Everything else stays operator-only.
-VENDABLE_ORGS = ("software", "web", "research", "site")
+VENDABLE_ORGS = ("software", "web", "research", "site", "learn")
 
 
 class SandboxUnavailable(Exception):
@@ -322,6 +322,105 @@ class Wedge:
             remaining=remaining, org="site", artifacts=artifacts,
         )
 
+    def _submit_learn(
+        self, tenant: str, goal: str, root: Path, exempt: bool, memory: MemoryStore,
+    ) -> WedgeResult:
+        """One session of the university: roadmap verified, next concept
+        researched in parallel, lesson gated for grounding + answerability.
+        The lesson is persisted per tenant so /learn/grade can assess it —
+        mastery moves only through that door."""
+        if self.search_client is None:
+            raise SourcesUnavailable(
+                "the university researches every concept live — the operator sets PARALLEL_API_KEY"
+            )
+        from orgs.education_studio.curriculum import RoadmapParseError
+        from orgs.education_studio.lesson import render_lesson_markdown
+        from orgs.education_studio.pipeline import build_learning
+
+        try:
+            res = build_learning(goal, self.provider_factory(), memory, self.search_client)
+        except RoadmapParseError as exc:
+            raise SourcesUnavailable(f"the curriculum was refused: {exc}") from exc
+        except ParallelUnavailable as exc:
+            raise SourcesUnavailable(f"live research failed: {exc}") from exc
+
+        evidence = [
+            {"gate": gr.gate_name, "determinism": gr.determinism.value,
+             "passed": gr.passed, "evidence": gr.evidence}
+            for gr in res.lesson_outcome.gate_results
+        ]
+        source_urls = {f"src{i + 1}": f"{s.url} [{s.angle}]" for i, s in enumerate(res.sources)}
+        artifacts: list[dict[str, Any]] = [
+            {"label": "learning roadmap", "payload": res.roadmap.brief()},
+        ]
+        if res.sources:
+            artifacts.append({
+                "label": "machine-fetched sources",
+                "payload": "\n".join(f"{s.url}  [{s.angle}]" for s in res.sources),
+            })
+        if res.lesson is not None:
+            artifacts.append({
+                "label": "lesson",
+                "payload": render_lesson_markdown(res.lesson, source_urls=source_urls),
+            })
+            artifacts.append({
+                "label": "quiz",
+                "payload": json.dumps({
+                    "concept": res.concept, "run_id": res.run_id,
+                    "items": [{"question": q.question, "options": q.options}
+                              for q in res.lesson.quiz],
+                }),
+            })
+            # Persist the gradable lesson for THIS tenant, keyed by run id.
+            from engine.memory import MemoryRecord
+            memory.persist(MemoryRecord(
+                category="artifact",
+                title=f"pending-quiz:{res.run_id}",
+                body=json.dumps({
+                    "concept": res.concept,
+                    "lesson_payload": res.lesson_outcome.artifact.payload,
+                    "corpus_ids": sorted({f"src{i + 1}" for i in range(len(res.sources))}),
+                }),
+                tags=["lesson-pending", res.run_id],
+                provenance={"goal": goal, "run_id": res.run_id},
+            ))
+        artifacts.append({
+            "label": "context graph", "payload": json.dumps(res.context_graph, indent=2),
+        })
+
+        remaining: int | None = None
+        if self.meter is not None and not exempt:
+            self.meter.record(tenant, res.accepted, goal)
+            remaining = self.meter.remaining(tenant)
+        elif exempt:
+            remaining = -1
+        return WedgeResult(
+            tenant=tenant, goal=goal, accepted=res.accepted, run_id=res.run_id,
+            isolated=True, persisted_at=str(root), evidence=evidence,
+            remaining=remaining, org="learn", artifacts=artifacts,
+        )
+
+    def grade_learn(self, authorization: str | None, run_id: str, answers: list[int]) -> dict[str, Any]:
+        """The assessment door: deterministic grading against the persisted
+        lesson; the learner model moves here and only here. Never metered —
+        grading is part of the vend, not a second purchase."""
+        tenant = self.auth.tenant_for(authorization)
+        root = self.base / "tenants" / tenant
+        memory = self.memory_factory(root / "learn")
+        from orgs.education_studio.lesson import parse_lesson
+        from orgs.education_studio.pipeline import record_grade
+
+        pending = None
+        for record in memory.load_all():
+            if record.category == "artifact" and record.title == f"pending-quiz:{run_id}":
+                pending = record
+                break
+        if pending is None:
+            raise KeyError(f"no gradable lesson for run {run_id!r} in this tenant")
+        data = json.loads(pending.body)
+        lesson = parse_lesson(data["lesson_payload"], set(data["corpus_ids"]))
+        return record_grade(memory, data["concept"], lesson, answers)
+
     def _submit_org_run(
         self, tenant: str, goal: str, org: str, sources: list[str] | None,
         root: Path, exempt: bool,
@@ -334,6 +433,8 @@ class Wedge:
         intelligence = None
         if org == "site":
             return self._submit_site(tenant, goal, root, exempt, memory)
+        if org == "learn":
+            return self._submit_learn(tenant, goal, root, exempt, memory)
         if org == "research" and not sources:
             # REAL research, full intelligence flow: the planner charts the
             # angles, the angle workers acquire in parallel, the researcher

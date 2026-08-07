@@ -295,3 +295,57 @@ def test_site_slot_vends_a_whole_site(tmp_path):
     assert "landing.html" in labels and "pricing.html" in labels and "context graph" in labels
     assert any(g["gate"] == "site: nav-links-resolve" and g["passed"] for g in res.evidence)
     assert any(g["gate"].startswith("landing: axe-wcag") and g["passed"] for g in res.evidence)
+
+
+def test_learn_slot_teaches_and_grades(tmp_path):
+    """The fifth slot: roadmap -> parallel research -> gated lesson in the
+    tray with an interactive quiz — and the grading door moves mastery,
+    unmetered, so the next vend starts where the learner is."""
+    import json as _json
+
+    from commons.parallel_client import ExtractResult, ScriptedSearchClient, SearchResult
+    from engine.model import SequencedProvider
+    from orgs.education_studio.curriculum import EDU_ANGLES
+    from products.wedge import Wedge, WedgeAuth
+
+    roadmap = _json.dumps({
+        "concepts": [{"name": "Vectors", "summary": "arrows"},
+                     {"name": "Regression", "summary": "lines"}],
+        "edges": [{"source": "Vectors", "relation": "requires", "target": "Regression"}],
+    })
+    lesson = _json.dumps({
+        "concept": "Vectors",
+        "sections": [{"title": "The idea", "body": "A vector has direction and magnitude.",
+                      "cites": ["src1"]}],
+        "quiz": [{"question": "A vector has?",
+                  "options": ["direction and magnitude", "flavor"],
+                  "answer_index": 0, "answer_span": "direction and magnitude"}],
+    })
+    provider = SequencedProvider({"researcher": [roadmap, lesson]})
+    client = ScriptedSearchClient(
+        search_by_query={
+            f"Vectors {EDU_ANGLES['academic'][0]}": [
+                SearchResult(url="https://mit.example/la", title="Course")],
+        },
+        extract_by_url={
+            "https://mit.example/la": ExtractResult(
+                url="https://mit.example/la", title="Course",
+                content="A vector has direction and magnitude.")},
+    )
+    wedge = Wedge(tmp_path, lambda: provider, WedgeAuth({"tok": "tenant1"}),
+                  sandbox_check=lambda: True, search_client=client)
+    res = wedge.submit(authorization="Bearer tok", goal="teach me machine learning", org="learn")
+
+    assert res.org == "learn" and res.accepted
+    labels = [a["label"] for a in res.artifacts]
+    assert labels[0] == "learning roadmap" and "lesson" in labels and "quiz" in labels
+    quiz = _json.loads(next(a["payload"] for a in res.artifacts if a["label"] == "quiz"))
+    assert quiz["concept"] == "Vectors" and len(quiz["items"]) == 1
+    assert any(g["gate"] == "lesson-contract" and g["passed"] for g in res.evidence)
+
+    graded = wedge.grade_learn("Bearer tok", res.run_id, [0])
+    assert graded["mastered"] is True and graded["concept"] == "Vectors"
+
+    import pytest as _pytest
+    with _pytest.raises(KeyError):
+        wedge.grade_learn("Bearer tok", "run_nonexistent", [0])
