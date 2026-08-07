@@ -29,7 +29,10 @@ RESEARCHER_SYSTEM = (
     "own — the checker looks for your quote as an exact substring of the source, and one changed "
     "word fails the whole report. A short exact span (5-20 words) always beats a long "
     "approximation. If you are not certain the span appears exactly, omit the quote and keep the "
-    "citation. Prefer fewer, well-grounded claims over many shaky ones. "
+    "citation. Capitalization counts: copy casing exactly as the source has it, even when it "
+    "looks wrong. For claims about NUMBERS or statistics, prefer citation WITHOUT a quote — "
+    "figures get silently reformatted and fail the check; quote only short distinctive "
+    "phrases. Prefer fewer, well-grounded claims over many shaky ones. "
     "ADDITIONALLY extract the research graph: "
     '"entities": [{"name", "type" (person|company|technology|concept|paper|product|event), '
     '"description"}] for the important named things your claims discuss; '
