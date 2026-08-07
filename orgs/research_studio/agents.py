@@ -29,7 +29,16 @@ RESEARCHER_SYSTEM = (
     "own — the checker looks for your quote as an exact substring of the source, and one changed "
     "word fails the whole report. A short exact span (5-20 words) always beats a long "
     "approximation. If you are not certain the span appears exactly, omit the quote and keep the "
-    "citation. Prefer fewer, well-grounded claims over many shaky ones."
+    "citation. Prefer fewer, well-grounded claims over many shaky ones. "
+    "ADDITIONALLY extract the research graph: "
+    '"entities": [{"name", "type" (person|company|technology|concept|paper|product|event), '
+    '"description"}] for the important named things your claims discuss; '
+    '"relationships": [{"source", "relation", "target", "claim_index"}] — typed edges between '
+    "your declared entities, relation strictly one of: supports, contradicts, depends_on, "
+    "causes, enables, improves, competes_with, introduced_by, related_to; set claim_index to "
+    "the 0-based index of the claim that evidences the edge, or omit it if none directly does; "
+    'and "open_questions": [<questions your sources raise but cannot settle>]. '
+    "Every relationship endpoint must appear in entities. A machine validates all of it."
 )
 
 
@@ -38,6 +47,40 @@ def corpus_prompt(topic: str, corpus: Corpus) -> str:
     # a citation must equal the id exactly to resolve).
     sources = "\n\n".join(f"source id: {sid}\ntext: {text}" for sid, text in corpus.items())
     return f"Topic: {topic}\n\nSOURCES (cite the source id exactly as written):\n{sources}"
+
+
+PLANNER_SYSTEM = (
+    "You are a research planner. Given a research topic, produce ONLY a JSON "
+    'object: {"domain": <one short phrase>, "questions": [<3-6 specific '
+    'research questions>], "angles": [<2-6 angle names>], "unknowns": '
+    "[<things that likely cannot be settled from public sources>]}. "
+    "Angles MUST come from this exact vocabulary (pick the ones that fit the "
+    "topic; never invent one): {angles}. Prefer angles that will disagree "
+    "with each other — conflict is information."
+)
+
+
+class PlannerAgent:
+    """Proposes the research plan; parse_plan is the deterministic contract."""
+
+    role = "researcher"  # same routed model as the researcher — one cast, two hats
+
+    def __init__(self, provider: ModelProvider) -> None:
+        self.provider = provider
+
+    def propose(self, topic: str, briefing: str | None = None, feedback: str | None = None) -> str:
+        from orgs.research_studio.intelligence import ANGLES
+
+        prompt = f"Research topic: {topic}"
+        if briefing:
+            prompt = f"{briefing}\n\n{prompt}"
+        if feedback:
+            prompt = f"Your previous plan was REJECTED: {feedback}\nFix exactly that.\n\n{prompt}"
+        return self.provider.propose(
+            role=self.role,
+            prompt=prompt,
+            system=PLANNER_SYSTEM.replace("{angles}", ", ".join(sorted(ANGLES))),
+        )
 
 
 class ResearcherAgent:

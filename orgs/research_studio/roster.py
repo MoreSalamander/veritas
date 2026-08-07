@@ -17,7 +17,10 @@ from orgs.research_studio.gates import (
 )
 
 _CAST: list[tuple[str, str, str]] = [
-    ("Researcher", "researcher", "Given a topic and a pinned set of sources, writes a report whose every claim cites a source and quotes it verbatim; re-writes on rejection (e.g. \"misquote of src1\")."),
+    ("Planner", "researcher", "Charts the research: domain, questions, and which angles to send workers down — proposed as JSON, accepted only by the deterministic plan parser (closed angle vocabulary)."),
+    ("Angle Workers", "acquisition", "One deterministic worker per planned angle (academic, industry, news, code, patents, market, community, history, regulation, documentation) fetching live sources in parallel; every source lands tagged with the angle that found it."),
+    ("Researcher", "researcher", "Given the pinned corpus, extracts claims (every one cited, quotes verbatim) AND the research graph — typed entities and relationships plus open questions; re-writes on rejection (e.g. \"misquote of src1\")."),
+    ("The Knowledge Layer", "memory", "Verified entities and relationships persist to org memory; the next run on nearby ground starts briefed with what the org already knows."),
 ]
 
 _GATES: list[tuple[type[Gate], str]] = [

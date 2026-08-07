@@ -144,38 +144,48 @@ def test_research_with_no_sources_and_no_search_client_is_refused(tmp_path):
 
 
 def test_research_fetches_its_own_corpus_via_the_search_seam(tmp_path):
-    """REAL research: the machine finds sources itself; the fetched URLs land
-    in the tray as their own artifact, and the report cites into the corpus."""
+    """REAL research, intelligence flow: the planner charts angles, the
+    workers fetch, and the tray carries the plan, the angle-tagged sources,
+    and the context graph alongside the report."""
     from commons.parallel_client import ExtractResult, ScriptedSearchClient, SearchResult
-    from engine.model import ScriptedProvider
+    from engine.model import SequencedProvider
+    from orgs.research_studio.intelligence import ANGLES
     from products.wedge import Wedge, WedgeAuth
 
+    goal = "what is spaced repetition?"
     client = ScriptedSearchClient(
         search_by_query={
-            "what is spaced repetition?": [
+            f"{goal} {ANGLES['news'][0]}": [
                 SearchResult(url="https://example.edu/sr", title="Spaced Repetition"),
-                SearchResult(url="https://example.org/memory", title="Memory Study"),
             ],
         },
         extract_by_url={
             "https://example.edu/sr": ExtractResult(
                 url="https://example.edu/sr", title="Spaced Repetition",
                 content="Spaced repetition schedules reviews at increasing intervals."),
-            "https://example.org/memory": ExtractResult(
-                url="https://example.org/memory", title="Memory Study",
-                content="Reviews timed before forgetting strengthen recall."),
         },
     )
-    provider = ScriptedProvider({
-        "researcher": '{"claims": [{"text": "Spaced repetition schedules reviews at increasing intervals.", '
-                      '"citations": [{"source": "src1", "quote": "schedules reviews at increasing intervals"}]}]}',
+    provider = SequencedProvider({
+        "researcher": [
+            '{"domain": "learning", "questions": ["does it work?"], "angles": ["news"]}',
+            '{"topic": "spaced repetition", '
+            '"claims": [{"text": "Spaced repetition schedules reviews at increasing intervals.", '
+            '"citations": [{"source": "src1", "quote": "schedules reviews at increasing intervals"}]}], '
+            '"entities": [{"name": "Spaced Repetition", "type": "concept", "description": "review scheduling"}], '
+            '"relationships": [], "open_questions": []}',
+        ],
+        "judge": ['{"unsupported": []}'],
     })
     wedge = Wedge(tmp_path, lambda: provider, WedgeAuth({"tok": "tenant1"}),
                   sandbox_check=lambda: True, search_client=client)
-    res = wedge.submit(authorization="Bearer tok", goal="what is spaced repetition?", org="research")
+    res = wedge.submit(authorization="Bearer tok", goal=goal, org="research")
     assert res.org == "research"
-    assert res.artifacts and res.artifacts[0]["label"] == "machine-fetched sources"
-    assert "example.edu" in res.artifacts[0]["payload"]
+    labels = [a["label"] for a in res.artifacts]
+    assert labels[0] == "research plan" and "RESEARCH PLAN" in res.artifacts[0]["payload"]
+    fetched = next(a for a in res.artifacts if a["label"] == "machine-fetched sources")
+    assert "example.edu" in fetched["payload"] and "[news]" in fetched["payload"]
+    graph = next(a for a in res.artifacts if a["label"] == "context graph")
+    assert "Spaced Repetition" in graph["payload"]
 
 
 def test_research_tray_holds_a_rendered_page_not_report_json(tmp_path):
@@ -187,9 +197,12 @@ def test_research_tray_holds_a_rendered_page_not_report_json(tmp_path):
     from engine.model import ScriptedProvider
     from products.wedge import Wedge, WedgeAuth
 
+    from engine.model import SequencedProvider
+    from orgs.research_studio.intelligence import ANGLES
+
     client = ScriptedSearchClient(
         search_by_query={
-            "what is spaced repetition?": [
+            f"what is spaced repetition? {ANGLES['news'][0]}": [
                 SearchResult(url="https://example.edu/sr", title="Spaced Repetition"),
             ],
         },
@@ -199,10 +212,14 @@ def test_research_tray_holds_a_rendered_page_not_report_json(tmp_path):
                 content="Spaced repetition schedules reviews at increasing intervals."),
         },
     )
-    provider = ScriptedProvider({
-        "researcher": '{"topic": "what is spaced repetition?", '
-                      '"claims": [{"text": "Spaced repetition schedules reviews at increasing intervals.", '
-                      '"citations": [{"source": "src1", "quote": "schedules reviews at increasing intervals"}]}]}',
+    provider = SequencedProvider({
+        "researcher": [
+            '{"domain": "learning", "questions": ["does it work?"], "angles": ["news"]}',
+            '{"topic": "what is spaced repetition?", '
+            '"claims": [{"text": "Spaced repetition schedules reviews at increasing intervals.", '
+            '"citations": [{"source": "src1", "quote": "schedules reviews at increasing intervals"}]}]}',
+        ],
+        "judge": ['{"unsupported": []}'],
     })
     wedge = Wedge(tmp_path, lambda: provider, WedgeAuth({"tok": "tenant1"}),
                   sandbox_check=lambda: True, search_client=client)

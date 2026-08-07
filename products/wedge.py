@@ -264,32 +264,36 @@ class Wedge:
         carried one (the web page's HTML, the research report's text)."""
         memory = self.memory_factory(root / org)
         fetched_urls: list[str] = []
+        intelligence = None
         if org == "research" and not sources:
-            # REAL research: the machine finds its own sources. Each corpus
-            # entry carries its URL header so citations stay traceable and the
-            # verbatim-quote gate still has the full text to check against.
+            # REAL research, full intelligence flow: the planner charts the
+            # angles, the angle workers acquire in parallel, the researcher
+            # extracts claims AND the graph, the same gates rule, and the
+            # verified entities persist to this tenant's knowledge layer.
             if self.search_client is None:
                 raise SourcesUnavailable(
                     "live research isn't enabled here — paste sources, or the operator sets PARALLEL_API_KEY"
                 )
-            corpus: list[str] = []
+            from orgs.registry import OrgRun
+            from orgs.research_studio.pipeline import AcquisitionEmpty, build_intelligence
+
             try:
-                for r in self.search_client.search(goal, max_results=4):
-                    try:
-                        ex = self.search_client.extract(r.url, objective=goal)
-                    except ParallelUnavailable:
-                        continue  # one dead URL never sinks the haul
-                    if ex.content.strip():
-                        corpus.append(f"SOURCE: {ex.url}\n{ex.title}\n\n{ex.content}")
-                        fetched_urls.append(ex.url)
+                intelligence = build_intelligence(
+                    goal, self.provider_factory(), memory, self.search_client,
+                )
+            except AcquisitionEmpty as exc:
+                raise SourcesUnavailable(str(exc)) from exc
             except ParallelUnavailable as exc:
                 raise SourcesUnavailable(f"live search failed: {exc}") from exc
-            if not corpus:
-                raise SourcesUnavailable(
-                    "the live web search found nothing usable for that question — try rephrasing"
-                )
-            sources = corpus
-        run = get_org(org).build(goal, self.provider_factory(), memory, sources=sources)
+            fetched_urls = [f"{s.url}  [{s.angle}]" for s in intelligence.sources]
+            rep = intelligence.report
+            run = OrgRun(
+                org="research", goal=goal, accepted=rep.accepted,
+                outcomes=[rep.report_outcome], informed_by=rep.informed_by,
+                run_id=rep.run_id, activity=rep.activity,
+            )
+        else:
+            run = get_org(org).build(goal, self.provider_factory(), memory, sources=sources)
         evidence: list[dict[str, Any]] = []
         artifacts: list[dict[str, Any]] = []
         for outcome in run.outcomes:
@@ -311,6 +315,13 @@ class Wedge:
             # that doesn't parse (a garbled rejected proposal) stays raw and
             # honestly labeled rather than pretending to be a page.
             source_urls: dict[str, str] = {}
+            if intelligence is not None:
+                # The intelligence flow acquired the corpus itself; ids follow
+                # acquisition order, so the map is exact — URL and angle both.
+                source_urls = {
+                    f"src{i + 1}": f"{src.url} [{src.angle}]"
+                    for i, src in enumerate(intelligence.sources)
+                }
             for i, s in enumerate(sources or []):
                 head = s.strip().split("\n", 1)[0]
                 if head.startswith("SOURCE: "):
@@ -329,6 +340,24 @@ class Wedge:
                 "label": "machine-fetched sources",
                 "payload": "\n".join(fetched_urls),
             })
+        if intelligence is not None:
+            artifacts.insert(0, {"label": "research plan", "payload": intelligence.plan.brief()})
+            artifacts.append({
+                "label": "context graph",
+                "payload": json.dumps(intelligence.context_graph, indent=2),
+            })
+            # The graph spool: when a DataHub is reachable, the run's context
+            # graph is queued for emission into the metadata knowledge graph
+            # (the emitter runs under the operator's datahub venv).
+            if os.environ.get("DATAHUB_GMS"):
+                spool = root.parent / "graph_spool" if (root / "..").exists() else root / "graph_spool"
+                spool = (root / "graph_spool")
+                spool.mkdir(parents=True, exist_ok=True)
+                (spool / f"research-{run.run_id}.json").write_text(
+                    json.dumps({"run_id": run.run_id, "tenant": tenant,
+                                "graph": intelligence.context_graph}, indent=2),
+                    encoding="utf-8",
+                )
         remaining: int | None = None
         if self.meter is not None and not exempt:
             self.meter.record(tenant, run.accepted, goal)

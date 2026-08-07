@@ -36,10 +36,44 @@ class Claim:
     citations: list[Citation] = field(default_factory=list)
 
 
+# The relationship vocabulary is closed: a typed edge either uses a known
+# relation or the parser refuses it. Free-text relations would turn the
+# context graph into prose wearing a graph costume.
+RELATIONS = (
+    "supports", "contradicts", "depends_on", "causes",
+    "enables", "improves", "competes_with", "introduced_by", "related_to",
+)
+
+
+@dataclass
+class Entity:
+    """A named thing the research surfaced: person, company, technology,
+    concept, paper, product — typed and described, never bare."""
+
+    name: str
+    type: str = "concept"
+    description: str = ""
+
+
+@dataclass
+class Relationship:
+    """A typed edge between two surfaced entities. `claim_index` optionally
+    anchors the edge to the claim that evidences it — anchored edges are
+    checkable; unanchored ones are honest proposals."""
+
+    source: str
+    relation: str
+    target: str
+    claim_index: int | None = None
+
+
 @dataclass
 class Report:
     topic: str
     claims: list[Claim]
+    entities: list[Entity] = field(default_factory=list)
+    relationships: list[Relationship] = field(default_factory=list)
+    open_questions: list[str] = field(default_factory=list)
 
 
 def _extract_json(text: str) -> str:
@@ -76,7 +110,51 @@ def parse_report(payload: str) -> Report:
             cites.append(Citation(source=cc["source"].strip(), quote=str(quote)))
         claims.append(Claim(text=rc["text"].strip(), citations=cites))
 
-    return Report(topic=str(obj.get("topic", "")), claims=claims)
+    entities: list[Entity] = []
+    for i, re_ in enumerate(obj.get("entities") or []):
+        if not isinstance(re_, dict) or not isinstance(re_.get("name"), str) or not re_["name"].strip():
+            raise ReportParseError(f"entity {i} missing non-empty 'name'")
+        entities.append(Entity(
+            name=re_["name"].strip(),
+            type=str(re_.get("type") or "concept").strip() or "concept",
+            description=str(re_.get("description") or "").strip(),
+        ))
+
+    known = {e.name for e in entities}
+    relationships: list[Relationship] = []
+    for i, rr in enumerate(obj.get("relationships") or []):
+        if not isinstance(rr, dict):
+            raise ReportParseError(f"relationship {i} must be an object")
+        src, rel, tgt = rr.get("source"), rr.get("relation"), rr.get("target")
+        if not (isinstance(src, str) and src.strip() and isinstance(tgt, str) and tgt.strip()):
+            raise ReportParseError(f"relationship {i} missing 'source'/'target'")
+        if rel not in RELATIONS:
+            raise ReportParseError(
+                f"relationship {i} relation {rel!r} not in the vocabulary {RELATIONS}"
+            )
+        if src.strip() not in known or tgt.strip() not in known:
+            raise ReportParseError(
+                f"relationship {i} references an undeclared entity — every edge "
+                f"endpoint must appear in 'entities'"
+            )
+        ci = rr.get("claim_index")
+        if ci is not None and (not isinstance(ci, int) or not (0 <= ci < len(claims))):
+            raise ReportParseError(f"relationship {i} claim_index {ci!r} out of range")
+        relationships.append(Relationship(
+            source=src.strip(), relation=str(rel), target=tgt.strip(), claim_index=ci,
+        ))
+
+    open_questions = [
+        str(q).strip() for q in (obj.get("open_questions") or []) if str(q).strip()
+    ]
+
+    return Report(
+        topic=str(obj.get("topic", "")),
+        claims=claims,
+        entities=entities,
+        relationships=relationships,
+        open_questions=open_questions,
+    )
 
 
 # Typographic variants that must NOT decide a verbatim match. Sources (especially from the web) use
@@ -119,6 +197,23 @@ def render_markdown(report: Report, source_urls: dict[str, str] | None = None) -
         for cit in claim.citations:
             if cit.quote:
                 lines.append(f'> "{cit.quote}" — {cit.source}')
+        lines.append("")
+    if report.entities:
+        lines += ["## Entities", ""]
+        for ent in report.entities:
+            desc = f" — {ent.description}" if ent.description else ""
+            lines.append(f"- **{ent.name}** ({ent.type}){desc}")
+        lines.append("")
+    if report.relationships:
+        lines += ["## Research map", ""]
+        for rel in report.relationships:
+            anchor = f" [src-claim {rel.claim_index + 1}]" if rel.claim_index is not None else " (proposed)"
+            lines.append(f"- {rel.source} —{rel.relation.replace('_', ' ')}→ {rel.target}{anchor}")
+        lines.append("")
+    if report.open_questions:
+        lines += ["## Open questions", ""]
+        for q in report.open_questions:
+            lines.append(f"- {q}")
         lines.append("")
     cited = sorted(
         {c.source for claim in report.claims for c in claim.citations},
