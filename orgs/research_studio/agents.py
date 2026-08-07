@@ -38,7 +38,8 @@ RESEARCHER_SYSTEM = (
     "causes, enables, improves, competes_with, introduced_by, related_to; set claim_index to "
     "the 0-based index of the claim that evidences the edge, or omit it if none directly does; "
     'and "open_questions": [<questions your sources raise but cannot settle>]. '
-    "Every relationship endpoint must appear in entities. A machine validates all of it."
+    "Every relationship endpoint must appear in entities. A machine validates all of it. "
+    "SIZE: keep the whole report compact — at most 12 claims, 12 entities, and 15 relationships; depth beats sprawl, and an over-long report risks truncation, which fails everything."
 )
 
 

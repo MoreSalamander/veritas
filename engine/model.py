@@ -209,7 +209,7 @@ class ClaudeProvider(ModelProvider):
     what clears app-scale builds. Model id is one of claude-haiku-4-5 / claude-sonnet-4-6 /
     claude-opus-4-8. Reads ANTHROPIC_API_KEY from the environment."""
 
-    def __init__(self, model: str = "claude-sonnet-4-6", max_tokens: int = 4096) -> None:
+    def __init__(self, model: str = "claude-sonnet-4-6", max_tokens: int = 16384) -> None:
         import anthropic  # lazy: only needed when the cloud is actually used
 
         self._client = anthropic.Anthropic()
