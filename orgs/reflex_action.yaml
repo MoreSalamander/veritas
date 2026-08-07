@@ -1,0 +1,21 @@
+# The reflex pipeline — DataHub Actions as the OS's interrupts.
+# Run from the veritas repo root:
+#   PYTHONPATH=. .venv-datahub/bin/datahub actions -c orgs/reflex_action.yaml
+name: veritas_reflex
+source:
+  type: kafka
+  config:
+    connection:
+      bootstrap: ${KAFKA_BOOTSTRAP:-localhost:9092}
+      schema_registry_url: ${SCHEMA_REGISTRY:-http://localhost:8080/schema-registry/api/}
+filter:
+  event_type: MetadataChangeLogEvent_v1
+  event:
+    aspectName: assertionRunEvent
+action:
+  type: orgs.datahub_actions_reflex:VeritasReflexAction
+  config:
+    gms: ${DATAHUB_GMS:-http://localhost:8080}
+    log_path: hub_data/reflexes.jsonl
+datahub:
+  server: ${DATAHUB_GMS:-http://localhost:8080}

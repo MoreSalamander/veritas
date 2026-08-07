@@ -48,6 +48,7 @@ from pathlib import Path
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
 from datahub.emitter.rest_emitter import DatahubRestEmitter
 from datahub.metadata.schema_classes import (
+    CorpUserInfoClass,
     DatasetPropertiesClass,
     GlobalTagsClass,
     OwnerClass,
@@ -74,6 +75,30 @@ _TAGS = {
 
 def _emit(emitter: DatahubRestEmitter, urn: str, aspect) -> None:
     emitter.emit(MetadataChangeProposalWrapper(entityUrn=urn, aspect=aspect))
+
+
+def _agent_slug(name: str) -> str:
+    return "".join(c if c.isalnum() else "-" for c in name.lower()).strip("-")
+
+
+def _agent_urn(name: str) -> str:
+    return f"urn:li:corpuser:{_agent_slug(name)}"
+
+
+def _ensure_cast(emitter: DatahubRestEmitter, agents: dict[str, str]) -> None:
+    """The cast exists as people in the graph: each discovering agent gets a
+    CorpUser profile, so ownership resolves to a named member of the
+    organization — 'accountable to earn trust' as queryable metadata."""
+    for name, org_label in sorted(agents.items()):
+        _emit(
+            emitter,
+            _agent_urn(name),
+            CorpUserInfoClass(
+                active=True,
+                displayName=name,
+                title=f"{org_label} agent",
+            ),
+        )
 
 
 def _ensure_tags(emitter: DatahubRestEmitter) -> None:
@@ -151,11 +176,13 @@ def emit_hunter_opportunities(
         conn.close()
 
     actor = org_name.replace("_", "-")
-    owner = OwnershipClass(
-        owners=[OwnerClass(owner=f"urn:li:corpGroup:veritas-{actor}", type=OwnershipTypeClass.DATAOWNER)]
+    org_label = org_name.replace("_", " ").title()
+    group_owner = OwnerClass(
+        owner=f"urn:li:corpGroup:veritas-{actor}", type=OwnershipTypeClass.DATAOWNER
     )
     emitter = DatahubRestEmitter(gms_server=gms_server)
     urns: list[str] = []
+    cast: dict[str, str] = {}
     try:
         _ensure_tags(emitter)
         for (spec_json,) in rows:
@@ -165,7 +192,17 @@ def emit_hunter_opportunities(
             urns.append(urn)
             _emit(emitter, urn, _opportunity_properties(spec))
             _emit(emitter, urn, SubTypesClass(typeNames=["Opportunity", spec.get("type") or "unknown"]))
-            _emit(emitter, urn, owner)
+            # The accountability chain: the engine's group owns the record;
+            # the agent that BROUGHT IT IN is on it by name. Who found this,
+            # answerable in the product, not in a README.
+            owners = [group_owner]
+            found_by = (spec.get("discovered_by") or "").strip()
+            if found_by:
+                cast[found_by] = org_label
+                owners.append(
+                    OwnerClass(owner=_agent_urn(found_by), type=OwnershipTypeClass.TECHNICAL_OWNER)
+                )
+            _emit(emitter, urn, OwnershipClass(owners=owners))
             tags = _derived_tags(spec)
             if tags:
                 _emit(
@@ -173,6 +210,7 @@ def emit_hunter_opportunities(
                     urn,
                     GlobalTagsClass(tags=[TagAssociationClass(tag=f"urn:li:tag:{t}") for t in tags]),
                 )
+        _ensure_cast(emitter, cast)
         return urns
     finally:
         emitter.close()
