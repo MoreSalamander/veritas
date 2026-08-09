@@ -320,7 +320,9 @@ def test_learn_slot_teaches_and_grades(tmp_path):
         "quiz": [{"question": "A vector has?",
                   "options": ["direction and magnitude", "flavor"],
                   "answer_index": 0, "answer_span": "direction and magnitude"}],
-    })
+            "worked_example": "(3,4) has magnitude 5.",
+        "misconception": "A vector is not a point; a point has no direction.",
+})
     provider = SequencedProvider({"researcher": [roadmap, lesson]})
     client = ScriptedSearchClient(
         search_by_query={

@@ -29,6 +29,8 @@ LESSON = json.dumps({
          "options": ["direction and magnitude", "flavor"],
          "answer_index": 0, "answer_span": "direction and magnitude"},
     ],
+    "worked_example": "(3,4) has magnitude 5 and points up and to the right.",
+    "misconception": "A vector is often confused with a point; a point has no direction.",
 })
 
 

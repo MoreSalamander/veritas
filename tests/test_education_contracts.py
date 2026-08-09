@@ -74,6 +74,8 @@ LESSON = """{
     {"question": "What does regression minimize?", "options": ["squared error", "runtime"],
      "answer_index": 0, "answer_span": "minimizes squared error"}
   ],
+  "worked_example": "Given (1,2) and (3,4), the least-squares line is y = x + 1.",
+  "misconception": "Learners often read a high R-squared as proof of causation.",
   "exercises": ["Fit a line to five points by hand."],
   "socratic": ["Why square the error instead of taking absolute value?"]
 }"""

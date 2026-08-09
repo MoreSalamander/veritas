@@ -48,11 +48,19 @@ class Lesson:
     concept: str
     sections: list[LessonSection]
     quiz: list[QuizItem]
+    worked_example: str = ""
+    misconception: str = ""
     exercises: list[str] = field(default_factory=list)
     socratic: list[str] = field(default_factory=list)
+    visualization_html: str = ""   # a rendered, gated concept diagram
 
     def body_text(self) -> str:
-        return "\n\n".join(f"{s.title}\n{s.body}" for s in self.sections)
+        parts = [f"{s.title}\n{s.body}" for s in self.sections]
+        if self.worked_example:
+            parts.append(f"Worked example\n{self.worked_example}")
+        if self.misconception:
+            parts.append(f"Common misconception\n{self.misconception}")
+        return "\n\n".join(parts)
 
 
 def parse_lesson(payload: str, corpus_ids: set[str]) -> Lesson:
@@ -106,10 +114,18 @@ def parse_lesson(payload: str, corpus_ids: set[str]) -> Lesson:
     if not quiz:
         raise LessonParseError("lesson has no quiz — mastery cannot be assessed")
 
+    worked = str(obj.get("worked_example") or "").strip()
+    if not worked:
+        raise LessonParseError("lesson has no worked_example — teaching without a worked case is a syllabus")
+    misconception = str(obj.get("misconception") or "").strip()
+    if not misconception:
+        raise LessonParseError("lesson names no common misconception — the spec asks for it explicitly")
     return Lesson(
         concept=concept,
         sections=sections,
         quiz=quiz,
+        worked_example=worked,
+        misconception=misconception,
         exercises=[str(e).strip() for e in (obj.get("exercises") or []) if str(e).strip()][:5],
         socratic=[str(q).strip() for q in (obj.get("socratic") or []) if str(q).strip()][:5],
     )
@@ -154,6 +170,10 @@ def render_lesson_markdown(lesson: Lesson, roadmap_brief: str | None = None,
     for s in lesson.sections:
         marks = "".join(f" [{c}]" for c in s.cites)
         lines += [f"## {s.title}", "", f"{s.body}{marks}", ""]
+    if lesson.worked_example:
+        lines += ["## Worked example", "", lesson.worked_example, ""]
+    if lesson.misconception:
+        lines += ["## The common misconception", "", lesson.misconception, ""]
     if lesson.exercises:
         lines += ["## Try it (proposals — the doing is yours)", ""]
         lines += [f"- {e}" for e in lesson.exercises] + [""]
