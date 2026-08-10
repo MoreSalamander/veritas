@@ -77,8 +77,21 @@ def test_gate_verdict_is_identical_local_vs_sandboxed():
         assert local.passed == cont.passed == expected  # contained, but the verdict is unchanged
 
 
-def test_factory_selects_the_sandbox_when_asked(monkeypatch):
+def test_the_sandbox_is_the_default_and_local_is_the_opt_out(monkeypatch):
+    """Isolation unless told otherwise, and the escape hatch still works.
+
+    This assertion used to run the other way round — unset meant a local
+    subprocess, and a container was the thing you had to ask for. Two problems
+    with that default pointed the same way: what runs here is model-generated
+    code, so isolating it by default is the right way round; and the wedge fails
+    closed without isolation, so a machine that had never set the variable
+    reported the headline feature offline. Someone who had just cloned the repo
+    could not tell that from broken.
+    """
+    monkeypatch.delenv("VERITAS_SANDBOX", raising=False)
+    assert isinstance(default_executor(), ContainerExecutor)
     monkeypatch.setenv("VERITAS_SANDBOX", "container")
     assert isinstance(default_executor(), ContainerExecutor)
-    monkeypatch.delenv("VERITAS_SANDBOX", raising=False)
+    # Deliberately opting out is still possible, and is now the explicit act.
+    monkeypatch.setenv("VERITAS_SANDBOX", "local")
     assert isinstance(default_executor(), LocalSubprocessExecutor)

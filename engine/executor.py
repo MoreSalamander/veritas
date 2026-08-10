@@ -186,10 +186,21 @@ class ContainerExecutor(Executor):
 
 
 def default_executor() -> Executor:
-    """The execution backend the whole system uses. A sandboxed container when VERITAS_SANDBOX is set
-    to 'container' (and Docker is up) — the hosting-safe default — else a local subprocess for dev
-    speed. One swap point: set the env var and every gate that runs code is isolated, gates unchanged."""
-    mode = os.environ.get("VERITAS_SANDBOX", "").lower()
+    """The execution backend the whole system uses. A sandboxed container when Docker is up, else a
+    local subprocess. One swap point: every gate that runs code is isolated, gates unchanged.
+
+    Container is the DEFAULT rather than an opt-in, for two reasons that point the same way.
+
+    It is the safer default. What runs here is model-generated code; isolating it unless told
+    otherwise is the right way round, and the previous default ran it as a plain subprocess on the
+    host until someone remembered an env var.
+
+    And it is what a fresh clone needs. The wedge fails closed without isolation, so on a machine
+    that had not set VERITAS_SANDBOX the headline feature reported itself offline — which is honest
+    and, for someone who just cloned this to try it, indistinguishable from broken. Docker present
+    means it works; Docker absent means the same local subprocess as before and the same honest
+    refusal from the wedge. Set VERITAS_SANDBOX=local to force the subprocess deliberately."""
+    mode = os.environ.get("VERITAS_SANDBOX", "container").lower()
     if mode in ("container", "docker") and ContainerExecutor.available():
         return ContainerExecutor()
     return LocalSubprocessExecutor()

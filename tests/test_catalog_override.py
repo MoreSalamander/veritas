@@ -11,7 +11,13 @@ def test_override_rides_the_default_only(monkeypatch):
     class FakeProvider:
         pass
 
-    def fake_claude(model_id):
+    # api_key is accepted and ignored: provider_for() now hands the resolved
+    # credential to the client it builds, because a running server cannot
+    # rewrite its own environment for the next request. This test is about
+    # which MODEL the toggle selects, so the key is irrelevant to it — but the
+    # stub has to match the real signature or it fails on the argument rather
+    # than on the behaviour under test.
+    def fake_claude(model_id, api_key=""):
         seen["id"] = model_id
         return FakeProvider()
 
