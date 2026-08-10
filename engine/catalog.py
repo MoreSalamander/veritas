@@ -12,7 +12,12 @@ from __future__ import annotations
 import os
 from typing import TypedDict
 
+from engine import credentials
 from engine.model import ClaudeProvider, ModelProvider, OllamaProvider
+
+# Where the local models live. Only used to ask Ollama what is actually pulled
+# — the providers keep their own base URL.
+OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 
 # The model toggle: local Ollama models (free) plus the three Claude tiers. Each entry
@@ -32,9 +37,11 @@ MODELS: dict[str, ModelSpec] = {
     "qwen": {"label": "Qwen3.5 9B · local", "cost": "free", "kind": "ollama", "id": "qwen3.5:9b", "think": False},
     "qwen-64k": {"label": "Qwen3.5 64k · local · thinking", "cost": "free", "kind": "ollama", "id": "qwen3.5-64k:latest", "think": True},
     "llama": {"label": "Llama3.1 8B · local", "cost": "free", "kind": "ollama", "id": "llama3.1:8b", "think": False},
-    "haiku": {"label": "Claude Haiku", "cost": "~1–3¢/build", "kind": "claude", "id": "claude-haiku-4-5", "think": False},
-    "sonnet": {"label": "Claude Sonnet", "cost": "~4–8¢/build", "kind": "claude", "id": "claude-sonnet-4-6", "think": False},
-    "opus": {"label": "Claude Opus", "cost": "~6–13¢/build", "kind": "claude", "id": "claude-opus-4-8", "think": False},
+    "llama-small": {"label": "Llama3.2 3B · local · fastest", "cost": "free", "kind": "ollama", "id": "llama3.2:latest", "think": False},
+    "mistral": {"label": "Mistral 7B · local", "cost": "free", "kind": "ollama", "id": "mistral:latest", "think": False},
+    "haiku": {"label": "Claude Haiku 4.5", "cost": "$1/$5 per Mtok", "kind": "claude", "id": "claude-haiku-4-5", "think": False},
+    "sonnet": {"label": "Claude Sonnet 5", "cost": "$3/$15 per Mtok", "kind": "claude", "id": "claude-sonnet-5", "think": False},
+    "opus": {"label": "Claude Opus 5", "cost": "$5/$25 per Mtok", "kind": "claude", "id": "claude-opus-5", "think": False},
 }
 
 DEFAULT_MODEL = os.environ.get("VERITAS_MODEL", "gemma-12b")  # hosted (Claude-only) sets e.g. "sonnet"
@@ -46,7 +53,9 @@ MODEL_NOTES: dict[str, str] = {
     "qwen": "Fast, but drifts on grounding — good for simple functions, not video.",
     "qwen-64k": "Thinking model — better first-try on hard goals, ~7x slower.",
     "llama": "Older 8B — basic functions only; weakest of the locals.",
-    "haiku": "Cloud, cheap — clears more than the locals.",
+    "llama-small": "3B — the quickest local reply; simple labels and rewrites only.",
+    "mistral": "7B generalist — kept for comparison; gemma-12b clears more.",
+    "haiku": "Cloud, cheap — clears more than the locals, and answers fastest.",
     "sonnet": "Cloud — clears module/app scale where local models can't.",
     "opus": "Cloud — strongest; for the hardest builds.",
 }
@@ -70,6 +79,33 @@ def get_default_override() -> str | None:
     return _DEFAULT_OVERRIDE
 
 
+def local_inventory(timeout: float = 2.0) -> dict[str, object]:
+    """What Ollama actually has pulled right now.
+
+    The catalog says which local models this product *knows*; only the daemon
+    knows which are *present*. Selecting a catalog entry whose weights were
+    never pulled fails at the first call with a 404 from Ollama — surfacing the
+    inventory turns that into something the page can grey out instead.
+
+    Never raises: a stopped Ollama is a normal state on a laptop, and the
+    honest answer is "not running", not a 500 on a settings page.
+    """
+    url = OLLAMA_URL if "://" in OLLAMA_URL else f"http://{OLLAMA_URL}"
+    try:
+        import httpx
+
+        r = httpx.get(f"{url}/api/tags", timeout=timeout)
+        r.raise_for_status()
+        models = r.json().get("models", [])
+    except Exception:                      # noqa: BLE001 — any failure is "down"
+        return {"running": False, "url": url, "installed": []}
+    return {
+        "running": True,
+        "url": url,
+        "installed": sorted(m.get("name", "") for m in models if m.get("name")),
+    }
+
+
 def provider_for(model: str) -> ModelProvider:
     if model == DEFAULT_MODEL and _DEFAULT_OVERRIDE:
         model = _DEFAULT_OVERRIDE
@@ -81,7 +117,7 @@ def provider_for(model: str) -> ModelProvider:
         return OllamaProvider(
             model=spec["id"], think=spec["think"], timeout=600.0 if spec["think"] else 120.0
         )
-    return ClaudeProvider(spec["id"])
+    return ClaudeProvider(spec["id"], api_key=credentials.resolve())
 
 
 def tutorial_provider_for(model: str, source_len: int) -> ModelProvider:
@@ -96,7 +132,7 @@ def tutorial_provider_for(model: str, source_len: int) -> ModelProvider:
     if spec is None:
         raise ValueError(f"unknown model {model!r}")
     if spec["kind"] != "ollama":
-        return ClaudeProvider(spec["id"])
+        return ClaudeProvider(spec["id"], api_key=credentials.resolve())
     num_ctx = max(4096, min(32768, -(-((source_len // 3) + 4096) // 2048) * 2048))
     return OllamaProvider(
         model=spec["id"], think=spec["think"], timeout=600.0, num_ctx=num_ctx, num_predict=4096,

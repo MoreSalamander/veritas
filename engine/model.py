@@ -206,13 +206,22 @@ class LMStudioProvider(ModelProvider):
 class ClaudeProvider(ModelProvider):
     """Cloud backend — the Anthropic API. The product-grade proposer. Reliability still
     comes from the gates; a stronger model just proposes better than a local 8b, which is
-    what clears app-scale builds. Model id is one of claude-haiku-4-5 / claude-sonnet-4-6 /
-    claude-opus-4-8. Reads ANTHROPIC_API_KEY from the environment."""
+    what clears app-scale builds. Model id is one of claude-haiku-4-5 / claude-sonnet-5 /
+    claude-opus-5.
 
-    def __init__(self, model: str = "claude-sonnet-4-6", max_tokens: int = 16384) -> None:
+    The credential is a constructor argument rather than an environment read so
+    that an operator can supply one *while the server is running* — the process
+    cannot rewrite its own environment for the next request, but it can hand a
+    key to the client it builds for this one. Passing nothing keeps the old
+    behaviour exactly: the SDK resolves the credential itself (ANTHROPIC_API_KEY,
+    then an `ant auth login` profile)."""
+
+    def __init__(self, model: str = "claude-opus-5", max_tokens: int = 16384,
+                 api_key: str = "") -> None:
         import anthropic  # lazy: only needed when the cloud is actually used
 
-        self._client = anthropic.Anthropic()
+        self._client = anthropic.Anthropic(api_key=api_key) if api_key \
+            else anthropic.Anthropic()
         self.model = model
         self.max_tokens = max_tokens
 
