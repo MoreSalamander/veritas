@@ -135,6 +135,31 @@ class CollectorStore:
             row = con.execute("SELECT COUNT(*) FROM records WHERE state = 'pending'").fetchone()
         return int(row[0]) if row is not None else 0
 
+    def summary(self) -> dict[str, object]:
+        """Counts by state, and when anything was last collected.
+
+        An empty pending queue and a collector that has never run look identical
+        from `list_pending()` alone, and they are completely different facts: one
+        means you are caught up, the other means nothing has been offered. A
+        reviewer looking at a blank panel deserves to know which.
+        """
+        with self._connect() as con:
+            states = dict(con.execute(
+                "SELECT state, COUNT(*) FROM records GROUP BY state").fetchall())
+            last = con.execute(
+                "SELECT MAX(collected_at) FROM records").fetchone()
+        pending = int(states.get("pending", 0))
+        admitted = int(states.get("admitted", 0))
+        declined = int(states.get("declined", 0))
+        return {
+            "pending": pending,
+            "admitted": admitted,
+            "declined": declined,
+            "decided": admitted + declined,
+            "total": pending + admitted + declined,
+            "last_collected": (last[0] if last and last[0] else ""),
+        }
+
     def _decide(self, record_id: str, *, admitted: bool, by: str) -> EntropyRecord | None:
         with self._connect() as con:
             existing_row = con.execute(
